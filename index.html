@@ -5232,10 +5232,31 @@ function buscarDocentePorDNI(){
     return;
   }
 
-  const pendiente=usuariosPendientesVinculacion('docente').find(u=>(u.datosPersonales.dni||'').replace(/\./g,'')===dniBuscado);
+  // Antes esto sólo buscaba entre usuarios con rol 'docente' pendientes de vinculación.
+  // Ahora busca entre TODOS los usuarios del sistema (cualquier rol: preceptor,
+  // secretario, director, etc.) que todavía no tengan legajo docente, para poder
+  // designar directamente a alguien que ya tiene una cuenta creada por otro motivo,
+  // sin perder su rol/acceso actual.
+  const pendiente = USUARIOS.find(u=>
+    !u.docenteId && u.estado!=='inactivo' &&
+    u.datosPersonales && (u.datosPersonales.dni||'').replace(/\./g,'')===dniBuscado
+  );
   if(pendiente){
-    if(selDoc) selDoc.value='nuevo:'+pendiente.id;
-    if(resDiv) resDiv.innerHTML=`<span style="color:#0369a1">🆕 ${pendiente.datosPersonales.apellido||''}, ${pendiente.datosPersonales.nombres||pendiente.nombre} es un usuario sin institución vinculada todavía. Se preseleccionó automáticamente — al guardar se le crea el legajo docente y su cuenta queda vinculada a esta institución, con todos los módulos del rol Docente habilitados.</span>`;
+    const valorOpcion = 'nuevo:'+pendiente.id;
+    // Si el usuario encontrado no es de rol 'docente', puede que la opción no
+    // exista todavía en el desplegable (que sólo listaba pendientes de rol
+    // docente) — la agregamos dinámicamente, igual que se hace para el caso
+    // de "otra institución" más abajo.
+    if(selDoc && !selDoc.querySelector(`option[value="${valorOpcion}"]`)){
+      const opt=document.createElement('option');
+      opt.value=valorOpcion;
+      opt.textContent=`${pendiente.datosPersonales.apellido||''}, ${pendiente.datosPersonales.nombres||pendiente.nombre} — @${pendiente.usuario}${pendiente.rol!=='docente'?` (actualmente ${ROL_LABEL[pendiente.rol]||pendiente.rol})`:''}`;
+      selDoc.appendChild(opt);
+    }
+    if(selDoc) selDoc.value=valorOpcion;
+    if(resDiv) resDiv.innerHTML = pendiente.rol==='docente'
+      ? `<span style="color:#0369a1">🆕 ${pendiente.datosPersonales.apellido||''}, ${pendiente.datosPersonales.nombres||pendiente.nombre} es un usuario sin institución vinculada todavía. Se preseleccionó automáticamente — al guardar se le crea el legajo docente y su cuenta queda vinculada a esta institución, con todos los módulos del rol Docente habilitados.</span>`
+      : `<span style="color:#0369a1">✓ ${pendiente.datosPersonales.apellido||''}, ${pendiente.datosPersonales.nombres||pendiente.nombre} ya tiene una cuenta como <strong>${ROL_LABEL[pendiente.rol]||pendiente.rol}</strong> (@${pendiente.usuario}). Se preseleccionó — al guardar se le crea también el legajo docente y se le habilitan los módulos de Docente, sin perder su rol actual.</span>`;
     return;
   }
 
