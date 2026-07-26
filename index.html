@@ -718,6 +718,56 @@ function crearDocenteDesdeUsuarioPendiente(usuarioId, materiaInicial=''){
   u.docenteId=nuevoId;
   return nuevoId;
 }
+// Encuentra el usuario del sistema vinculado a un legajo docente puntual
+// (de una institución determinada), ya sea por el vínculo simple (docenteId +
+// institucionId) o por el array de multi-institución.
+function usuarioVinculadoADocente(docenteId, institucionId){
+  return USUARIOS.find(u=>{
+    if(u.docenteId===docenteId && u.institucionId===institucionId) return true;
+    if(Array.isArray(u.instituciones)) return u.instituciones.some(v=>v.institucionId===institucionId && v.docenteId===docenteId);
+    return false;
+  }) || null;
+}
+// Crea, en la institución actual, un nuevo legajo docente a partir del legajo
+// que ya existe en OTRA institución (mismo DNI), y vincula la cuenta de
+// usuario existente a este nuevo legajo también (multi-institución), sin
+// tocar su institución "de base". Se usa cuando se lo encuentra por DNI al
+// designar y ese docente ya tiene una cuenta de usuario creada.
+function crearDocenteDesdeOtraInstitucion(docenteOrigenId, institucionOrigenId, materiaInicial=''){
+  const origenData = INST_DATA[institucionOrigenId];
+  const docOrigen = origenData && origenData.docentes.find(d=>d.id===docenteOrigenId);
+  if(!docOrigen) return null;
+
+  const nuevoId = uid();
+  const nuevo = JSON.parse(JSON.stringify(docOrigen));
+  nuevo.id = nuevoId;
+  nuevo.materia = materiaInicial || nuevo.materia || '';
+  nuevo.cargo = '';
+  nuevo.horas = 0;
+  nuevo.fechaIngreso = new Date().toISOString().split('T')[0];
+
+  const instOrigenObj = INSTITUCIONES.find(i=>i.id===institucionOrigenId);
+  const instActualObj = INSTITUCIONES.find(i=>i.id===currentInstitucionId);
+  nuevo.otrasInstituciones = Array.isArray(nuevo.otrasInstituciones) ? nuevo.otrasInstituciones.slice() : [];
+  nuevo.otrasInstituciones.push({nombre:instOrigenObj?instOrigenObj.nombre:'Otra institución', cargo:docOrigen.cargo||'', materia:docOrigen.materia||'', horas:docOrigen.horas||0, desde:docOrigen.fechaIngreso||'', hasta:'', estado:'activa'});
+  DB.docentes.push(nuevo);
+
+  // Reflejar también en el legajo de origen, para que se vea el vínculo cruzado
+  if(!Array.isArray(docOrigen.otrasInstituciones)) docOrigen.otrasInstituciones=[];
+  docOrigen.otrasInstituciones.push({nombre:instActualObj?instActualObj.nombre:'Esta institución', cargo:'', materia:materiaInicial||'', horas:0, desde:nuevo.fechaIngreso, hasta:'', estado:'activa'});
+
+  // Vincular la cuenta de usuario existente a este nuevo legajo también
+  const usuario = usuarioVinculadoADocente(docenteOrigenId, institucionOrigenId);
+  if(usuario){
+    if(!Array.isArray(usuario.instituciones) || !usuario.instituciones.length){
+      usuario.instituciones = [{institucionId:institucionOrigenId, docenteId:docenteOrigenId}];
+    }
+    if(!usuario.instituciones.some(v=>v.institucionId===currentInstitucionId && v.docenteId===nuevoId)){
+      usuario.instituciones.push({institucionId:currentInstitucionId, docenteId:nuevoId});
+    }
+  }
+  return nuevoId;
+}
 function crearPreceptorDesdeUsuarioPendiente(usuarioId, turnoInicial='Mañana'){
   const u=USUARIOS.find(x=>x.id===usuarioId);
   if(!u) return null;
@@ -5170,7 +5220,21 @@ function buscarDocentePorDNI(){
   }
   if(otroDoc){
     const inst=INSTITUCIONES.find(i=>i.id===otraInst);
-    if(resDiv) resDiv.innerHTML=`<span style="color:#92400e">⚠️ Ese DNI corresponde a <strong>${otroDoc.nombre}</strong>, ya vinculado/a a otra institución (${inst?inst.nombre:'—'}). Contactá al Administrador para gestionar una designación en más de una institución.</span>`;
+    const usuarioVinc=usuarioVinculadoADocente(otroDoc.id, otraInst);
+    if(usuarioVinc){
+      // Ya tiene cuenta de usuario: se puede designar acá también (multi-institución)
+      const valorOpcion=`otra:${otraInst}:${otroDoc.id}`;
+      if(selDoc && !selDoc.querySelector(`option[value="${valorOpcion}"]`)){
+        const opt=document.createElement('option');
+        opt.value=valorOpcion;
+        opt.textContent=`${otroDoc.nombre} — DNI ${otroDoc.dni} (@${usuarioVinc.usuario}, de ${inst?inst.nombre:'otra institución'})`;
+        selDoc.appendChild(opt);
+      }
+      if(selDoc) selDoc.value=valorOpcion;
+      if(resDiv) resDiv.innerHTML=`<span style="color:#0369a1">✓ ${otroDoc.nombre} (DNI ${dniBuscado}) ya tiene cuenta de usuario (@${usuarioVinc.usuario}), vinculada a ${inst?inst.nombre:'otra institución'}. Se preseleccionó — al guardar se le crea el legajo también en esta institución y su cuenta queda vinculada a ambas.</span>`;
+      return;
+    }
+    if(resDiv) resDiv.innerHTML=`<span style="color:#92400e">⚠️ Ese DNI corresponde a <strong>${otroDoc.nombre}</strong>, ya vinculado/a a otra institución (${inst?inst.nombre:'—'}), pero todavía no tiene una cuenta de usuario creada. Pedile al Administrador que le cree un usuario primero, o gestioná la designación manualmente desde esa institución.</span>`;
     return;
   }
 
@@ -5298,15 +5362,23 @@ function saveDesig(){
     alert(`La plaza ${plazaDestino.nroPlaza} está deshabilitada por el Administrador. No se pueden designar docentes en ella hasta que sea habilitada nuevamente.`);
     return;
   }
-  // El/la "docente" puede ser un registro ya existente o un usuario nuevo
-  // (todavía sin institución) que recién ahora obtiene su registro docente.
+  // El/la "docente" puede ser un registro ya existente, un usuario nuevo
+  // (todavía sin institución) que recién ahora obtiene su registro docente,
+  // o un docente que ya existe en OTRA institución y tiene usuario propio
+  // (se le crea el legajo también acá y su cuenta queda vinculada a ambas).
   const rawDoc=v('f-doc');
-  let docenteDestinoId, usuarioNuevoVinculado=null;
+  let docenteDestinoId, usuarioNuevoVinculado=null, vinculacionCruzada=false;
   if(rawDoc.startsWith('nuevo:')){
     const usuarioId=parseInt(rawDoc.split(':')[1]);
     docenteDestinoId=crearDocenteDesdeUsuarioPendiente(usuarioId, v('f-materia'));
     if(!docenteDestinoId){ alert('No se pudo crear el registro docente a partir del usuario seleccionado.'); return; }
     usuarioNuevoVinculado=USUARIOS.find(u=>u.id===usuarioId);
+  } else if(rawDoc.startsWith('otra:')){
+    const partes=rawDoc.split(':');
+    const otraInstId=parseInt(partes[1]), otroDocId=parseInt(partes[2]);
+    docenteDestinoId=crearDocenteDesdeOtraInstitucion(otroDocId, otraInstId, v('f-materia'));
+    if(!docenteDestinoId){ alert('No se pudo vincular el legajo docente desde la otra institución.'); return; }
+    vinculacionCruzada=true;
   } else {
     docenteDestinoId=parseInt(rawDoc);
   }
@@ -5355,7 +5427,7 @@ function saveDesig(){
     `Fuiste designado/a como ${v('f-cargo')} en ${v('f-materia')} — ${v('f-curso')} (Plaza ${v('f-plaza')}, ${caracter}) a partir del ${fmtDate(v('f-desde'))}${hastaTexto}.`
   );
   closeModal();
-  showToast(usuarioNuevoVinculado?`✅ Designación creada y usuario vinculado a la institución`:'✅ Designación registrada','#166534');
+  showToast(usuarioNuevoVinculado?`✅ Designación creada y usuario vinculado a la institución`:(vinculacionCruzada?'✅ Designación creada — legajo y cuenta vinculados también a esta institución':'✅ Designación registrada'),'#166534');
   navigate('designaciones');
 }
 
