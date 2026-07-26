@@ -2902,13 +2902,29 @@ function buildFormUsuario(u){
     <!-- VINCULACIÓN DINÁMICA -->
     <div id="fu-vinc-wrap">
       <div id="fu-vinc-docente" style="display:${!u||u.rol==='docente'?'block':'none'}">
-        ${formGroup('Vincular a docente',`<select id="fu-docente" class="form-input"><option value="">— Sin vincular —</option>${docenteOpts}</select>`)}
+        ${formGroup('Vincular a docente',`<select id="fu-docente" class="form-input" onchange="toggleDatosPersonalesNuevoUsuario('docente')"><option value="">— Sin vincular —</option>${docenteOpts}</select>`)}
+        <div id="fu-datos-doc-nuevo" style="${u&&u.docenteId?'display:none':''}">
+          <div style="font-size:11px;color:#94a3b8;margin:-6px 0 10px">Si todavía no tiene legajo docente en ninguna institución, completá estos datos: así se lo va a poder encontrar por DNI al designarlo/a en cualquier escuela.</div>
+          <div class="form-grid-2">
+            ${formGroup('Apellido',inputH('fu-doc-apellido','text',u?.datosPersonales?.apellido||''))}
+            ${formGroup('Nombres',inputH('fu-doc-nombres','text',u?.datosPersonales?.nombres||''))}
+          </div>
+          ${formGroup('DNI',inputH('fu-doc-dni','text',u?.datosPersonales?.dni||'','ej: 30.123.456'))}
+        </div>
       </div>
       <div id="fu-vinc-alumno" style="display:${u&&u.rol==='alumno'?'block':'none'}">
         ${formGroup('Vincular a alumno',`<select id="fu-alumno" class="form-input"><option value="">— Sin vincular —</option>${alumnoOpts}</select>`)}
       </div>
       <div id="fu-vinc-preceptor" style="display:${u&&u.rol==='preceptor'?'block':'none'}">
-        ${formGroup('Vincular a preceptor/a',`<select id="fu-preceptor" class="form-input"><option value="">— Sin vincular —</option>${preceptOpts}</select>`)}
+        ${formGroup('Vincular a preceptor/a',`<select id="fu-preceptor" class="form-input" onchange="toggleDatosPersonalesNuevoUsuario('preceptor')"><option value="">— Sin vincular —</option>${preceptOpts}</select>`)}
+        <div id="fu-datos-prec-nuevo" style="${u&&u.preceptorId?'display:none':''}">
+          <div style="font-size:11px;color:#94a3b8;margin:-6px 0 10px">Si todavía no tiene legajo de preceptor/a en ninguna institución, completá estos datos para poder encontrarlo/a por DNI.</div>
+          <div class="form-grid-2">
+            ${formGroup('Apellido',inputH('fu-prec-apellido','text',u?.datosPersonales?.apellido||''))}
+            ${formGroup('Nombres',inputH('fu-prec-nombres','text',u?.datosPersonales?.nombres||''))}
+          </div>
+          ${formGroup('DNI',inputH('fu-prec-dni','text',u?.datosPersonales?.dni||'','ej: 30.123.456'))}
+        </div>
       </div>
       <div id="fu-vinc-padre" style="display:${u&&u.rol==='padre'?'block':'none'}">
         ${formGroup('Hijos/as vinculados (Ctrl+clic para varios)',`<select id="fu-hijos" class="form-input" multiple size="4">${alumnosMulti}</select>`)}
@@ -2929,6 +2945,11 @@ function buildFormUsuario(u){
     </div>`;
 }
 
+function toggleDatosPersonalesNuevoUsuario(tipo){
+  const sel = document.getElementById(tipo==='docente'?'fu-docente':'fu-preceptor');
+  const wrap = document.getElementById(tipo==='docente'?'fu-datos-doc-nuevo':'fu-datos-prec-nuevo');
+  if(wrap) wrap.style.display = (sel&&sel.value) ? 'none' : 'block';
+}
 function actualizarVinculacion(){
   const rol = document.getElementById('fu-rol')?.value;
   ['docente','alumno','preceptor','padre'].forEach(r=>{
@@ -3035,12 +3056,20 @@ function asignarVinculacion(u, rol){
   if(rol==='docente'){
     const id=parseInt(v('fu-docente'));
     if(id) u.docenteId=id;
+    else{
+      const apellido=v('fu-doc-apellido').trim(), nombres=v('fu-doc-nombres').trim(), dni=v('fu-doc-dni').trim();
+      if(apellido||nombres||dni) u.datosPersonales={apellido, nombres, dni};
+    }
   } else if(rol==='alumno'){
     const id=parseInt(v('fu-alumno'));
     if(id) u.alumnoId=id;
   } else if(rol==='preceptor'){
     const id=parseInt(v('fu-preceptor'));
     if(id) u.preceptorId=id;
+    else{
+      const apellido=v('fu-prec-apellido').trim(), nombres=v('fu-prec-nombres').trim(), dni=v('fu-prec-dni').trim();
+      if(apellido||nombres||dni) u.datosPersonales={apellido, nombres, dni};
+    }
   } else if(rol==='padre'){
     const sel=document.getElementById('fu-hijos');
     if(sel) u.hijoIds=[...sel.selectedOptions].map(o=>parseInt(o.value)).filter(Boolean);
