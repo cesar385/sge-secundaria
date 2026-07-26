@@ -1243,8 +1243,8 @@ function intentarReconexionSilenciosaSheets(){
 }
 
 function initUsers(){
-  // Usuarios normales (sólo los de demostración; los creados desde Admin no aparecen acá)
-  const normalUsers = USUARIOS.filter(u=>USUARIOS_DEMO_IDS.has(u.id)).map(u=>`
+  // Usuarios normales (sólo los de demostración, sin el admin; los creados desde Admin tampoco aparecen acá)
+  const normalUsers = USUARIOS.filter(u=>USUARIOS_DEMO_IDS.has(u.id) && u.rol!=='admin').map(u=>`
     <button class="user-btn" onclick="fillLogin('${u.usuario}','${u.clave}')"
       style="${u.estado==='inactivo'?'opacity:0.45;cursor:not-allowed':''}" ${u.estado==='inactivo'?'disabled':''}>
       <div>
