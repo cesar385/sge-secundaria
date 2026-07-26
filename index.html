@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SGE Secundaria — Sistema de Gestión Escolar</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f8fafc; min-height: 100vh; }
@@ -301,7 +302,7 @@
         <input id="inp-pass" class="form-input" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
       </div>
       <div id="login-error" style="display:none" class="alert-danger">⚠️ Usuario o contraseña incorrectos</div>
-      <button id="btn-login" class="btn btn-primary" style="width:100%;padding:13px;font-size:15px" onclick="doLogin()">Ingresar al Sistema</button>
+      <button class="btn btn-primary" style="width:100%;padding:13px;font-size:15px" onclick="doLogin()">Ingresar al Sistema</button>
       <button class="btn btn-ghost" style="width:100%;margin-top:12px;padding:10px" onclick="toggleUsers()">▼ Ver usuarios de prueba</button>
       <div id="users-list" class="users-preview" style="display:none"></div>
     </div>
@@ -905,94 +906,340 @@ function tableHTML(columns,rows,emptyMsg='Sin registros',rowAttrs=null){
 // LOGIN
 // ═══════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════
-// CONEXIÓN AL BACKEND REAL (API propia en Node/Express + Postgres)
+// PERSISTENCIA LIVIANA (localStorage) — sin servidor propio.
+// Guarda/restaura el estado completo del sistema (instituciones, usuarios
+// y los datos de cada institución) para que no se pierda al recargar o
+// cerrar el navegador. No reemplaza una base de datos real, pero evita
+// perder el trabajo de una sesión a otra en el mismo navegador/equipo.
 // ══════════════════════════════════════════════════════════════
-// 👇 Después de desplegar la carpeta /backend en Render (o el hosting que
-// elijas), pegá acá la URL pública que te da el servicio, terminada en /api.
-// Ejemplo: 'https://sge-secundaria-backend.onrender.com/api'
-const API_BASE_URL = 'https://sge-secundaria-backend.onrender.com';
+const SGE_STORAGE_KEY = 'sge_secundaria_estado_v1';
 
-let authToken = null;
-try { authToken = localStorage.getItem('sge_token') || null; } catch (e) {}
-
-// Se pone en true apenas hay un login real contra el servidor. Sirve para
-// saber si conviene seguir mostrando los botones de "usuarios de prueba"
-// con contraseña precargada (solo tiene sentido antes del primer login,
-// porque el servidor nunca vuelve a mandar contraseñas en texto plano).
-let _sesionRealIniciada = false;
-
-async function apiFetch(path, opts = {}) {
-  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
-  if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-  let res;
-  try {
-    res = await fetch(API_BASE_URL + path, Object.assign({}, opts, { headers }));
-  } catch (e) {
-    throw new Error('No se pudo conectar con el servidor. Revisá tu conexión o que el backend esté activo.');
-  }
-  let body = null;
-  try { body = await res.json(); } catch (e) { /* respuesta sin cuerpo */ }
-  if (!res.ok) throw new Error((body && body.error) || ('Error del servidor (HTTP ' + res.status + ')'));
-  return body;
-}
-
-let _ultimoGuardadoOk = null; // fecha ISO del último guardado exitoso contra el servidor
-let _guardando = false;
-
-// Envía TODO lo que el frontend tiene en memoria (INST_DATA/USUARIOS/
-// INSTITUCIONES) al backend. El servidor decide, según el rol del token,
-// qué parte de eso realmente puede guardarse (ver /backend/src/routes-estado.js).
-async function guardarEstado() {
-  if (!authToken || !currentUser) return false; // sin sesión activa, nada que guardar
-  if (_guardando) return false;                  // evita ráfagas de guardados solapados
-  _guardando = true;
-  try {
-    await apiFetch('/estado', { method: 'PUT', body: JSON.stringify({ INST_DATA, USUARIOS, INSTITUCIONES }) });
-    _ultimoGuardadoOk = new Date().toISOString();
+function guardarEstado(){
+  try{
+    const snapshot = {
+      version: 1,
+      guardadoEn: new Date().toISOString(),
+      INST_DATA, USUARIOS, INSTITUCIONES,
+    };
+    localStorage.setItem(SGE_STORAGE_KEY, JSON.stringify(snapshot));
     return true;
-  } catch (e) {
-    console.error('No se pudo guardar el estado en el servidor:', e);
+  }catch(e){
+    console.error('No se pudo guardar el estado del sistema:', e);
     return false;
-  } finally {
-    _guardando = false;
   }
 }
 
-function hayEstadoGuardado() { return !!_ultimoGuardadoOk; }
-function fechaUltimoGuardado() { return _ultimoGuardadoOk; }
+function hayEstadoGuardado(){
+  try{ return !!localStorage.getItem(SGE_STORAGE_KEY); }catch(e){ return false; }
+}
 
-// Versión "manual" para el botón de Configuración: espera la respuesta real
-// del servidor antes de mostrar el toast de éxito o error.
-async function guardarEstadoManual(){
-  const ok = await guardarEstado();
+function fechaUltimoGuardado(){
+  try{
+    const raw = localStorage.getItem(SGE_STORAGE_KEY);
+    if(!raw) return null;
+    const snap = JSON.parse(raw);
+    return snap.guardadoEn || null;
+  }catch(e){ return null; }
+}
+
+// Se llama una sola vez al cargar la página, ANTES de initUsers(), para que el
+// estado guardado (si existe) reemplace a los datos de demostración.
+function cargarEstadoGuardado(){
+  try{
+    const raw = localStorage.getItem(SGE_STORAGE_KEY);
+    if(!raw) return false;
+    const snap = JSON.parse(raw);
+    if(snap.INST_DATA) INST_DATA = snap.INST_DATA;
+    if(Array.isArray(snap.USUARIOS)){ USUARIOS.length=0; snap.USUARIOS.forEach(u=>USUARIOS.push(u)); }
+    if(Array.isArray(snap.INSTITUCIONES)){ INSTITUCIONES.length=0; snap.INSTITUCIONES.forEach(i=>INSTITUCIONES.push(i)); }
+    return true;
+  }catch(e){
+    console.error('No se pudo cargar el estado guardado, se usarán los datos de demostración:', e);
+    return false;
+  }
+}
+
+// Borra el estado guardado del navegador (no afecta a los datos en memoria de la sesión actual)
+function borrarEstadoGuardado(){
+  try{ localStorage.removeItem(SGE_STORAGE_KEY); return true; }catch(e){ return false; }
+}
+
+// ══════════════════════════════════════════════════════════════
+// GOOGLE SHEETS — BACKEND DE PERSISTENCIA COMPARTIDA
+// ══════════════════════════════════════════════════════════════
+// Guarda TODO el sistema (instituciones, usuarios y los datos de cada
+// institución) en una planilla de Google Sheets, con una hoja por cada
+// entidad (docentes, alumnos, cursos, etc.) más USUARIOS e INSTITUCIONES.
+// Cada fila guarda el registro completo en JSON (columna _json) para no
+// perder ningún campo ni tipo de dato, y algunas columnas de apoyo
+// (institucionId, id, resumen) sólo para poder mirar los datos desde la
+// planilla. Para editar datos hay que seguir usando el sistema: los
+// cambios manuales en la planilla NO se leen automáticamente, sólo al
+// tocar "Cargar desde Sheets".
+// ══════════════════════════════════════════════════════════════
+const SGE_SHEETS_CFG_KEY = 'sge_secundaria_sheets_cfg_v1';
+const ENTIDADES_INST = ['docentes','alumnos','cursos','notas','asistencias','licencias',
+  'designaciones','plazas','solicitudesPlaza','preceptores','notificaciones','reintegros',
+  'conceptosPeriodo','justificaciones','comunicados'];
+const HOJAS_GLOBALES = ['USUARIOS','INSTITUCIONES'];
+
+let sheetsCfg = { clientId:'', spreadsheetId:'', conectado:false };
+let sheetsTokenClient = null;
+let sheetsAccessToken = null;
+let sheetsSyncing = false;
+let sheetsPendienteSync = false;
+let sheetsUltimoSync = null;
+let sheetsUltimoError = null;
+let _sheetsAutoSyncCounter = 0;
+
+function cargarConfigSheets(){
+  try{
+    const raw = localStorage.getItem(SGE_SHEETS_CFG_KEY);
+    if(raw) sheetsCfg = Object.assign(sheetsCfg, JSON.parse(raw));
+    sheetsUltimoSync = localStorage.getItem('sge_sheets_ultimo_sync') || null;
+  }catch(e){ /* sin config previa */ }
+}
+
+function guardarConfigSheets(){
+  try{ localStorage.setItem(SGE_SHEETS_CFG_KEY, JSON.stringify(sheetsCfg)); }catch(e){}
+}
+
+function sheetsConfigurado(){ return !!(sheetsCfg.clientId && sheetsCfg.spreadsheetId); }
+function sheetsListoParaUsar(){ return sheetsConfigurado() && !!sheetsAccessToken; }
+
+function _gisTokenCallback(resp){
+  if(resp.error){
+    console.error('Error de autorización de Google Sheets:', resp);
+    sheetsUltimoError = 'No se pudo autorizar el acceso a Google (' + resp.error + ')';
+    navigate('configuracion');
+    showToast('⚠️ No se pudo autorizar Google Sheets','#b91c1c');
+    return;
+  }
+  sheetsAccessToken = resp.access_token;
+  sheetsCfg.conectado = true;
+  sheetsUltimoError = null;
+  guardarConfigSheets();
   navigate('configuracion');
-  if(ok) showToast('✅ Datos guardados en el servidor','#166534');
-  else showToast('⚠️ No se pudo guardar en el servidor. Revisá tu conexión.','#991b1b');
+  showToast('✅ Conectado a Google Sheets','#166534');
 }
 
-// Trae el estado real (INST_DATA/USUARIOS/INSTITUCIONES) desde el backend y
-// reemplaza los datos de demostración que trae el archivo. Se llama una sola
-// vez, justo después de un login exitoso.
-async function cargarEstadoDesdeServidor() {
-  const data = await apiFetch('/estado');
-  INST_DATA = data.INST_DATA || {};
-  USUARIOS.length = 0; (data.USUARIOS || []).forEach((u) => USUARIOS.push(u));
-  INSTITUCIONES.length = 0; (data.INSTITUCIONES || []).forEach((i) => INSTITUCIONES.push(i));
-  _ultimoGuardadoOk = data.guardadoEn || new Date().toISOString();
+function initSheetsTokenClient(){
+  if(!(window.google && google.accounts && google.accounts.oauth2)) return null;
+  if(sheetsTokenClient) return sheetsTokenClient;
+  sheetsTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: sheetsCfg.clientId,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    callback: _gisTokenCallback,
+  });
+  return sheetsTokenClient;
 }
 
-// Ya no tiene sentido "borrar datos guardados en este navegador": los datos
-// viven en el servidor. Se deja para no romper el botón viejo de la UI.
-function borrarEstadoGuardado() {
-  showToast('ℹ️ Los datos ahora viven en el servidor compartido, no en este navegador. No hay nada local para borrar.', '#1a3a5c');
-  return false;
+function conectarGoogleSheets(){
+  const clientId = (document.getElementById('sheets-client-id')?.value||'').trim();
+  const spreadsheetId = (document.getElementById('sheets-spreadsheet-id')?.value||'').trim();
+  if(!clientId || !spreadsheetId){
+    showToast('⚠️ Completá el Client ID y el ID de la planilla','#b91c1c');
+    return;
+  }
+  sheetsCfg.clientId = clientId;
+  sheetsCfg.spreadsheetId = spreadsheetId;
+  guardarConfigSheets();
+  sheetsTokenClient = null; // recrear con el client_id nuevo
+  const tc = initSheetsTokenClient();
+  if(!tc){
+    showToast('⚠️ Todavía no cargó Google Identity Services. Esperá un instante e intentá de nuevo.','#b91c1c');
+    return;
+  }
+  tc.requestAccessToken({ prompt:'consent' });
+}
+
+function desconectarGoogleSheets(){
+  sheetsCfg.conectado = false;
+  sheetsAccessToken = null;
+  guardarConfigSheets();
+  navigate('configuracion');
+  showToast('🔌 Desconectado de Google Sheets (la planilla no se borra)','#334155');
+}
+
+async function _sheetsFetch(path, options={}){
+  if(!sheetsAccessToken) throw new Error('Sin token de acceso a Google Sheets');
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetsCfg.spreadsheetId}${path}`, {
+    ...options,
+    headers: { 'Authorization':`Bearer ${sheetsAccessToken}`, 'Content-Type':'application/json', ...(options.headers||{}) },
+  });
+  if(!res.ok){
+    const txt = await res.text().catch(()=>'');
+    throw new Error(`HTTP ${res.status}: ${txt.slice(0,300)}`);
+  }
+  return res.json();
+}
+
+// Etiqueta corta y legible para mostrar en la planilla (no se usa para reconstruir datos)
+function resumenEntidadSheets(o){
+  if(!o) return '';
+  const partes = [
+    (o.apellido && o.nombres) ? `${o.apellido}, ${o.nombres}` : o.nombre,
+    o.materia, o.curso, o.cargo, o.nroPlaza, o.asunto, o.tipo, o.motivo, o.estado,
+  ].filter(Boolean);
+  return partes.slice(0,3).join(' — ').slice(0,120);
+}
+
+async function asegurarEstructuraHojas(){
+  const meta = await _sheetsFetch('?fields=sheets.properties.title');
+  const existentes = new Set((meta.sheets||[]).map(s=>s.properties.title));
+  const todas = [...HOJAS_GLOBALES, ...ENTIDADES_INST];
+  const faltantes = todas.filter(t=>!existentes.has(t));
+  if(faltantes.length){
+    await _sheetsFetch(':batchUpdate', {
+      method:'POST',
+      body: JSON.stringify({ requests: faltantes.map(title=>({ addSheet:{ properties:{ title } } })) }),
+    });
+  }
+  const data = [
+    ...HOJAS_GLOBALES.map(h=>({ range:`${h}!A1:C1`, values:[['_json','id','resumen']] })),
+    ...ENTIDADES_INST.map(h=>({ range:`${h}!A1:D1`, values:[['_json','institucionId','id','resumen']] })),
+  ];
+  await _sheetsFetch('/values:batchUpdate', {
+    method:'POST',
+    body: JSON.stringify({ valueInputOption:'RAW', data }),
+  });
+}
+
+// Sube TODO el estado actual (INST_DATA + USUARIOS + INSTITUCIONES) a la planilla,
+// reemplazando el contenido de cada hoja.
+async function guardarEstadoEnSheets(){
+  if(!sheetsListoParaUsar()) return false;
+  if(sheetsSyncing){ sheetsPendienteSync = true; return false; }
+  sheetsSyncing = true;
+  try{
+    await asegurarEstructuraHojas();
+    const todasHojas = [...HOJAS_GLOBALES, ...ENTIDADES_INST];
+    await _sheetsFetch('/values:batchClear', {
+      method:'POST',
+      body: JSON.stringify({ ranges: todasHojas.map(h=>`${h}!A2:D200000`) }),
+    });
+    const data = [];
+    ENTIDADES_INST.forEach(tipo=>{
+      const filas = [];
+      Object.keys(INST_DATA).forEach(instId=>{
+        const arr = (INST_DATA[instId] && INST_DATA[instId][tipo]) || [];
+        arr.forEach(o=>{
+          filas.push([JSON.stringify(o), instId, (o.id!=null?String(o.id):''), resumenEntidadSheets(o)]);
+        });
+      });
+      if(filas.length) data.push({ range:`${tipo}!A2`, values: filas });
+    });
+    if(USUARIOS.length){
+      data.push({ range:`USUARIOS!A2`, values: USUARIOS.map(u=>[JSON.stringify(u), (u.id!=null?String(u.id):''), (u.nombre||u.usuario||'')]) });
+    }
+    if(INSTITUCIONES.length){
+      data.push({ range:`INSTITUCIONES!A2`, values: INSTITUCIONES.map(i=>[JSON.stringify(i), (i.id!=null?String(i.id):''), (i.nombre||'')]) });
+    }
+    if(data.length){
+      await _sheetsFetch('/values:batchUpdate', {
+        method:'POST',
+        body: JSON.stringify({ valueInputOption:'RAW', data }),
+      });
+    }
+    sheetsUltimoSync = new Date().toISOString();
+    sheetsUltimoError = null;
+    try{ localStorage.setItem('sge_sheets_ultimo_sync', sheetsUltimoSync); }catch(e){}
+    return true;
+  }catch(e){
+    console.error('Error al sincronizar con Google Sheets:', e);
+    sheetsUltimoError = String(e.message||e);
+    if(sheetsUltimoError.includes('401')) sheetsAccessToken = null; // token vencido
+    return false;
+  }finally{
+    sheetsSyncing = false;
+    if(sheetsPendienteSync){ sheetsPendienteSync = false; setTimeout(guardarEstadoEnSheets, 500); }
+  }
+}
+
+// Baja TODO el estado desde la planilla, reemplazando lo que hay en memoria y en localStorage.
+async function cargarEstadoDesdeSheets(){
+  if(!sheetsListoParaUsar()){ showToast('⚠️ Conectate a Google Sheets primero','#b91c1c'); return false; }
+  try{
+    showToast('⏳ Cargando datos desde Google Sheets...','#0f766e');
+    const todasHojas = [...HOJAS_GLOBALES, ...ENTIDADES_INST];
+    const qs = todasHojas.map(h=>`ranges=${encodeURIComponent(h+'!A2:D200000')}`).join('&');
+    const resp = await _sheetsFetch(`/values:batchGet?${qs}`);
+    const porHoja = {};
+    (resp.valueRanges||[]).forEach((vr,idx)=>{ porHoja[todasHojas[idx]] = vr.values || []; });
+
+    const parseJSONcol = (fila)=>{ try{ return JSON.parse(fila[0]); }catch(e){ return null; } };
+    const nuevosUsuarios = (porHoja['USUARIOS']||[]).map(parseJSONcol).filter(Boolean);
+    const nuevasInst = (porHoja['INSTITUCIONES']||[]).map(parseJSONcol).filter(Boolean);
+
+    if(!nuevosUsuarios.length && !nuevasInst.length){
+      showToast('⚠️ La planilla todavía está vacía. Usá "Subir estado actual" primero.','#854d0e');
+      return false;
+    }
+
+    const nuevoInstData = {};
+    nuevasInst.forEach(i=>{ nuevoInstData[i.id] = createEmptyInstData(); });
+    ENTIDADES_INST.forEach(tipo=>{
+      (porHoja[tipo]||[]).forEach(fila=>{
+        const obj = parseJSONcol(fila);
+        if(!obj) return;
+        const instId = fila[1];
+        if(!nuevoInstData[instId]) nuevoInstData[instId] = createEmptyInstData();
+        nuevoInstData[instId][tipo].push(obj);
+      });
+    });
+
+    USUARIOS.length = 0; nuevosUsuarios.forEach(u=>USUARIOS.push(u));
+    INSTITUCIONES.length = 0; nuevasInst.forEach(i=>INSTITUCIONES.push(i));
+    INST_DATA = nuevoInstData;
+    const primeraInstId = INSTITUCIONES[0] ? INSTITUCIONES[0].id : Object.keys(INST_DATA)[0];
+    DB = INST_DATA[currentInstitucionId] || INST_DATA[primeraInstId] || createEmptyInstData();
+
+    guardarEstado(); // refleja lo bajado también en localStorage
+    sheetsUltimoError = null;
+    showToast('✅ Datos cargados desde Google Sheets','#166534');
+    if(typeof renderApp === 'function' && currentUser) renderApp();
+    return true;
+  }catch(e){
+    console.error('Error al cargar desde Google Sheets:', e);
+    sheetsUltimoError = String(e.message||e);
+    showToast('⚠️ No se pudo cargar desde Google Sheets','#b91c1c');
+    return false;
+  }
+}
+
+// Guarda ahora mismo en localStorage y (si está conectado) también en Sheets, sin esperar el ciclo de autoguardado.
+function guardarEstadoInmediato(){
+  guardarEstado();
+  if(sheetsCfg.conectado && sheetsAccessToken) guardarEstadoEnSheets();
+}
+
+// Se llama cada 5s desde el autoguardado. Guarda local siempre; sincroniza con
+// Sheets cada ~6 ciclos (~30s) para no consumir de más la cuota de la API.
+function autoguardadoTick(){
+  guardarEstado();
+  _sheetsAutoSyncCounter++;
+  if(sheetsCfg.conectado && sheetsAccessToken && (_sheetsAutoSyncCounter % 6 === 0)){
+    guardarEstadoEnSheets();
+  }
+}
+
+// Al cargar la página, si ya estuvo conectado antes en este navegador, intenta
+// reobtener el token sin mostrar el popup de consentimiento (silencioso).
+// Si Google no puede renovarlo sin interacción, el usuario deberá reconectar
+// manualmente desde Configuración — no rompe nada, sólo no auto-sincroniza.
+function intentarReconexionSilenciosaSheets(){
+  if(!(sheetsCfg.conectado && sheetsCfg.clientId && sheetsCfg.spreadsheetId)) return;
+  setTimeout(()=>{
+    const tc = initSheetsTokenClient();
+    if(!tc) return;
+    try{ tc.requestAccessToken({ prompt:'' }); }
+    catch(e){ console.warn('No se pudo reconectar en silencio a Google Sheets:', e); }
+  }, 1000);
 }
 
 function initUsers(){
-  // Usuarios normales (solo se pueden mostrar con contraseña precargada los
-  // que todavía tienen "clave" en memoria — es decir, antes del primer login
-  // real. Una vez que el estado viene del servidor, ya no viaja la clave).
-  const normalUsers = USUARIOS.filter(u=>u.clave).map(u=>`
+  // Usuarios normales
+  const normalUsers = USUARIOS.map(u=>`
     <button class="user-btn" onclick="fillLogin('${u.usuario}','${u.clave}')"
       style="${u.estado==='inactivo'?'opacity:0.45;cursor:not-allowed':''}" ${u.estado==='inactivo'?'disabled':''}>
       <div>
@@ -1018,12 +1265,8 @@ function initUsers(){
       <span class="badge" style="background:#0e7490;color:#fff;font-size:10px">🏫 Institución</span>
     </button>`).join('');
 
-  const sinDemo = !normalUsers && !instUsers
-    ? '<div style="font-size:12px;color:#94a3b8;padding:8px 4px">No hay contraseñas de prueba para mostrar (ya hubo un inicio de sesión real). Ingresá tu usuario y contraseña arriba.</div>'
-    : '';
-
-  document.getElementById('users-list').innerHTML = sinDemo || (normalUsers +
-    (instUsers ? `<div style="font-size:10px;font-weight:700;color:#0e7490;text-transform:uppercase;letter-spacing:0.5px;padding:6px 2px 2px">— Acceso por institución —</div>${instUsers}` : ''));
+  document.getElementById('users-list').innerHTML = normalUsers +
+    (instUsers ? `<div style="font-size:10px;font-weight:700;color:#0e7490;text-transform:uppercase;letter-spacing:0.5px;padding:6px 2px 2px">— Acceso por institución —</div>${instUsers}` : '');
 }
 function toggleUsers(){
   const el=document.getElementById('users-list');
@@ -1070,45 +1313,58 @@ function reintentarVinculacion(){
     showToast('Todavía no se detecta una plaza asignada. Probá de nuevo más tarde.','#854d0e');
   }
 }
-async function doLogin(){
+function doLogin(){
   const u=document.getElementById('inp-user').value.trim();
   const p=document.getElementById('inp-pass').value.trim();
-  const el=document.getElementById('login-error');
-  el.style.display='none';
 
-  if(!u||!p){
-    el.textContent='⚠️ Completá usuario y contraseña';
-    el.style.display='block';
-    return;
-  }
-
-  const btn = document.getElementById('btn-login');
-  if(btn){ btn.disabled = true; btn.textContent = 'Ingresando…'; }
-
-  try{
-    const resp = await apiFetch('/auth/login', { method:'POST', body: JSON.stringify({ usuario:u, clave:p }) });
-    authToken = resp.token;
-    try{ localStorage.setItem('sge_token', authToken); localStorage.setItem('sge_user', JSON.stringify(resp.user)); }catch(e){}
-    currentUser = resp.user;
-    _sesionRealIniciada = true;
-
-    await cargarEstadoDesdeServidor();
-
-    if(currentUser.institucionId){
-      currentInstitucionId = currentUser.institucionId;
-      if(!INST_DATA[currentUser.institucionId]) INST_DATA[currentUser.institucionId] = createEmptyInstData();
-      DB = INST_DATA[currentUser.institucionId];
+  // 1. Buscar en USUARIOS normales
+  const found=USUARIOS.find(x=>x.usuario===u&&x.clave===p);
+  if(found){
+    if(found.estado==='inactivo'){
+      const el=document.getElementById('login-error');
+      el.textContent='⊘ Este usuario está inactivo. Contactá al administrador.';
+      el.style.display='block';
+      return;
+    }
+    currentUser=found;
+    recalcularInstitucionUsuario(found);
+    if(found.institucionId){
+      currentInstitucionId = found.institucionId;
+      if(!INST_DATA[found.institucionId]) INST_DATA[found.institucionId] = createEmptyInstData();
+      DB = INST_DATA[found.institucionId];
     } else {
+      // Todavía no vinculado a ninguna institución: DB "vacía" de resguardo para
+      // evitar errores si algo la consulta antes de mostrar la pantalla correspondiente.
       currentInstitucionId = null;
       DB = createEmptyInstData();
     }
     _bootApp();
-  }catch(e){
-    el.textContent = '⚠️ ' + (e.message || 'Usuario o contraseña incorrectos');
-    el.style.display='block';
-  }finally{
-    if(btn){ btn.disabled = false; btn.textContent = 'Ingresar'; }
+    return;
   }
+
+  // 2. Buscar en INSTITUCIONES (acceso directo de la escuela)
+  const inst=INSTITUCIONES.find(i=>i.usuario===u&&i.clave===p&&i.estado==='activa');
+  if(inst){
+    // Crear usuario virtual para la sesión
+    currentUser={
+      id: 'inst_'+inst.id,
+      usuario: inst.usuario,
+      rol: 'institucion',
+      nombre: inst.nombre,
+      institucionId: inst.id,
+      estado: 'activo',
+    };
+    currentInstitucionId = inst.id;
+    if(!INST_DATA[inst.id]) INST_DATA[inst.id] = createEmptyInstData();
+    DB = INST_DATA[inst.id];
+    _bootApp();
+    return;
+  }
+
+  // 3. No encontrado
+  const el=document.getElementById('login-error');
+  el.textContent='⚠️ Usuario o contraseña incorrectos';
+  el.style.display='block';
 }
 
 function _bootApp(){
@@ -1119,14 +1375,12 @@ function _bootApp(){
   setTimeout(()=>checkAutomatismos(), 500);
 }
 function doLogout(){
-  guardarEstado();
-  authToken = null;
-  try{ localStorage.removeItem('sge_token'); localStorage.removeItem('sge_user'); }catch(e){}
+  guardarEstadoInmediato();
   currentUser=null;
   currentInstitucionId=null;
   docAcademicoInstId=null;
   academicoBannerHTML='';
-  DB = INST_DATA[1] || Object.values(INST_DATA)[0] || createEmptyInstData(); // reset to default
+  DB = INST_DATA[1]; // reset to default
   document.getElementById('login-screen').style.display='flex';
   document.getElementById('app-screen').style.display='none';
   document.getElementById('inp-user').value='';
@@ -1993,26 +2247,72 @@ function renderConfiguracion(){
           <span style="color:#334155">${v}</span>
         </div>`).join('')}
       <div style="margin-top:12px;font-size:11px;color:#94a3b8;line-height:1.6">
-        💾 Los datos se guardan en un <strong>servidor propio compartido</strong> (backend Node/Express + base de datos).
-        Podés entrar desde cualquier computadora o navegador y vas a ver la misma información, siempre actualizada.
+        💾 Los datos se guardan automáticamente en el almacenamiento local de <strong>este navegador y este equipo</strong>
+        (no hay servidor ni base de datos compartida). Si abrís el sistema desde otra computadora o navegador, no vas a ver
+        estos mismos datos. Borrar el historial/caché del navegador también borra la información guardada.
       </div>
     </div>
 
     <!-- ── PERSISTENCIA DE DATOS ── -->
     <div style="background:#fff;border-radius:12px;padding:20px 24px;box-shadow:0 1px 6px rgba(0,0,0,0.06);margin-bottom:24px;border-left:4px solid #0f766e">
-      <h3 style="font-size:15px;font-weight:800;color:#0f766e;margin:0 0 6px">💾 Persistencia de datos (servidor)</h3>
+      <h3 style="font-size:15px;font-weight:800;color:#0f766e;margin:0 0 6px">💾 Persistencia de datos (local)</h3>
       <div style="font-size:12px;color:#64748b;margin-bottom:14px;line-height:1.6">
-        El sistema guarda automáticamente en el servidor cada 5 segundos y al cerrar la pestaña. También podés forzar
-        un guardado manual.
+        El sistema guarda automáticamente cada 5 segundos y al cerrar la pestaña. También podés forzar un guardado
+        o volver a cargar los datos de fábrica manualmente.
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
         <div style="font-size:13px;color:#334155">
-          <strong>Estado:</strong> ${hayEstadoGuardado()?'<span style="color:#166534">✅ Datos guardados en el servidor</span>':'<span style="color:#854d0e">⚠️ Todavía no se confirmó ningún guardado en esta sesión</span>'}
+          <strong>Estado:</strong> ${hayEstadoGuardado()?'<span style="color:#166534">✅ Hay datos guardados en este navegador</span>':'<span style="color:#854d0e">⚠️ Todavía no se guardó nada en este navegador</span>'}
         </div>
         ${fechaUltimoGuardado()?`<div style="font-size:12px;color:#94a3b8">Último guardado: ${new Date(fechaUltimoGuardado()).toLocaleString('es-AR')}</div>`:''}
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn btn-success btn-sm" onclick="guardarEstadoManual()">💾 Guardar ahora</button>
+        <button class="btn btn-success btn-sm" onclick="guardarEstadoInmediato();navigate('configuracion');showToast('✅ Datos guardados en este navegador','#166534')">💾 Guardar ahora</button>
+        <button class="btn btn-danger btn-sm" onclick="if(confirm('¿Borrar los datos guardados en este navegador? La próxima vez que se recargue la página se usarán los datos de demostración originales. Esto NO afecta lo que ves ahora mismo en pantalla.')){borrarEstadoGuardado();showToast('🗑️ Datos guardados eliminados de este navegador','#991b1b');navigate('configuracion');}">🗑️ Borrar datos guardados</button>
+      </div>
+    </div>
+
+    <!-- ── GOOGLE SHEETS ── -->
+    <div style="background:#fff;border-radius:12px;padding:20px 24px;box-shadow:0 1px 6px rgba(0,0,0,0.06);margin-bottom:24px;border-left:4px solid #1a73e8">
+      <h3 style="font-size:15px;font-weight:800;color:#1a73e8;margin:0 0 6px">☁️ Sincronización con Google Sheets</h3>
+      <div style="font-size:12px;color:#64748b;margin-bottom:14px;line-height:1.6">
+        Guarda todo el sistema (docentes, alumnos, cursos, notas, asistencias, licencias, designaciones, plazas,
+        preceptores, usuarios, instituciones, etc.) en una planilla de Google Sheets propia, con una hoja por
+        cada tipo de dato. Sirve como respaldo fuera de este navegador y para compartir el mismo estado entre
+        equipos. Una vez conectado, se sincroniza solo cada ~30 segundos; también podés forzarlo.
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:11px;color:#64748b;line-height:1.7">
+        <strong>Cómo obtenerlos (una sola vez):</strong><br>
+        1) Creá un proyecto en <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> y habilitá la <em>Google Sheets API</em>.<br>
+        2) Configurá la pantalla de consentimiento OAuth y creá credenciales tipo <em>ID de cliente de OAuth 2.0 — Aplicación web</em>,
+        agregando este origen (el dominio donde abrís este archivo) en "Orígenes de JavaScript autorizados". Copiá el <strong>Client ID</strong>.<br>
+        3) Creá una planilla en Google Sheets (vacía) y copiá el <strong>ID</strong> desde su URL:
+        <code>docs.google.com/spreadsheets/d/<u>ESTE_ES_EL_ID</u>/edit</code>.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;max-width:520px;margin-bottom:14px">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Client ID de Google</label>
+          <input id="sheets-client-id" type="text" class="form-input" placeholder="xxxxxxxxxxxx.apps.googleusercontent.com" value="${sheetsCfg.clientId||''}">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">ID de la planilla (Spreadsheet ID)</label>
+          <input id="sheets-spreadsheet-id" type="text" class="form-input" placeholder="1AbCDeFGhiJKlmNoPQRstuVWxyz..." value="${sheetsCfg.spreadsheetId||''}">
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+        <div style="font-size:13px;color:#334155">
+          <strong>Estado:</strong> ${sheetsCfg.conectado && sheetsAccessToken
+            ? '<span style="color:#166534">✅ Conectado</span>'
+            : (sheetsCfg.conectado ? '<span style="color:#854d0e">⚠️ Conectado antes, pero hace falta reautorizar</span>' : '<span style="color:#94a3b8">○ No conectado</span>')}
+        </div>
+        ${sheetsUltimoSync?`<div style="font-size:12px;color:#94a3b8">Último envío a Sheets: ${new Date(sheetsUltimoSync).toLocaleString('es-AR')}</div>`:''}
+        ${sheetsUltimoError?`<div style="font-size:12px;color:#b91c1c">⚠️ ${sheetsUltimoError}</div>`:''}
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="conectarGoogleSheets()">🔗 ${sheetsCfg.conectado?'Reconectar':'Conectar'} con Google</button>
+        <button class="btn btn-success btn-sm" onclick="guardarEstadoEnSheets().then(ok=>{navigate('configuracion');showToast(ok?'✅ Estado subido a Google Sheets':'⚠️ No se pudo subir a Sheets', ok?'#166534':'#b91c1c')})">⬆️ Subir estado actual</button>
+        <button class="btn btn-warning btn-sm" onclick="if(confirm('Esto reemplaza TODO lo que ves ahora mismo en pantalla por lo que esté guardado en la planilla de Google Sheets. ¿Continuar?')){cargarEstadoDesdeSheets().then(()=>navigate('configuracion'))}">⬇️ Cargar desde Sheets</button>
+        ${sheetsCfg.conectado?'<button class="btn btn-danger btn-sm" onclick="desconectarGoogleSheets()">🔌 Desconectar</button>':''}
       </div>
     </div>
 
@@ -2174,7 +2474,7 @@ function ejecutarReset(tipo){
     showToast('💣 Sistema reiniciado. Solo queda el usuario admin.','#7f1d1d');
     doLogout();
   }
-  guardarEstado();
+  guardarEstadoInmediato();
 }
 
 function renderInstituciones(){
@@ -8818,48 +9118,25 @@ function saveComunicado(){
 // ═══════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════
-// 1) Arma el panel de login con los datos de ejemplo que trae el archivo
-//    (solo sirven como accesos rápidos de demo hasta el primer login real).
+// 1) Si hay datos guardados en este navegador de una sesión anterior, los carga
+//    (reemplazando los datos de demostración) antes de armar la pantalla de login.
+const _seCargoEstadoPrevio = cargarEstadoGuardado();
+
+// 1.b) Config de Google Sheets guardada en este navegador (si se conectó antes)
+cargarConfigSheets();
+intentarReconexionSilenciosaSheets();
+
+// 2) Autoguardado: cada 5s (local siempre; a Sheets cada ~30s si está conectado)
+// y también justo antes de cerrar/recargar la pestaña.
+setInterval(autoguardadoTick, 5000);
+window.addEventListener('beforeunload', guardarEstado);
+window.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') guardarEstadoInmediato(); });
+
 initUsers();
 
-// 2) Autoguardado contra el backend: cada 5s y también justo antes de
-//    cerrar/recargar la pestaña. Si no hay sesión activa, guardarEstado()
-//    simplemente no hace nada (ver definición más arriba).
-setInterval(guardarEstado, 5000);
-window.addEventListener('beforeunload', guardarEstado);
-window.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') guardarEstado(); });
-
-// 3) Si había un token guardado de una sesión anterior (no cerró sesión,
-//    solo cerró/recargó la pestaña), intenta retomarla automáticamente.
-(async function intentarRetomarSesion(){
-  if(!authToken) return;
-  let usuarioGuardado = null;
-  try{ usuarioGuardado = JSON.parse(localStorage.getItem('sge_user')||'null'); }catch(e){}
-  if(!usuarioGuardado){ authToken = null; return; }
-
-  try{
-    currentUser = usuarioGuardado;
-    _sesionRealIniciada = true;
-    await cargarEstadoDesdeServidor(); // si el token venció o es inválido, esto tira error (401)
-
-    if(currentUser.institucionId){
-      currentInstitucionId = currentUser.institucionId;
-      if(!INST_DATA[currentUser.institucionId]) INST_DATA[currentUser.institucionId] = createEmptyInstData();
-      DB = INST_DATA[currentUser.institucionId];
-    } else {
-      currentInstitucionId = null;
-      DB = createEmptyInstData();
-    }
-    _bootApp();
-    console.log('%c🔐 SGE Secundaria: sesión retomada automáticamente.','color:#166534;font-weight:bold');
-  }catch(e){
-    // Token vencido/ inválido: se limpia y se deja la pantalla de login normal.
-    authToken = null; currentUser = null;
-    try{ localStorage.removeItem('sge_token'); localStorage.removeItem('sge_user'); }catch(err){}
-    initUsers();
-  }
-})();
-
+if(_seCargoEstadoPrevio){
+  console.log('%c📦 SGE Secundaria: se restauró el estado guardado del navegador.','color:#166534;font-weight:bold');
+}
 </script>
 </body>
 </html>
