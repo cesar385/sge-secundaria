@@ -374,6 +374,11 @@ let USUARIOS = [
   {id:10, usuario:"director1",  clave:"pass123",  rol:"director",   nombre:"Marcelo Ibarra",          estado:"activo",                 institucionId:1},
   {id:11, usuario:"secretaria1",clave:"pass123",  rol:"secretario", nombre:"Patricia Núñez",          estado:"activo",                 institucionId:1},
 ];
+// IDs de los usuarios de demostración originales. Se usa para que la lista de
+// "usuarios de prueba" del login sólo muestre estos accesos precargados y
+// nunca los usuarios reales que se vayan creando desde el panel de Admin
+// (evita exponer sus contraseñas en la pantalla de login).
+const USUARIOS_DEMO_IDS = new Set(USUARIOS.map(u=>u.id));
 const ROL_COLOR  = {admin:"#1a3a5c",docente:"#1a5c3a",alumno:"#3a1a5c",padre:"#5c3a1a",preceptor:"#0f766e",director:"#4c1d95",secretario:"#b45309",institucion:"#0e7490"};
 const ROL_LABEL  = {admin:"Administrador",docente:"Docente",alumno:"Alumno/a",padre:"Padre / Tutor",preceptor:"Preceptor/a",director:"Director/a",secretario:"Secretario/a",institucion:"Institución"};
 const SIDEBAR_COLOR = {admin:"#1a3a5c",docente:"#1a5c3a",alumno:"#3a1a5c",padre:"#5c3a1a",preceptor:"#0f766e",director:"#4c1d95",secretario:"#b45309",institucion:"#0e7490"};
@@ -1238,8 +1243,8 @@ function intentarReconexionSilenciosaSheets(){
 }
 
 function initUsers(){
-  // Usuarios normales
-  const normalUsers = USUARIOS.map(u=>`
+  // Usuarios normales (sólo los de demostración; los creados desde Admin no aparecen acá)
+  const normalUsers = USUARIOS.filter(u=>USUARIOS_DEMO_IDS.has(u.id)).map(u=>`
     <button class="user-btn" onclick="fillLogin('${u.usuario}','${u.clave}')"
       style="${u.estado==='inactivo'?'opacity:0.45;cursor:not-allowed':''}" ${u.estado==='inactivo'?'disabled':''}>
       <div>
