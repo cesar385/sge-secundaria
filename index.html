@@ -5300,6 +5300,21 @@ function actualizarCamposDesigDesdePlaza(){
   if(elCurso) elCurso.value=pl.curso||'';
   if(elHoras) elHoras.value=pl.horasCatedra||0;
 }
+// Cargos administrativos (Director/a, Vice Director/a, Secretario/a): no están a cargo
+// de un curso/división específico, así que el campo Curso deja de ser obligatorio y
+// se preselecciona en "No aplica".
+const CARGOS_SIN_CURSO_OBLIGATORIO = ['Director/a','Vice Director/a','Secretario/a'];
+function actualizarCursoSegunCargo(){
+  const cargo = v('f-cargo');
+  const esAdmin = CARGOS_SIN_CURSO_OBLIGATORIO.includes(cargo);
+  const selCurso = document.getElementById('f-curso');
+  const cont = document.getElementById('fg-curso');
+  if(selCurso && esAdmin) selCurso.value='';
+  if(cont){
+    const label = cont.querySelector('.form-label');
+    if(label) label.innerHTML = 'Curso' + (esAdmin ? '' : '<span style="color:#ef4444"> *</span>');
+  }
+}
 function openDesig(plazaId){
   const plazaPref = plazaId ? DB.plazas.find(p=>p.id===plazaId) : null;
   const docOpts=DB.docentes.filter(d=>d.estado==='activo'||d.estado==='licencia').map(d=>`<option value="${d.id}">${d.nombre}${d.dni?' — DNI '+d.dni:''}${d.estado==='licencia'?' (en licencia)':''}</option>`).join('')
@@ -5308,7 +5323,7 @@ function openDesig(plazaId){
         usuariosPendientesVinculacion('docente').map(u=>`<option value="nuevo:${u.id}">${u.datosPersonales.apellido||''}, ${u.datosPersonales.nombres||u.nombre} — DNI ${u.datosPersonales.dni||'sin DNI'} (@${u.usuario})</option>`).join('')+
         `</optgroup>`
       : '');
-  const cursoOpts=DB.cursos.map(c=>`<option value="${c.nombre}"${plazaPref&&c.nombre===plazaPref.curso?' selected':''}>${c.nombre}</option>`).join('');
+  const cursoOpts=`<option value="">— No aplica (cargo administrativo) —</option>`+DB.cursos.map(c=>`<option value="${c.nombre}"${plazaPref&&c.nombre===plazaPref.curso?' selected':''}>${c.nombre}</option>`).join('');
   const carOpts=CARACTERES.map(c=>`<option value="${c}">${c}</option>`).join('');
   // Para el titular: docentes en estado activo o licencia (titulares de plaza)
   const titularOpts=`<option value="">— No aplica (Cargo Vacante) —</option>`+
@@ -5347,10 +5362,11 @@ function openDesig(plazaId){
     <div id="f-doc-dni-resultado" style="margin-top:-8px;margin-bottom:12px;font-size:12px"></div>
     ${formGroup('Docente designado/a',selectH('f-doc',docOpts),true)}
     <div style="font-size:11px;color:#94a3b8;margin-top:-10px;margin-bottom:12px">💡 Si elegís un "usuario nuevo", se crea su legajo docente automáticamente a partir de los datos que ya cargó, y su cuenta queda vinculada a esta institución. Si el/la docente no tiene ninguna institución vinculada todavía, buscalo/a por DNI arriba.</div>
-    ${formGroup('Cargo',selectH('f-cargo',['Profesor/a Titular','Profesor/a Adjunto','Profesor/a Suplente','Preceptor/a','Director/a','Vice Director/a'].map(v=>`<option value="${v}">${v}</option>`).join('')))}
+    ${formGroup('Cargo',`<select id="f-cargo" class="form-input" onchange="actualizarCursoSegunCargo()">${['Profesor/a Titular','Profesor/a Adjunto','Profesor/a Suplente','Preceptor/a','Director/a','Vice Director/a','Secretario/a'].map(v=>`<option value="${v}">${v}</option>`).join('')}</select>`)}
+    <div style="font-size:11px;color:#94a3b8;margin-top:-10px;margin-bottom:12px">Al elegir Director/a, Vice Director/a o Secretario/a, el campo Curso deja de ser obligatorio.</div>
     <div class="form-grid-2">
       <div>${formGroup('Materia / Espacio curricular',inputH('f-materia','text',plazaPref?plazaPref.materia:''),true)}</div>
-      <div>${formGroup('Curso',selectH('f-curso',cursoOpts),true)}</div>
+      <div id="fg-curso">${formGroup('Curso',selectH('f-curso',cursoOpts),true)}</div>
     </div>
     <div class="form-grid-3">
       <div>${formGroup('Horas semanales',inputH('f-horas','number',plazaPref?plazaPref.horasCatedra:''))}</div>
@@ -5378,7 +5394,7 @@ function openEditDesig(id){
   if(!puedeGestionarPersonal()){alert('No tenés permisos para editar designaciones.');return;}
   const d=DB.designaciones.find(x=>x.id===id);
   const docOpts=DB.docentes.filter(x=>x.estado==='activo').map(x=>`<option value="${x.id}"${x.id===d.docenteId?' selected':''}>${x.nombre}</option>`).join('');
-  const cursoOpts=DB.cursos.map(c=>`<option value="${c.nombre}"${c.nombre===d.curso?' selected':''}>${c.nombre}</option>`).join('');
+  const cursoOpts=`<option value="">— No aplica (cargo administrativo) —</option>`+DB.cursos.map(c=>`<option value="${c.nombre}"${c.nombre===d.curso?' selected':''}>${c.nombre}</option>`).join('');
   const carOpts=CARACTERES.map(c=>`<option value="${c}"${c===d.caracter?' selected':''}>${c}</option>`).join('');
   showModal('Editar Designación',`
     <div class="form-grid-2">
@@ -5387,10 +5403,10 @@ function openEditDesig(id){
     </div>
     ${formGroup('Modalidad de la designación',selectH('f-modalidad',MODALIDADES_DESIG.map(m=>`<option value="${m}"${m===d.modalidad?' selected':''}>${m}</option>`).join('')))}
     ${formGroup('Docente',selectH('f-doc',docOpts))}
-    ${formGroup('Cargo',selectH('f-cargo',['Profesor/a Titular','Profesor/a Adjunto','Profesor/a Suplente','Preceptor/a','Director/a','Vice Director/a'].map(v=>`<option value="${v}"${v===d.cargo?' selected':''}>${v}</option>`).join('')))}
+    ${formGroup('Cargo',`<select id="f-cargo" class="form-input" onchange="actualizarCursoSegunCargo()">${['Profesor/a Titular','Profesor/a Adjunto','Profesor/a Suplente','Preceptor/a','Director/a','Vice Director/a','Secretario/a'].map(v=>`<option value="${v}"${v===d.cargo?' selected':''}>${v}</option>`).join('')}</select>`)}
     <div class="form-grid-2">
       <div>${formGroup('Materia',inputH('f-materia','text',d.materia))}</div>
-      <div>${formGroup('Curso',selectH('f-curso',cursoOpts))}</div>
+      <div id="fg-curso">${formGroup('Curso',selectH('f-curso',cursoOpts))}</div>
     </div>
     <div class="form-grid-3">
       <div>${formGroup('Horas/sem',inputH('f-horas','number',d.horas))}</div>
@@ -5404,8 +5420,10 @@ function openEditDesig(id){
 }
 
 function saveDesig(){
-  if(!v('f-plaza')||!v('f-doc')||!v('f-materia')||!v('f-curso')||!v('f-caracter')||!v('f-modalidad')||!v('f-desde')){
-    alert('Complete los campos obligatorios (N° Plaza, Docente, Carácter, Modalidad, Materia, Curso, Desde)');return;
+  const cargoElegido = v('f-cargo');
+  const cursoObligatorio = !CARGOS_SIN_CURSO_OBLIGATORIO.includes(cargoElegido);
+  if(!v('f-plaza')||!v('f-doc')||!v('f-materia')||(cursoObligatorio&&!v('f-curso'))||!v('f-caracter')||!v('f-modalidad')||!v('f-desde')){
+    alert('Complete los campos obligatorios (N° Plaza, Docente, Carácter, Modalidad, Materia'+(cursoObligatorio?', Curso':'')+', Desde)');return;
   }
   const plazaDestino=DB.plazas.find(p=>p.nroPlaza===v('f-plaza'));
   if(plazaDestino&&plazaDestino.habilitada===false){
