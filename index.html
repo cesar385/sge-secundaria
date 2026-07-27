@@ -3417,8 +3417,9 @@ function renderDocentes(buscar='',tab='lista'){
     }},
     {key:'legajo',  label:'Legajo', render:r=>{
       const camposObl=['apellido','nombres','dni','cuil','fechaNac','domicilio','telefono','email','tituloHab','cbu'];
-      const pct=Math.round(camposObl.filter(c=>r[c]&&String(r[c]).trim()).length/camposObl.length*100);
-      const docs=[r.docTitulo,r.docDNI,r.docFoto,r.docAntecedentes].filter(Boolean).length;
+      const docsObl=['docTitulo','docDNI','docFoto','docAntecedentes'];
+      const docs=docsObl.filter(k=>r[k]).length;
+      const pct=Math.round((camposObl.filter(c=>r[c]&&String(r[c]).trim()).length+docs)/(camposObl.length+docsObl.length)*100);
       const color=pct<60?'#991b1b':pct<85?'#854d0e':'#166534';
       return `<div style="min-width:80px"><div style="font-size:11px;font-weight:700;color:${color}">${pct}% · Docs ${docs}/4</div><div class="progress-bar-bg" style="height:5px;margin-top:3px"><div class="progress-bar" style="width:${pct}%;background:${color};height:5px"></div></div></div>`;
     }},
@@ -4795,7 +4796,7 @@ function renderDesignaciones(filtroCaracter=''){
     }},
     {key:'estado',    label:'Estado',    render:r=>badge(r.estado)},
     {key:'doc',       label:'Documento', render:r=>`
-      <button class="btn btn-sm" onclick="generarNotifDesignacion(${r.id})"
+      <button class="btn btn-sm" onclick="openGenerarNotifDesignacion(${r.id})"
         style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
         🖨️ Notificación
       </button>`},
@@ -4936,7 +4937,7 @@ function verDetalleDesig(desigId){
        <div class="form-actions" style="margin-top:10px"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>`
     : `<div class="form-actions" style="margin-top:16px">
     <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
-    <button class="btn btn-ghost" onclick="closeModal();generarNotifDesignacion(${d.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Notificación</button>
+    <button class="btn btn-ghost" onclick="closeModal();${puedeGestionarPersonal()?`openGenerarNotifDesignacion(${d.id})`:`generarNotifDesignacion(${d.id})`}" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Notificación</button>
     <button class="btn btn-ghost" onclick="closeModal();verHistorialPlaza('${d.nroPlaza}')" style="border:1px solid #c4b5fd;color:#6d28d9">🕓 Historial de la plaza</button>
     ${puedeGestionarPersonal()?`<button class="btn btn-ghost" onclick="closeModal();openEditDesig(${d.id})">✏️ Editar</button>`:''}
     ${puedeGestionarPersonal()&&d.estado==='activa'?`<button class="btn btn-danger" onclick="closeModal();inactivarDesig(${d.id})">Inactivar</button>`:''}
@@ -5190,7 +5191,7 @@ function verHistorialPlaza(nroPlaza, institucionId){
       </td>
       <td style="padding:10px 12px;vertical-align:top;text-align:center">
         <div style="font-size:11px;color:#475569;font-weight:600">${doc.dni || '—'}</div>
-        <div style="font-size:10px;color:#94a3b8;margin-top:2px">Femenino</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:2px">${doc.sexo==='M'?'Masculino':doc.sexo==='F'?'Femenino':'—'}</div>
       </td>
       <td style="padding:10px 12px;vertical-align:top;text-align:center">
         <span style="display:inline-block;background:${sitColor}22;color:${sitColor};border:1px solid ${sitColor}44;
@@ -6555,9 +6556,10 @@ function renderDocenteInicio(doc){
 
   // Completitud del legajo
   const camposObl=['apellido','nombres','dni','cuil','fechaNac','domicilio','telefono','email','tituloHab','cbu'];
-  const completos=camposObl.filter(c=>doc[c]&&String(doc[c]).trim()!=='').length;
-  const pctLegajo=Math.round(completos/camposObl.length*100);
-  const docOk=[doc.docTitulo,doc.docDNI,doc.docFoto,doc.docAntecedentes].filter(Boolean).length;
+  const docsObl=['docTitulo','docDNI','docFoto','docAntecedentes'];
+  const completos=camposObl.filter(c=>doc[c]&&String(doc[c]).trim()!=='').length + docsObl.filter(k=>doc[k]).length;
+  const pctLegajo=Math.round(completos/(camposObl.length+docsObl.length)*100);
+  const docOk=docsObl.filter(k=>doc[k]).length;
   const legajoColor=pctLegajo<60?'#991b1b':pctLegajo<85?'#854d0e':'#166534';
 
   let rows='';
@@ -7098,7 +7100,46 @@ function generarFormularioLicencia(licId){
   mostrarDocumentoImprimible(html, `Solicitud de Licencia — ${doc.apellido}, ${doc.nombres||doc.nombre}`);
 }
 
-function generarNotifDesignacion(desigId){
+// El director/a o secretario/a elige qué documentación adjunta corresponde
+// marcar en el Rubro 8, antes de generar la notificación de designación.
+function openGenerarNotifDesignacion(desigId){
+  let desig = DB.designaciones.find(d=>d.id===desigId);
+  let data = DB;
+  if(!desig){
+    const hallado = buscarRegistroGlobal('designaciones', desigId);
+    if(!hallado) return;
+    desig = hallado.item; data = hallado.data;
+  }
+  const doc = data.docentes.find(d=>d.id===desig.docenteId);
+  if(!doc) return;
+  showModal('Documentación adosada al trámite',`
+    <div class="alert-info" style="margin-bottom:14px;font-size:12px">
+      📎 Marcá la documentación que efectivamente está adosada a este trámite (Rubro 8 del FU-01).
+      Por defecto aparece según lo que ${doc.apellido||doc.nombre} tiene cargado en su legajo, pero podés ajustarlo.
+    </div>
+    ${['docTitulo','docDNI','docFoto','docAntecedentes'].map((k,i)=>{
+      const labels={docTitulo:'Título habilitante / constancia',docDNI:'Copia de DNI',docFoto:'Foto carnet',docAntecedentes:'Certificado de antecedentes penales'};
+      return `<label style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8fafc;border-radius:8px;border:1.5px solid #e2e8f0;margin-bottom:8px;cursor:pointer">
+        <input type="checkbox" id="fnd-${k}" ${doc[k]?'checked':''} style="width:18px;height:18px;accent-color:#1a5c3a;cursor:pointer">
+        <span style="font-size:14px;font-weight:600;color:#334155">${labels[k]}</span>
+      </label>`;
+    }).join('')}
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-success" onclick="confirmarGenerarNotifDesignacion(${desigId})">🖨️ Generar Notificación</button>
+    </div>`);
+}
+function confirmarGenerarNotifDesignacion(desigId){
+  const docsSel = {
+    docTitulo: !!document.getElementById('fnd-docTitulo')?.checked,
+    docDNI: !!document.getElementById('fnd-docDNI')?.checked,
+    docFoto: !!document.getElementById('fnd-docFoto')?.checked,
+    docAntecedentes: !!document.getElementById('fnd-docAntecedentes')?.checked,
+  };
+  closeModal();
+  generarNotifDesignacion(desigId, docsSel);
+}
+function generarNotifDesignacion(desigId, docsSel){
   let desig = DB.designaciones.find(d=>d.id===desigId);
   let data = DB;
   if(!desig){
@@ -7231,10 +7272,10 @@ function generarNotifDesignacion(desigId){
         <div class="rubro-title">Rubro 8: Listado de documentación adosada al trámite</div>
         <div class="rubro-body">
           <div class="fu-chk-row" style="flex-direction:column;align-items:flex-start;gap:6px">
-            ${fuChk('Título habilitante / constancia', !!doc.docTitulo)}
-            ${fuChk('Copia de DNI', !!doc.docDNI)}
-            ${fuChk('Foto carnet', !!doc.docFoto)}
-            ${fuChk('Certificado de antecedentes penales', !!doc.docAntecedentes)}
+            ${fuChk('Título habilitante / constancia', docsSel?docsSel.docTitulo:!!doc.docTitulo)}
+            ${fuChk('Copia de DNI', docsSel?docsSel.docDNI:!!doc.docDNI)}
+            ${fuChk('Foto carnet', docsSel?docsSel.docFoto:!!doc.docFoto)}
+            ${fuChk('Certificado de antecedentes penales', docsSel?docsSel.docAntecedentes:!!doc.docAntecedentes)}
           </div>
         </div>
       </div>
@@ -8007,7 +8048,7 @@ function abrirLegajoAdmin(docId, tab='situacion'){
               const turno=plaza?.turno || '';
               return `<tr style="background:${i%2===0?'#fff':'#f8fafc'};border-bottom:1px solid #e2e8f0">
                 <td style="padding:10px 12px">
-                  <div style="font-weight:700;color:#1a3a5c;font-size:13px">Escuela Secundaria N°1</div>
+                  <div style="font-weight:700;color:#1a3a5c;font-size:13px">${(getInstUser()||instActual())?.nombre||'—'}</div>
                   <div style="font-size:11px;color:#64748b;margin-top:2px">Curso ${d.curso}${turno?' · '+turno:''}</div>
                 </td>
                 <td style="padding:10px 12px">
@@ -8303,10 +8344,11 @@ function abrirLegajoPropio(docId, tab='personal'){
   ];
 
   const camposObl=['apellido','nombres','dni','cuil','fechaNac','domicilio','telefono','email','tituloHab','cbu'];
-  const completos=camposObl.filter(c=>doc[c]&&String(doc[c]).trim()).length;
-  const pct=Math.round(completos/camposObl.length*100);
+  const docsObl=['docTitulo','docDNI','docFoto','docAntecedentes'];
+  const docOk=docsObl.filter(k=>doc[k]).length;
+  const completos=camposObl.filter(c=>doc[c]&&String(doc[c]).trim()).length + docOk;
+  const pct=Math.round(completos/(camposObl.length+docsObl.length)*100);
   const pctColor=pct<60?'#991b1b':pct<85?'#854d0e':'#166534';
-  const docOk=[doc.docTitulo,doc.docDNI,doc.docFoto,doc.docAntecedentes].filter(Boolean).length;
 
   const tabsHTML=TABS_DOC.map(t=>`
     <button class="tab-btn${tab===t.id?' active':''}" onclick="abrirLegajoPropio(${docId},'${t.id}')">
@@ -8837,10 +8879,11 @@ function abrirLegajoPropioPrec(precId, tab='personal', origen='propio'){
   ];
 
   const camposObl=['apellido','nombres','dni','cuil','fechaNac','domicilio','telefono','email','tituloHab','cbu'];
-  const completos=camposObl.filter(c=>prec[c]&&String(prec[c]).trim()).length;
-  const pct=Math.round(completos/camposObl.length*100);
+  const docsObl=['docTitulo','docDNI','docFoto','docAntecedentes'];
+  const docOk=docsObl.filter(k=>prec[k]).length;
+  const completos=camposObl.filter(c=>prec[c]&&String(prec[c]).trim()).length + docOk;
+  const pct=Math.round(completos/(camposObl.length+docsObl.length)*100);
   const pctColor=pct<60?'#991b1b':pct<85?'#854d0e':'#166534';
-  const docOk=[prec.docTitulo,prec.docDNI,prec.docFoto,prec.docAntecedentes].filter(Boolean).length;
 
   const tabsHTML=TABS_PREC.map(t=>`
     <button class="tab-btn${tab===t.id?' active':''}" onclick="abrirLegajoPropioPrec(${precId},'${t.id}','${origen}')">
