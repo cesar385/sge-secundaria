@@ -1895,6 +1895,7 @@ function abrirMiLegajoPendiente(tab){
         ${fg('Lugar de nacimiento','fmp-lugarNac',doc.lugarNac||'')}
         ${fg('Nacionalidad','fmp-nacionalidad',doc.nacionalidad||'')}
       </div>
+      ${formGroup('Sexo',`<select id="fmp-sexo" class="form-input"><option value=""${!doc.sexo?' selected':''}>— Seleccionar —</option><option value="M"${doc.sexo==='M'?' selected':''}>Masculino</option><option value="F"${doc.sexo==='F'?' selected':''}>Femenino</option></select>`)}
       ${fg('Domicilio actual','fmp-domicilio',doc.domicilio||'')}
       <div class="form-grid-2">
         ${fg('Teléfono / Celular','fmp-telefono',doc.telefono||'')}
@@ -2030,7 +2031,7 @@ function guardarMiLegajoPendiente(tab){
     Object.assign(doc,{
       apellido:g('fmp-apellido'), nombres:g('fmp-nombres'),
       dni:g('fmp-dni'), cuil:g('fmp-cuil')!==undefined?g('fmp-cuil'):doc.cuil,
-      fechaNac:g('fmp-fechaNac'), lugarNac:g('fmp-lugarNac'),
+      fechaNac:g('fmp-fechaNac'), lugarNac:g('fmp-lugarNac'), sexo:g('fmp-sexo'),
       nacionalidad:g('fmp-nacionalidad'), domicilio:g('fmp-domicilio'),
       telefono:g('fmp-telefono'), email:g('fmp-email'),
     });
@@ -3778,6 +3779,21 @@ function toggleFechaCierre(){
   const wrap=document.getElementById('fp-fecha-cierre-wrap');
   if(wrap) wrap.style.display=sel==='fecha_limite'?'block':'none';
 }
+// Si la plaza tiene un Curso que todavía no existe en el listado de Cursos,
+// lo crea automáticamente (intentando reconocer "3°A" → año 3, división A),
+// para que ya quede disponible en asistencias, notas y designaciones.
+function asegurarCursoDesdePlaza(nombreCurso, turno){
+  const nombre=(nombreCurso||'').trim();
+  if(!nombre) return;
+  if(DB.cursos.some(c=>c.nombre===nombre)) return;
+  const m=nombre.match(/(\d+)\s*°?\s*([A-Za-z])?/);
+  DB.cursos.push({
+    id:uid(), nombre,
+    año:m?parseInt(m[1]):null,
+    division:(m&&m[2])?m[2].toUpperCase():'',
+    turno:turno||'', docenteJefeId:null,
+  });
+}
 
 function saveNuevaPlaza(){
   if(!canManagePlazas()){alert('Sólo el Administrador puede registrar plazas.');return;}
@@ -3785,6 +3801,7 @@ function saveNuevaPlaza(){
   if(!nro||!mat){alert('N° de Plaza y Materia son obligatorios');return;}
   if(DB.plazas.find(p=>p.nroPlaza===nro)){alert('Ya existe una plaza con ese número');return;}
   const tc=document.querySelector('input[name="fp-tipoCierre"]:checked')?.value||'permanente';
+  asegurarCursoDesdePlaza(v('fp-curso'), v('fp-turno'));
   DB.plazas.push({
     id:uid(), nroPlaza:nro, materia:mat, turno:v('fp-turno'), nivel:v('fp-nivel'),
     horasCatedra:parseInt(v('fp-horas'))||0, curso:v('fp-curso'),
@@ -3835,6 +3852,7 @@ function saveEditPlaza(id){
   if(!canManagePlazas()){alert('Sólo el Administrador puede editar plazas.');return;}
   const idx=DB.plazas.findIndex(x=>x.id===id);
   const tc=document.querySelector('input[name="fp-tipoCierre"]:checked')?.value||'permanente';
+  asegurarCursoDesdePlaza(v('fp-curso'), v('fp-turno'));
   Object.assign(DB.plazas[idx],{
     nroPlaza:v('fp-nro'), materia:v('fp-materia'), turno:v('fp-turno'),
     nivel:v('fp-nivel'), horasCatedra:parseInt(v('fp-horas'))||0, curso:v('fp-curso'),
@@ -4131,6 +4149,7 @@ function saveAprobarSolicitud(id){
   const nro=v('fp-nro'), mat=v('fp-materia');
   if(!nro||!mat){alert('N° de Plaza y Materia son obligatorios');return;}
   if(DB.plazas.find(p=>p.nroPlaza===nro)){alert('Ya existe una plaza con ese número');return;}
+  asegurarCursoDesdePlaza(v('fp-curso'), v('fp-turno'));
   const nuevaPlaza={
     id:uid(), nroPlaza:nro, materia:mat, turno:v('fp-turno'), nivel:v('fp-nivel'),
     horasCatedra:parseInt(v('fp-horas'))||0, curso:v('fp-curso'),
@@ -5955,6 +5974,7 @@ function abrirLegajo(alumnoId, tab='personal'){
         ${fg('Lugar de nacimiento','f-lugarNac',al.lugarNac)}
         ${fg('Nacionalidad','f-nacionalidad',al.nacionalidad)}
       </div>
+      ${formGroup('Sexo',`<select id="f-sexo" class="form-input"><option value=""${!al.sexo?' selected':''}>— Seleccionar —</option><option value="M"${al.sexo==='M'?' selected':''}>Masculino</option><option value="F"${al.sexo==='F'?' selected':''}>Femenino</option></select>`)}
       <div class="form-grid-2">
         ${fg('Domicilio','f-domicilio',al.domicilio)}
         ${fg('Teléfono','f-telefono',al.telefono)}
@@ -6122,7 +6142,7 @@ function guardarLegajo(alumnoId, tab){
       apellido:g('f-apellido'), nombres:g('f-nombres'),
       nombre:`${g('f-apellido')}, ${g('f-nombres')}`,
       dni:g('f-dni'), cuil:g('f-cuil'), fechaNac:g('f-fechaNac'),
-      lugarNac:g('f-lugarNac'), nacionalidad:g('f-nacionalidad'),
+      lugarNac:g('f-lugarNac'), nacionalidad:g('f-nacionalidad'), sexo:g('f-sexo'),
       domicilio:g('f-domicilio'), telefono:g('f-telefono'),
       email:g('f-email'), curso:g('f-curso'), estado:g('f-estado'),
     });
