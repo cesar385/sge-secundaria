@@ -886,6 +886,17 @@ function modalDetalleTramite({codigo,estado,fechaDesde,fechaHasta,campos,plazas,
     </div>`;
 }
 function getPlazaIds(lic){ if(Array.isArray(lic.plazaIds)) return lic.plazaIds; return lic.plazaId?[lic.plazaId]:[]; }
+// Una licencia está "lista" para aprobar/rechazar sólo si ya tiene al menos una
+// plaza asociada explícitamente, o (para preceptores/as) si ya cuenta con su
+// propia plaza asignada. Mientras no la tenga, Aprobar/Rechazar quedan bloqueados.
+function licenciaTienePlazaAsociada(lic){
+  if(getPlazaIds(lic).length) return true;
+  if(lic.preceptorId){
+    const prec=DB.preceptores.find(p=>p.id===lic.preceptorId);
+    return !!(prec&&prec.nroPlaza);
+  }
+  return false;
+}
 function notaColor(n){ return n>=7?'nota-high':n>=6?'nota-mid':'nota-low'; }
 function badge(estado){
   const m={
@@ -4156,12 +4167,18 @@ function renderLicencias(){
         style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
         🖨️ Formulario
       </button>`},
-    {key:'acc',    label:'Acciones', render:r=>r.estado==='pendiente'?`
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 ${getPlazaIds(r).length?'Editar':'Agregar'} Plazas</button>
-        <button class="btn btn-success btn-sm" onclick="cambiarLic(${r.id},'aprobada')">✓ Aprobar</button>
-        <button class="btn btn-danger btn-sm"  onclick="cambiarLic(${r.id},'rechazada')">✗ Rechazar</button>
-      </div>`:((r.docenteId||r.preceptorId)&&getPlazaIds(r).length)?`<button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar plazas</button>`
+    {key:'acc',    label:'Acciones', render:r=>r.estado==='pendiente'?(
+      licenciaTienePlazaAsociada(r)
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar Plazas</button>
+            <button class="btn btn-success btn-sm" onclick="cambiarLic(${r.id},'aprobada')">✓ Aprobar</button>
+            <button class="btn btn-danger btn-sm"  onclick="cambiarLic(${r.id},'rechazada')">✗ Rechazar</button>
+          </div>`
+        : `<div style="display:flex;flex-direction:column;gap:4px">
+            <button class="btn btn-primary btn-sm" onclick="asociarPlaza(${r.id})" style="white-space:nowrap">🔗 Asociar Plazas</button>
+            <span style="font-size:10px;color:#94a3b8">Asociá una plaza para poder aprobar/rechazar</span>
+          </div>`
+    ):((r.docenteId||r.preceptorId)&&getPlazaIds(r).length)?`<button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar plazas</button>`
         :(r.docenteId||r.preceptorId)?`<button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Asociar plaza</button>`:''},
   ];
   // Licencias sin plaza asociada pendientes (sólo aplica a docentes, que pueden tener varias plazas)
@@ -4240,11 +4257,14 @@ function verDetalleLic(licId){
   const acciones = `<div class="form-actions" style="margin-top:16px">
     <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
     <button class="btn btn-ghost" onclick="closeModal();generarFormularioLicencia(${lic.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Formulario</button>
-    ${puedeGestionarPersonal()&&lic.estado==='pendiente'?`
-      <button class="btn btn-ghost" onclick="closeModal();asociarPlaza(${lic.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 ${ids.length?'Editar':'Agregar'} Plazas</button>
-      <button class="btn btn-danger" onclick="closeModal();cambiarLic(${lic.id},'rechazada')">✗ Rechazar</button>
-      <button class="btn btn-success" onclick="closeModal();cambiarLic(${lic.id},'aprobada')">✓ Aprobar</button>`
-    :puedeGestionarPersonal()&&(lic.docenteId||lic.preceptorId)?`
+    ${puedeGestionarPersonal()&&lic.estado==='pendiente'?(
+      licenciaTienePlazaAsociada(lic)
+        ? `<button class="btn btn-ghost" onclick="closeModal();asociarPlaza(${lic.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar Plazas</button>
+           <button class="btn btn-danger" onclick="closeModal();cambiarLic(${lic.id},'rechazada')">✗ Rechazar</button>
+           <button class="btn btn-success" onclick="closeModal();cambiarLic(${lic.id},'aprobada')">✓ Aprobar</button>`
+        : `<button class="btn btn-primary" onclick="closeModal();asociarPlaza(${lic.id})">🔗 Asociar Plazas</button>
+           <span style="font-size:11px;color:#94a3b8;align-self:center">Asociá una plaza para poder aprobar/rechazar</span>`
+    ):puedeGestionarPersonal()&&(lic.docenteId||lic.preceptorId)?`
       <button class="btn btn-primary" onclick="closeModal();asociarPlaza(${lic.id})">🔗 ${ids.length?'Editar':'Asociar'} plaza</button>`:''}
   </div>`;
 
@@ -4295,6 +4315,10 @@ function cambiarLic(id,estado){
   if(!puedeGestionarPersonal()){alert('No tenés permisos para aprobar/rechazar licencias.');return;}
   const lic=DB.licencias.find(l=>l.id===id);
   if(!lic) return;
+  if(!licenciaTienePlazaAsociada(lic)){
+    alert('Primero tenés que asociar la(s) plaza(s) afectada(s) por esta licencia. Usá el botón "🔗 Asociar Plazas" antes de aprobar o rechazar.');
+    return;
+  }
 
   // ── Rama Preceptor/a: primero se agregan las plazas, y recién al finalizar queda aprobada ──
   if(lic.preceptorId){
