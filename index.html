@@ -3742,7 +3742,7 @@ function renderPlazasFiltro(f){ document.querySelector('.main-content').innerHTM
 function openNuevaPlaza(){
   showModal('Nueva Plaza',`
     <div class="form-grid-2">
-      ${formGroup('N° de Plaza <span style="color:#ef4444">*</span>',inputH('fp-nro','text','ej: 06-0045'))}
+      ${formGroup('N° de Plaza <span style="color:#ef4444">*</span> <span style="font-weight:400;color:#94a3b8;font-size:11px">(generado automáticamente, editable)</span>',inputH('fp-nro','text',sugerirNroPlaza()))}
       ${formGroup('Materia / Espacio Curricular <span style="color:#ef4444">*</span>',inputH('fp-materia','text',''))}
     </div>
     <div class="form-grid-3">
@@ -3778,6 +3778,27 @@ function toggleFechaCierre(){
   const sel=document.querySelector('input[name="fp-tipoCierre"]:checked')?.value;
   const wrap=document.getElementById('fp-fecha-cierre-wrap');
   if(wrap) wrap.style.display=sel==='fecha_limite'?'block':'none';
+}
+// Sugiere el próximo N° de Plaza en formato "NN-NNNN", continuando la
+// numeración correlativa del mismo prefijo usado más recientemente. Sigue
+// siendo un campo editable por si hace falta corregirlo a mano.
+function sugerirNroPlaza(){
+  const parseado = DB.plazas.map(p=>p.nroPlaza).filter(Boolean).map(n=>{
+    const m=n.match(/^(\d+)-(\d+)$/);
+    return m?{prefijo:m[1], num:parseInt(m[2],10)}:null;
+  }).filter(Boolean);
+  let prefijo='01', siguiente=1;
+  if(parseado.length){
+    const ultimo = parseado[parseado.length-1];
+    prefijo = ultimo.prefijo;
+    siguiente = Math.max(...parseado.filter(p=>p.prefijo===prefijo).map(p=>p.num)) + 1;
+  }
+  let candidato = `${prefijo}-${String(siguiente).padStart(4,'0')}`;
+  while(DB.plazas.some(p=>p.nroPlaza===candidato)){
+    siguiente++;
+    candidato = `${prefijo}-${String(siguiente).padStart(4,'0')}`;
+  }
+  return candidato;
 }
 // Si la plaza tiene un Curso que todavía no existe en el listado de Cursos,
 // lo crea automáticamente (intentando reconocer "3°A" → año 3, división A),
