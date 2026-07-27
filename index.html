@@ -1803,6 +1803,7 @@ function abrirMiLegajoPendiente(tab){
     secretario:[{id:'personal',icon:'👤',label:'Datos Personales'},{id:'formacion',icon:'🎓',label:'Formación / Títulos'},{id:'antiguedad',icon:'⏳',label:'Antigüedad'},{id:'bancarios',icon:'🏦',label:'Datos Bancarios'},{id:'salud',icon:'🏥',label:'Salud'},{id:'docs',icon:'📎',label:'Documentación'},{id:'obs',icon:'📝',label:'Observaciones'}],
     alumno:    [{id:'personal',icon:'👤',label:'Datos del/de la Alumno/a'},{id:'tutor',icon:'👨‍👩‍👧',label:'Padre/Madre/Tutor'},{id:'salud',icon:'🏥',label:'Salud'},{id:'docs',icon:'📎',label:'Documentación'},{id:'obs',icon:'📝',label:'Observaciones'}],
     padre:     [{id:'personal',icon:'👤',label:'Mis Datos'},{id:'docs',icon:'📎',label:'Documentación'},{id:'obs',icon:'📝',label:'Observaciones'}],
+    admin:     [{id:'personal',icon:'👤',label:'Mis Datos'},{id:'docs',icon:'📎',label:'Documentación'},{id:'obs',icon:'📝',label:'Observaciones'}],
   };
   const DOCS_POR_ROL={
     docente:   [{key:'docTitulo',label:'Título habilitante (copia certificada)'},{key:'docDNI',label:'DNI (fotocopia doble faz)'},{key:'docFoto',label:'Foto carnet actualizada (4×4)'},{key:'docAntecedentes',label:'Certificado de antecedentes penales'}],
@@ -1811,6 +1812,7 @@ function abrirMiLegajoPendiente(tab){
     secretario:[{key:'docTitulo',label:'Título habilitante (copia certificada)'},{key:'docDNI',label:'DNI (fotocopia doble faz)'},{key:'docFoto',label:'Foto carnet actualizada (4×4)'},{key:'docAntecedentes',label:'Certificado de antecedentes penales'}],
     alumno:    [{key:'docPartida',label:'Partida de nacimiento'},{key:'docDNI',label:'DNI (fotocopia)'},{key:'docFoto',label:'Foto carnet actualizada (4×4)'},{key:'docVacunas',label:'Libreta de vacunación'}],
     padre:     [{key:'docDNI',label:'DNI (fotocopia)'}],
+    admin:     [{key:'docDNI',label:'DNI (fotocopia)'}],
   };
   const CAMPOS_OBL_POR_ROL={
     docente:['apellido','nombres','dni','cuil','fechaNac','domicilio','telefono','email'],
@@ -1819,6 +1821,7 @@ function abrirMiLegajoPendiente(tab){
     secretario:['apellido','nombres','dni','cuil','fechaNac','domicilio','telefono','email'],
     alumno:['apellido','nombres','dni','fechaNac','domicilio'],
     padre:['apellido','nombres','dni','telefono','email'],
+    admin:['apellido','nombres','dni','telefono','email'],
   };
 
   const TABS_DOC = TABS_POR_ROL[rol] || TABS_POR_ROL.docente;
@@ -2009,7 +2012,7 @@ function guardarMiLegajoPendiente(tab){
     const DOCS_POR_ROL={
       docente:['docTitulo','docDNI','docFoto','docAntecedentes'], preceptor:['docTitulo','docDNI','docFoto','docAntecedentes'],
       director:['docTitulo','docDNI','docFoto','docAntecedentes'], secretario:['docTitulo','docDNI','docFoto','docAntecedentes'],
-      alumno:['docPartida','docDNI','docFoto','docVacunas'], padre:['docDNI'],
+      alumno:['docPartida','docDNI','docFoto','docVacunas'], padre:['docDNI'], admin:['docDNI'],
     };
     (DOCS_POR_ROL[rol]||DOCS_POR_ROL.docente).forEach(k=>{ doc[k]=gc('fmp-'+k); });
   } else if(tab==='obs'){
@@ -2113,6 +2116,7 @@ function renderAdmin(sec){
   const itemsGlobal = isInstUser ? [] : [
     {id:'instituciones', icon:'🏫', label:'Instituciones',   grupo:'general'},
     {id:'usuarios',      icon:'👥', label:'Usuarios',         grupo:'general'},
+    {id:'mi-legajo',     icon:'📋', label:'Mi Legajo',        grupo:'general'},
     {id:'configuracion', icon:'⚙️', label:'Configuración',    grupo:'general'},
   ];
   const itemsInst=[
@@ -2154,6 +2158,7 @@ function renderAdmin(sec){
   let content='';
   if(sec==='instituciones')  content=renderInstituciones();
   else if(sec==='usuarios')       content=renderUsuarios();
+  else if(sec==='mi-legajo')      { content=''; setTimeout(()=>abrirMiLegajoPendiente('personal'),0); }
   else if(sec==='configuracion')  content=renderConfiguracion();
   else if(sec==='dashboard')      content=renderDashboard();
   else if(sec==='plazas')         content=renderPlazas();
@@ -2177,6 +2182,7 @@ function renderDirector(sec){
   currentSection=sec;
   const items=[
     {id:'dashboard',    icon:'🏠',label:'Panel General',   grupo:'general'},
+    {id:'mi-legajo',    icon:'📋',label:'Mi Legajo',       grupo:'general'},
     {id:'plazas',       icon:'🏛️',label:'Plazas',          grupo:'docentes'},
     {id:'solicitudes-plaza', icon:'📝',label:'Solicitudes de Plaza', grupo:'docentes'},
     {id:'docentes',     icon:'👩‍🏫',label:'Docentes',        grupo:'docentes'},
@@ -2196,6 +2202,7 @@ function renderDirector(sec){
   const sidebar=buildSidebar('#4c1d95',top,items,sec);
   let content='';
   if(sec==='dashboard')     content=renderDashboard();
+  else if(sec==='mi-legajo')     { content=''; setTimeout(()=>abrirMiLegajoPendiente('personal'),0); }
   else if(sec==='plazas')        content=renderPlazas();
   else if(sec==='solicitudes-plaza') content=renderSolicitudesPlaza();
   else if(sec==='docentes')      content=renderDocentes();
@@ -2217,6 +2224,7 @@ function renderSecretario(sec){
   currentSection=sec;
   const items=[
     {id:'dashboard',    icon:'🏠',label:'Panel General',   grupo:'general'},
+    {id:'mi-legajo',    icon:'📋',label:'Mi Legajo',       grupo:'general'},
     {id:'plazas',       icon:'🏛️',label:'Plazas',          grupo:'docentes'},
     {id:'solicitudes-plaza', icon:'📝',label:'Solicitudes de Plaza', grupo:'docentes'},
     {id:'docentes',     icon:'👩‍🏫',label:'Docentes',        grupo:'docentes'},
@@ -2236,6 +2244,7 @@ function renderSecretario(sec){
   const sidebar=buildSidebar('#b45309',top,items,sec);
   let content='';
   if(sec==='dashboard')     content=renderDashboard();
+  else if(sec==='mi-legajo')     { content=''; setTimeout(()=>abrirMiLegajoPendiente('personal'),0); }
   else if(sec==='plazas')        content=renderPlazas();
   else if(sec==='solicitudes-plaza') content=renderSolicitudesPlaza();
   else if(sec==='docentes')      content=renderDocentes();
@@ -2934,7 +2943,7 @@ function buildFormUsuario(u){
           <div style="font-size:12px;font-weight:700;color:#6d28d9;margin-bottom:8px">👩‍🏫 ¿Es también Docente?</div>
           ${formGroup('Docente vinculado/a (opcional)',`<select id="fu-docente-cargo" class="form-input">${docenteCargoOpts}</select>`)}
           ${formGroup('Turno del cargo administrativo',`<select id="fu-turno-cargo" class="form-input">${turnoCargoOpts}</select>`)}
-          <div style="font-size:11px;color:#94a3b8">Si ya tiene cargo/s docente/s, este turno debe ser a <strong>contraturno</strong>.</div>
+          <div style="font-size:11px;color:#94a3b8">Puede coincidir con el turno de otros cargos que ya tenga.</div>
         </div>
       </div>
     </div>
@@ -3544,12 +3553,12 @@ function turnosOcupadosDocente(docenteId, opts={}){
   return [...turnos];
 }
 // Verifica si un turno nuevo es compatible (a contraturno) con los que ya tiene el docente.
-// "Rotativo" se considera potencialmente superpuesto con cualquier otro turno.
+// NOTA: la restricción de contraturno fue anulada a pedido — ya no bloquea la asignación
+// de cargos aunque los turnos se superpongan. Se deja la función (y turnosOcupadosDocente/
+// resumenCargosDocente) por si se usan en otros lados para mostrar información, pero
+// siempre devuelve "ok".
 function chequearCompatibilidadTurno(docenteId, turnoNuevo, opts={}){
-  if(!docenteId||!turnoNuevo) return {ok:true, conflictos:[]};
-  const existentes=turnosOcupadosDocente(docenteId, opts);
-  const conflictos=existentes.filter(t=>t===turnoNuevo||t==='Rotativo'||turnoNuevo==='Rotativo');
-  return {ok:conflictos.length===0, conflictos};
+  return {ok:true, conflictos:[]};
 }
 // Etiqueta legible de los cargos que ya tiene un/a docente, para mostrar en formularios.
 function resumenCargosDocente(docenteId, opts={}){
@@ -4149,6 +4158,7 @@ function renderLicencias(){
       </button>`},
     {key:'acc',    label:'Acciones', render:r=>r.estado==='pendiente'?`
       <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 ${getPlazaIds(r).length?'Editar':'Agregar'} Plazas</button>
         <button class="btn btn-success btn-sm" onclick="cambiarLic(${r.id},'aprobada')">✓ Aprobar</button>
         <button class="btn btn-danger btn-sm"  onclick="cambiarLic(${r.id},'rechazada')">✗ Rechazar</button>
       </div>`:((r.docenteId||r.preceptorId)&&getPlazaIds(r).length)?`<button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar plazas</button>`
@@ -4231,6 +4241,7 @@ function verDetalleLic(licId){
     <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
     <button class="btn btn-ghost" onclick="closeModal();generarFormularioLicencia(${lic.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Formulario</button>
     ${puedeGestionarPersonal()&&lic.estado==='pendiente'?`
+      <button class="btn btn-ghost" onclick="closeModal();asociarPlaza(${lic.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 ${ids.length?'Editar':'Agregar'} Plazas</button>
       <button class="btn btn-danger" onclick="closeModal();cambiarLic(${lic.id},'rechazada')">✗ Rechazar</button>
       <button class="btn btn-success" onclick="closeModal();cambiarLic(${lic.id},'aprobada')">✓ Aprobar</button>`
     :puedeGestionarPersonal()&&(lic.docenteId||lic.preceptorId)?`
@@ -4285,15 +4296,11 @@ function cambiarLic(id,estado){
   const lic=DB.licencias.find(l=>l.id===id);
   if(!lic) return;
 
-  // ── Rama Preceptor/a: aprobación con asociación de plaza(s) ──
+  // ── Rama Preceptor/a: primero se agregan las plazas, y recién al finalizar queda aprobada ──
   if(lic.preceptorId){
-    lic.estado=estado;
-    registrarHistorial(lic, estado==='aprobada'?'APROBADO':'RECHAZADO', '');
     const prec=DB.preceptores.find(p=>p.id===lic.preceptorId);
 
     if(estado==='aprobada'){
-      if(prec) prec.estado='licencia';
-
       // Plaza propia del preceptor (si tiene), para preseleccionar
       const plazaPropia = prec&&prec.nroPlaza ? DB.plazas.find(pl=>pl.nroPlaza===prec.nroPlaza) : null;
       const seleccionadas = plazaPropia ? [plazaPropia.id] : [];
@@ -4303,17 +4310,17 @@ function cambiarLic(id,estado){
           <span>[${p.nroPlaza}] ${p.materia} — ${p.turno}${plazaPropia&&plazaPropia.id===p.id?' <strong>⭐ (del preceptor/a)</strong>':''}</span>
         </label>`).join('');
 
-      showModal('✅ Licencia aprobada',`
-        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;margin-bottom:18px">
-          <div style="font-weight:700;color:#166534;font-size:14px;margin-bottom:4px">✅ Licencia aprobada correctamente</div>
-          <div style="font-size:13px;color:#166534">
+      showModal('Aprobar Licencia',`
+        <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:14px;margin-bottom:18px">
+          <div style="font-weight:700;color:#1e40af;font-size:14px;margin-bottom:4px">📋 Antes de aprobar, agregá la(s) plaza(s) afectada(s)</div>
+          <div style="font-size:13px;color:#1e40af">
             <strong>${prec?.nombre||'—'}</strong> (Preceptor/a) — ${lic.tipo} · ${fmtDate(lic.desde)} → ${fmtDate(lic.hasta)}
             ${lic.nroExp?`· <span style="font-size:11px;color:#6d28d9">${lic.nroExp}</span>`:''}
           </div>
         </div>
         <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:4px;border-left:4px solid #0f766e">
           <div style="font-size:12px;font-weight:800;color:#0f766e;text-transform:uppercase;margin-bottom:10px">
-            🏛️ Plaza afectada (recomendado)
+            🏛️ Paso 1 — Agregar plaza(s) afectada(s)
           </div>
           <label style="font-size:9.5pt;display:block;margin-bottom:6px;font-weight:bold;color:#334155">Asociar esta licencia a una o más plazas</label>
           <div style="max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:4px 10px;background:#fff">${plazasChecksPrec||'<div style="padding:10px;color:#94a3b8;font-size:12px">No hay plazas activas</div>'}</div>
@@ -4322,11 +4329,13 @@ function cambiarLic(id,estado){
 
         ${_htmlRubro7y8Licencia(lic)}
         <div class="form-actions">
-          <button class="btn btn-ghost" onclick="closeModal();navigate('licencias')">Omitir y finalizar</button>
-          <button class="btn btn-success" onclick="finalizarAprobacionLicPrec(${id})">💾 Guardar y finalizar</button>
+          <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+          <button class="btn btn-success" onclick="finalizarAprobacionLicPrec(${id})">✅ Paso 2 — Aprobar licencia</button>
         </div>`);
       return;
     } else if(estado==='rechazada'){
+      lic.estado=estado;
+      registrarHistorial(lic,'RECHAZADO','');
       if(prec && prec.estado==='licencia') prec.estado='activo';
       showToast(`❌ Licencia de ${prec?.nombre||'preceptor/a'} rechazada`,'#991b1b');
     }
@@ -4334,17 +4343,9 @@ function cambiarLic(id,estado){
     return;
   }
 
-  lic.estado=estado;
-  registrarHistorial(lic, estado==='aprobada'?'APROBADO':'RECHAZADO', '');
   const doc=DB.docentes.find(d=>d.id===lic.docenteId);
 
   if(estado==='aprobada'){
-    if(doc) doc.estado='licencia';
-    crearNotificacion(lic.docenteId,'lic_aprobada',
-      'Tu licencia fue aprobada ✅',
-      `Tu solicitud de Licencia "${lic.tipo}" fue aprobada. Período: del ${fmtDate(lic.desde)} al ${fmtDate(lic.hasta)}.${lic.nroExp?' Exp.: '+lic.nroExp:''} La dirección tomará nota de tu ausencia en ese período.`
-    );
-
     // Plazas activas del docente (para la selección) — incluye TODAS las instituciones donde trabaja
     const desigs=DB.designaciones.filter(d=>d.docenteId===lic.docenteId&&d.estado==='activa');
     const nrosDocente=DB.designaciones.filter(d=>d.docenteId===lic.docenteId).map(d=>d.nroPlaza);
@@ -4354,10 +4355,10 @@ function cambiarLic(id,estado){
     const desigOpts=desigs.map(d=>`<option value="${d.id}">[${d.nroPlaza}] ${d.materia} — ${d.curso} (${d.cargo})</option>`).join('');
     const docOpts=DB.docentes.filter(d=>d.estado==='activo').map(d=>`<option value="${d.id}">${d.nombre}</option>`).join('');
 
-    showModal('✅ Licencia aprobada',`
-      <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;margin-bottom:18px">
-        <div style="font-weight:700;color:#166534;font-size:14px;margin-bottom:4px">✅ Licencia aprobada correctamente</div>
-        <div style="font-size:13px;color:#166534">
+    showModal('Aprobar Licencia',`
+      <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:14px;margin-bottom:18px">
+        <div style="font-weight:700;color:#1e40af;font-size:14px;margin-bottom:4px">📋 Antes de aprobar, agregá la(s) plaza(s) afectada(s)</div>
+        <div style="font-size:13px;color:#1e40af">
           <strong>${doc?.nombre||'—'}</strong> — ${lic.tipo} · ${fmtDate(lic.desde)} → ${fmtDate(lic.hasta)}
           ${lic.nroExp?`· <span style="font-size:11px;color:#6d28d9">${lic.nroExp}</span>`:''}
         </div>
@@ -4366,7 +4367,7 @@ function cambiarLic(id,estado){
       <!-- PASO 1: Plaza -->
       <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:14px;border-left:4px solid #1a3a5c">
         <div style="font-size:12px;font-weight:800;color:#1a3a5c;text-transform:uppercase;margin-bottom:10px">
-          🏛️ Paso 1 — Plaza afectada (recomendado)
+          🏛️ Paso 1 — Agregar plaza(s) afectada(s)
         </div>
         <label style="font-size:9.5pt;display:block;margin-bottom:6px;font-weight:bold;color:#334155">Asociar esta licencia a una o más plazas</label>
         <div style="max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:4px 10px;background:#fff">${plazasChecksAprob||'<div style="padding:10px;color:#94a3b8;font-size:12px">No hay plazas activas</div>'}</div>
@@ -4388,13 +4389,15 @@ function cambiarLic(id,estado){
       ${_htmlRubro7y8Licencia(lic)}
 
       <div class="form-actions">
-        <button class="btn btn-ghost" onclick="closeModal();navigate('licencias')">Omitir paso 3 y finalizar</button>
-        <button class="btn btn-success" onclick="finalizarAprobacionLic(${id})">💾 Guardar y finalizar</button>
+        <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-success" onclick="finalizarAprobacionLic(${id})">✅ Paso 3 — Aprobar licencia</button>
       </div>`);
     return;
   }
 
   if(estado==='rechazada'){
+    lic.estado=estado;
+    registrarHistorial(lic,'RECHAZADO','');
     if(doc && doc.estado==='licencia') doc.estado='activo';
     crearNotificacion(lic.docenteId,'lic_rechazada',
       'Tu licencia fue rechazada ❌',
@@ -4407,11 +4410,9 @@ function cambiarLic(id,estado){
 function finalizarAprobacionLic(licId){
   const lic=DB.licencias.find(l=>l.id===licId);
   if(!lic) return;
+  const doc=DB.docentes.find(d=>d.id===lic.docenteId);
 
-  // Rubro 7: Autorización del trámite
-  registrarAutorizacionLic(lic);
-
-  // Asociar plaza(s) si se seleccionaron
+  // Paso 1: asociar plaza(s) si se seleccionaron (ANTES de aprobar)
   const plIds=Array.from(document.querySelectorAll('.f-plaza-lic-chk:checked')).map(el=>parseInt(el.value));
   if(plIds.length){
     lic.plazaIds=plIds; delete lic.plazaId;
@@ -4419,11 +4420,23 @@ function finalizarAprobacionLic(licId){
     registrarHistorial(lic,'AGREGAR PLAZAS',`Plazas asociadas: ${nros}.`);
   }
 
+  // Recién ahora queda efectivamente aprobada la licencia
+  lic.estado='aprobada';
+  registrarHistorial(lic,'APROBADO','');
+  if(doc) doc.estado='licencia';
+  crearNotificacion(lic.docenteId,'lic_aprobada',
+    'Tu licencia fue aprobada ✅',
+    `Tu solicitud de Licencia "${lic.tipo}" fue aprobada. Período: del ${fmtDate(lic.desde)} al ${fmtDate(lic.hasta)}.${lic.nroExp?' Exp.: '+lic.nroExp:''} La dirección tomará nota de tu ausencia en ese período.`
+  );
+
+  // Rubro 7: Autorización del trámite
+  registrarAutorizacionLic(lic);
+
   // Crear STF si se eligió suplente
   const desigId=parseInt(v('f-desig-lic'));
   const supId=parseInt(v('f-suplente'));
   if(desigId&&supId) crearSTFdesdeLib(licId);
-  else { closeModal(); showToast('✅ Trámite finalizado correctamente','#166534'); navigate('licencias'); }
+  else { closeModal(); showToast('✅ Licencia aprobada correctamente','#166534'); navigate('licencias'); }
 }
 // Registra el Rubro 7 (Autorización del trámite): N° de Resolución, observaciones,
 // y el/la funcionario/a autorizante (siempre el usuario director/secretario/admin que aprueba).
@@ -4490,15 +4503,24 @@ function actualizarPorcentajeSugerido(){
 function finalizarAprobacionLicPrec(licId){
   const lic=DB.licencias.find(l=>l.id===licId);
   if(!lic) return;
-  registrarAutorizacionLic(lic);
+  const prec=DB.preceptores.find(p=>p.id===lic.preceptorId);
+
+  // Paso 1: asociar plaza(s) si se seleccionaron (ANTES de aprobar)
   const plIds=Array.from(document.querySelectorAll('.f-plaza-lic-prec-chk:checked')).map(el=>parseInt(el.value));
   if(plIds.length){
     lic.plazaIds=plIds; delete lic.plazaId;
     const nros=plIds.map(id=>resolverPlaza(id)?.nroPlaza).filter(Boolean).join(', ');
     registrarHistorial(lic,'AGREGAR PLAZAS',`Plazas asociadas: ${nros}.`);
   }
+
+  // Recién ahora queda efectivamente aprobada la licencia
+  lic.estado='aprobada';
+  registrarHistorial(lic,'APROBADO','');
+  if(prec) prec.estado='licencia';
+
+  registrarAutorizacionLic(lic);
   closeModal();
-  showToast(`✅ Licencia asociada correctamente`,'#166534');
+  showToast(`✅ Licencia aprobada correctamente`,'#166534');
   navigate('licencias');
 }
 
@@ -5582,7 +5604,7 @@ function renderPreceptoresAdmin(){
     <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#0f766e">
       🗂️ Al igual que los/las docentes, cada preceptor/a puede tener una <strong>plaza asignada</strong> desde el
       <button class="btn btn-ghost btn-sm" onclick="navigate('plazas')">🏛️ Registro de Plazas</button> o directamente desde el alta/edición.
-      Un/a docente también puede desempeñarse como Preceptor/a <strong>a contraturno</strong>.
+      Un/a docente también puede desempeñarse como Preceptor/a, aunque el turno coincida con otro cargo.
     </div>
     <div class="table-wrap">${tableHTML(cols,DB.preceptores,'Sin preceptores registrados')}</div>`;
 }
@@ -5603,7 +5625,7 @@ function openAltaPrec(){
     <div style="background:#faf5ff;border-radius:8px;padding:14px;margin-bottom:4px">
       <div style="font-size:12px;font-weight:700;color:#6d28d9;margin-bottom:8px">👩‍🏫 ¿Es también Docente?</div>
       ${formGroup('Docente vinculado/a (opcional)',selectH('f-prec-docente',docenteOptsParaCargo(null)))}
-      <div style="font-size:11px;color:#94a3b8">Si ya tiene cargo/s docente/s, el turno de Preceptor/a debe ser a <strong>contraturno</strong>.</div>
+      <div style="font-size:11px;color:#94a3b8">Puede coincidir con el turno de otros cargos que ya tenga.</div>
     </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -5641,7 +5663,7 @@ function openEditPrec(id){
     <div style="background:#faf5ff;border-radius:8px;padding:14px;margin-bottom:4px">
       <div style="font-size:12px;font-weight:700;color:#6d28d9;margin-bottom:8px">👩‍🏫 ¿Es también Docente?</div>
       ${formGroup('Docente vinculado/a (opcional)',selectH('f-prec-docente',docenteOptsParaCargo(p.docenteId||null)))}
-      <div style="font-size:11px;color:#94a3b8">Si ya tiene cargo/s docente/s, el turno de Preceptor/a debe ser a <strong>contraturno</strong>.</div>
+      <div style="font-size:11px;color:#94a3b8">Puede coincidir con el turno de otros cargos que ya tenga.</div>
     </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -7636,6 +7658,7 @@ function renderPadre(sec){
     {id:'libreta',   icon:'📒',label:'Libreta',    grupo:'academico'},
     {id:'notas',     icon:'📝',label:'Notas',      grupo:'academico'},
     {id:'asistencia',icon:'✅',label:'Asistencia', grupo:'academico'},
+    {id:'mi-legajo', icon:'📋',label:'Mi Legajo',  grupo:'personal'},
   ];
   const hijoSel=hijos.length>1?`<select onchange="padreHijoSel=parseInt(this.value);navigate('${sec}')"
     style="margin-top:8px;width:100%;padding:4px 8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:6px;font-size:12px;font-family:inherit">
@@ -7650,6 +7673,7 @@ function renderPadre(sec){
   else if(sec==='libreta')    content=renderLibreta(al);
   else if(sec==='notas')      content=renderPadreNotas(al);
   else if(sec==='asistencia') content=renderPadreAsist(al);
+  else if(sec==='mi-legajo')  { content=''; setTimeout(()=>abrirMiLegajoPendiente('personal'),0); }
   buildLayout(sidebar,content);
 }
 function renderPadreResumen(al){
