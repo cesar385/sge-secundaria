@@ -44,8 +44,10 @@
     text-transform: uppercase; letter-spacing: 1px; }
   .sidebar-title  { font-size: 14px; font-weight: 800; color: #fff; margin-top: 3px; line-height: 1.3; }
   .sidebar-sub    { font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 2px; }
-  .sidebar-group-label { padding: 10px 20px 5px; font-size: 10px; font-weight: 700;
-    color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; }
+  .sidebar-group-label { padding: 14px 20px 6px; font-size: 10px; font-weight: 700;
+    color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 1px;
+    border-top: 1px solid rgba(255,255,255,0.12); margin-top: 6px; }
+  .sidebar-group-label.first { border-top: none; margin-top: 0; padding-top: 10px; }
   .sidebar-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 20px;
     background: none; border: none; color: #fff; text-align: left; cursor: pointer;
     font-size: 13px; font-weight: 400; border-left: 3px solid transparent; transition: background 0.15s; }
@@ -2101,8 +2103,10 @@ function buildSidebar(color, topHTML, items, active){
   items.forEach(i=>{ if(!grouped[i.grupo]) grouped[i.grupo]=[]; grouped[i.grupo].push(i); });
   const groupLabels = {general:'General',docentes:'Gestión Docente',alumnos:'Gestión Alumnos',personal:'Mi Espacio',academico:'Académico'};
   let nav='';
+  let esPrimero=true;
   Object.keys(grouped).forEach(g=>{
-    nav+=`<div class="sidebar-group-label">${groupLabels[g]||g}</div>`;
+    nav+=`<div class="sidebar-group-label${esPrimero?' first':''}">${groupLabels[g]||g}</div>`;
+    esPrimero=false;
     grouped[g].forEach(it=>{
       nav+=`<button class="sidebar-btn${active===it.id?' active':''}" onclick="navigate('${it.id}')">${it.icon} ${it.label}</button>`;
     });
@@ -2216,6 +2220,8 @@ function renderDirector(sec){
   const items=[
     {id:'dashboard',    icon:'🏠',label:'Panel General',   grupo:'general'},
     {id:'mi-legajo',    icon:'📋',label:'Mi Legajo',       grupo:'personal'},
+    {id:'mis-desig',    icon:'📌',label:'Mis Designaciones',grupo:'personal'},
+    {id:'mis-licencias',icon:'📋',label:'Mis Licencias',   grupo:'personal'},
     {id:'plazas',       icon:'🏛️',label:'Plazas',          grupo:'docentes'},
     {id:'solicitudes-plaza', icon:'📝',label:'Solicitudes de Plaza', grupo:'docentes'},
     {id:'docentes',     icon:'👩‍🏫',label:'Docentes',        grupo:'docentes'},
@@ -2236,6 +2242,8 @@ function renderDirector(sec){
   let content='';
   if(sec==='dashboard')     content=renderDashboard();
   else if(sec==='mi-legajo')     { content=''; setTimeout(()=>abrirMiLegajoPendiente('personal'),0); }
+  else if(sec==='mis-desig')     content=renderMisDesig();
+  else if(sec==='mis-licencias') content=renderMisLicencias();
   else if(sec==='plazas')        content=renderPlazas();
   else if(sec==='solicitudes-plaza') content=renderSolicitudesPlaza();
   else if(sec==='docentes')      content=renderDocentes();
@@ -2258,6 +2266,8 @@ function renderSecretario(sec){
   const items=[
     {id:'dashboard',    icon:'🏠',label:'Panel General',   grupo:'general'},
     {id:'mi-legajo',    icon:'📋',label:'Mi Legajo',       grupo:'personal'},
+    {id:'mis-desig',    icon:'📌',label:'Mis Designaciones',grupo:'personal'},
+    {id:'mis-licencias',icon:'📋',label:'Mis Licencias',   grupo:'personal'},
     {id:'plazas',       icon:'🏛️',label:'Plazas',          grupo:'docentes'},
     {id:'solicitudes-plaza', icon:'📝',label:'Solicitudes de Plaza', grupo:'docentes'},
     {id:'docentes',     icon:'👩‍🏫',label:'Docentes',        grupo:'docentes'},
@@ -2278,6 +2288,8 @@ function renderSecretario(sec){
   let content='';
   if(sec==='dashboard')     content=renderDashboard();
   else if(sec==='mi-legajo')     { content=''; setTimeout(()=>abrirMiLegajoPendiente('personal'),0); }
+  else if(sec==='mis-desig')     content=renderMisDesig();
+  else if(sec==='mis-licencias') content=renderMisLicencias();
   else if(sec==='plazas')        content=renderPlazas();
   else if(sec==='solicitudes-plaza') content=renderSolicitudesPlaza();
   else if(sec==='docentes')      content=renderDocentes();
