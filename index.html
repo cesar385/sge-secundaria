@@ -897,6 +897,28 @@ function licenciaTienePlazaAsociada(lic){
   }
   return false;
 }
+// Una licencia impacta ÚNICAMENTE en la(s) plaza(s)/designación(es) que se le
+// asociaron: marca como "en licencia" sólo esas designaciones puntuales,
+// dejando intactos los demás cargos activos que el/la docente pueda tener.
+function marcarDesignacionesEnLicencia(lic, doc){
+  if(!doc) return;
+  const plazasAsociadas = getPlazaIds(lic).map(id=>resolverPlaza(id)).filter(Boolean).map(p=>p.nroPlaza);
+  DB.designaciones
+    .filter(d=>d.docenteId===doc.id && d.estado==='activa' && plazasAsociadas.includes(d.nroPlaza))
+    .forEach(d=>{ d.estado='licencia'; });
+  recalcularEstadoDocentePorLicencias(doc.id);
+}
+// El estado GENERAL del docente sólo pasa a "licencia" si ya no le queda ningún
+// otro cargo activo (todos sus cargos quedaron cubiertos por licencias); si
+// todavía tiene otra designación activa en cualquier institución, sigue
+// figurando como "activo" en general — la licencia no le impacta ahí.
+function recalcularEstadoDocentePorLicencias(docenteId){
+  const doc = DB.docentes.find(d=>d.id===docenteId);
+  if(!doc || doc.estado==='baja' || doc.estado==='renuncia') return;
+  const tieneLicenciaActiva = DB.designaciones.some(d=>d.docenteId===docenteId && d.estado==='licencia');
+  const tieneCargoActivo = DB.designaciones.some(d=>d.docenteId===docenteId && d.estado==='activa');
+  doc.estado = (tieneLicenciaActiva && !tieneCargoActivo) ? 'licencia' : 'activo';
+}
 function notaColor(n){ return n>=7?'nota-high':n>=6?'nota-mid':'nota-low'; }
 function badge(estado){
   const m={
@@ -2127,7 +2149,7 @@ function renderAdmin(sec){
   const itemsGlobal = isInstUser ? [] : [
     {id:'instituciones', icon:'🏫', label:'Instituciones',   grupo:'general'},
     {id:'usuarios',      icon:'👥', label:'Usuarios',         grupo:'general'},
-    {id:'mi-legajo',     icon:'📋', label:'Mi Legajo',        grupo:'general'},
+    {id:'mi-legajo',     icon:'📋', label:'Mi Legajo',        grupo:'personal'},
     {id:'configuracion', icon:'⚙️', label:'Configuración',    grupo:'general'},
   ];
   const itemsInst=[
@@ -2193,7 +2215,7 @@ function renderDirector(sec){
   currentSection=sec;
   const items=[
     {id:'dashboard',    icon:'🏠',label:'Panel General',   grupo:'general'},
-    {id:'mi-legajo',    icon:'📋',label:'Mi Legajo',       grupo:'general'},
+    {id:'mi-legajo',    icon:'📋',label:'Mi Legajo',       grupo:'personal'},
     {id:'plazas',       icon:'🏛️',label:'Plazas',          grupo:'docentes'},
     {id:'solicitudes-plaza', icon:'📝',label:'Solicitudes de Plaza', grupo:'docentes'},
     {id:'docentes',     icon:'👩‍🏫',label:'Docentes',        grupo:'docentes'},
@@ -2235,7 +2257,7 @@ function renderSecretario(sec){
   currentSection=sec;
   const items=[
     {id:'dashboard',    icon:'🏠',label:'Panel General',   grupo:'general'},
-    {id:'mi-legajo',    icon:'📋',label:'Mi Legajo',       grupo:'general'},
+    {id:'mi-legajo',    icon:'📋',label:'Mi Legajo',       grupo:'personal'},
     {id:'plazas',       icon:'🏛️',label:'Plazas',          grupo:'docentes'},
     {id:'solicitudes-plaza', icon:'📝',label:'Solicitudes de Plaza', grupo:'docentes'},
     {id:'docentes',     icon:'👩‍🏫',label:'Docentes',        grupo:'docentes'},
@@ -3149,15 +3171,20 @@ function checkAutomatismos(){
   checkReintegrosAutomaticos();
 }
 
-/** Cuando una licencia aprobada vence → cambiar docente a activo */
+/** Cuando una licencia aprobada vence → reactivar sólo las designaciones que cubría */
 function checkLicenciasVencidas(){
   if(!DB.licencias) return;
   const hoy = new Date().toISOString().split('T')[0];
   DB.licencias.forEach(lic=>{
     if(lic.estado==='aprobada' && lic.hasta && lic.hasta < hoy){
       const doc = DB.docentes.find(d=>d.id===lic.docenteId);
-      if(doc && doc.estado==='licencia'){
-        doc.estado = 'activo';
+      if(doc){
+        // Reactivar únicamente las designaciones que esta licencia había puesto en licencia
+        const plazasAsociadas = getPlazaIds(lic).map(id=>resolverPlaza(id)).filter(Boolean).map(p=>p.nroPlaza);
+        DB.designaciones
+          .filter(d=>d.docenteId===doc.id && d.estado==='licencia' && plazasAsociadas.includes(d.nroPlaza))
+          .forEach(d=>{ d.estado='activa'; });
+        recalcularEstadoDocentePorLicencias(doc.id);
         // Marcar licencia como finalizada
         lic.estado = 'finalizada';
         // Notificar al docente
@@ -3202,10 +3229,9 @@ function _ejecutarReintegroAuto(desig){
     if(dt){ dt.estado='activa'; dt.hasta=''; }
   }
 
-  // 3. Restaurar estado del titular a activo
+  // 3. Restaurar estado del titular a activo (sólo si ya no le queda otro cargo en licencia)
   if(desig.docenteTitularId){
-    const docTit = DB.docentes.find(d=>d.id===desig.docenteTitularId);
-    if(docTit && docTit.estado==='licencia'){ docTit.estado='activo'; }
+    recalcularEstadoDocentePorLicencias(desig.docenteTitularId);
 
     // 4. Marcar licencia relacionada como finalizada
     const licRel = DB.licencias.find(l=>
@@ -4447,7 +4473,8 @@ function finalizarAprobacionLic(licId){
   // Recién ahora queda efectivamente aprobada la licencia
   lic.estado='aprobada';
   registrarHistorial(lic,'APROBADO','');
-  if(doc) doc.estado='licencia';
+  // La licencia impacta sólo en la(s) plaza(s) asociada(s), no en todos los cargos del docente
+  marcarDesignacionesEnLicencia(lic, doc);
   crearNotificacion(lic.docenteId,'lic_aprobada',
     'Tu licencia fue aprobada ✅',
     `Tu solicitud de Licencia "${lic.tipo}" fue aprobada. Período: del ${fmtDate(lic.desde)} al ${fmtDate(lic.hasta)}.${lic.nroExp?' Exp.: '+lic.nroExp:''} La dirección tomará nota de tu ausencia en ese período.`
