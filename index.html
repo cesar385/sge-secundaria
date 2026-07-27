@@ -4242,10 +4242,13 @@ function renderLicencias(){
     }},
     {key:'estado', label:'Estado', render:r=>badge(r.estado)},
     {key:'doc',    label:'Documento', render:r=>`
-      <button class="btn btn-sm" onclick="generarFormularioLicencia(${r.id})"
-        style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
-        🖨️ Formulario
-      </button>`},
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="openGenerarFormularioLicencia(${r.id})"
+          style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
+          🖨️ Formulario
+        </button>
+        ${r.docsAdjuntosCompletado?`<button class="btn btn-sm" onclick="editarDocsAdjuntosLicencia(${r.id})" title="Corregir documentación adosada" style="border:1px solid #c4b5fd;color:#6d28d9">✏️</button>`:''}
+      </div>`},
     {key:'acc',    label:'Acciones', render:r=>r.estado==='pendiente'?(
       licenciaTienePlazaAsociada(r)
         ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -4335,7 +4338,8 @@ function verDetalleLic(licId){
 
   const acciones = `<div class="form-actions" style="margin-top:16px">
     <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
-    <button class="btn btn-ghost" onclick="closeModal();generarFormularioLicencia(${lic.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Formulario</button>
+    <button class="btn btn-ghost" onclick="closeModal();${puedeGestionarPersonal()?`openGenerarFormularioLicencia(${lic.id})`:`generarFormularioLicencia(${lic.id})`}" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Formulario</button>
+    ${puedeGestionarPersonal()&&lic.docsAdjuntosCompletado?`<button class="btn btn-ghost" onclick="closeModal();editarDocsAdjuntosLicencia(${lic.id})" style="border:1px solid #c4b5fd;color:#6d28d9">✏️ Corregir documentación</button>`:''}
     ${puedeGestionarPersonal()&&lic.estado==='pendiente'?(
       licenciaTienePlazaAsociada(lic)
         ? `<button class="btn btn-ghost" onclick="closeModal();asociarPlaza(${lic.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar Plazas</button>
@@ -4556,13 +4560,13 @@ function registrarAutorizacionLic(lic){
     lic.remunerada = selRem.value==='SI';
     lic.porcentaje = v('f-porcentaje')||(lic.remunerada?'100%':'0%');
   }
-  // Rubro 8: documentación adosada, marcada por el directivo
-  const chkCert=document.getElementById('f-doc-certmedico');
-  if(chkCert){
-    lic.docCertificadoMedico = chkCert.checked;
-    lic.docCopiaDNI = document.getElementById('f-doc-dni')?.checked||false;
-    lic.docConstanciaTramite = document.getElementById('f-doc-constancia')?.checked||false;
-    lic.docOtra = document.getElementById('f-doc-otra')?.checked||false;
+  // Rubro 8: documentación adosada, detallada como texto por el directivo
+  const elCert=document.getElementById('f-doc-certmedico');
+  if(elCert){
+    lic.docCertificadoMedico = elCert.value.trim();
+    lic.docCopiaDNI = document.getElementById('f-doc-dni')?.value.trim()||'';
+    lic.docConstanciaTramite = document.getElementById('f-doc-constancia')?.value.trim()||'';
+    lic.docOtra = document.getElementById('f-doc-otra')?.value.trim()||'';
   }
   registrarHistorial(lic,'AUTORIZACIÓN REGISTRADA',`${nroRes?'Res. '+nroRes+'. ':''}Funcionario/a: ${currentUser.nombre}.`);
 }
@@ -4581,17 +4585,18 @@ function _htmlRubro7y8Licencia(lic){
     </div>
     <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:14px;border-left:4px solid #92400e">
       <div style="font-size:12px;font-weight:800;color:#92400e;text-transform:uppercase;margin-bottom:10px">📎 Rubro 8 — Documentación adosada al trámite</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="f-doc-certmedico"${lic.nroCertificadoMedico?' checked':''}> Certificado médico</label>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="f-doc-dni"> Copia de DNI</label>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="f-doc-constancia" checked> Constancia de trámite</label>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="f-doc-otra"> Otra documentación</label>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${formGroup('Certificado médico',inputH('f-doc-certmedico','text',lic.docCertificadoMedico||'','ej: N° 04521, Dr. Pérez'))}
+        ${formGroup('Copia de DNI',inputH('f-doc-dni','text',lic.docCopiaDNI||'','ej: copia adjunta'))}
+        ${formGroup('Constancia de trámite',inputH('f-doc-constancia','text',lic.docConstanciaTramite||'','ej: constancia N° 123'))}
+        ${formGroup('Otra documentación',inputH('f-doc-otra','text',lic.docOtra||''))}
       </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">Detallá la documentación efectivamente presentada. Dejá el campo vacío si no corresponde.</div>
     </div>
     <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:4px;border-left:4px solid #6d28d9">
       <div style="font-size:12px;font-weight:800;color:#6d28d9;text-transform:uppercase;margin-bottom:10px">✍️ Rubro 7 — Autorización del trámite</div>
       <div class="form-grid-2">
-        ${formGroup('N° de Resolución (opcional)',inputH('f-nro-res','text','ej: 1234/26'))}
+        ${formGroup('N° de Resolución (opcional)',inputH('f-nro-res','text','','ej: 1234/26'))}
         ${formGroup('Observaciones de la autorización',inputH('f-obs-autorizacion','text',''))}
       </div>
       <div style="font-size:11px;color:#94a3b8;margin-top:-8px">Se registra automáticamente con tu nombre (${currentUser.nombre}) y la fecha de hoy como funcionario/a autorizante.</div>
@@ -4796,10 +4801,13 @@ function renderDesignaciones(filtroCaracter=''){
     }},
     {key:'estado',    label:'Estado',    render:r=>badge(r.estado)},
     {key:'doc',       label:'Documento', render:r=>`
-      <button class="btn btn-sm" onclick="openGenerarNotifDesignacion(${r.id})"
-        style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
-        🖨️ Notificación
-      </button>`},
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="openGenerarNotifDesignacion(${r.id})"
+          style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
+          🖨️ Notificación
+        </button>
+        ${r.docsAdjuntos?`<button class="btn btn-sm" onclick="editarDocsAdjuntosDesignacion(${r.id})" title="Corregir documentación adosada" style="border:1px solid #c4b5fd;color:#6d28d9">✏️</button>`:''}
+      </div>`},
     {key:'acc',label:'',render:r=>{
       const vencidoPendiente=r.estado==='activa'&&['STF','Interino'].includes(r.caracter)&&r.hasta&&r.hasta<hoy;
       return `<div style="display:flex;gap:5px;flex-wrap:wrap">
@@ -4938,6 +4946,7 @@ function verDetalleDesig(desigId){
     : `<div class="form-actions" style="margin-top:16px">
     <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
     <button class="btn btn-ghost" onclick="closeModal();${puedeGestionarPersonal()?`openGenerarNotifDesignacion(${d.id})`:`generarNotifDesignacion(${d.id})`}" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Notificación</button>
+    ${puedeGestionarPersonal()&&d.docsAdjuntos?`<button class="btn btn-ghost" onclick="closeModal();editarDocsAdjuntosDesignacion(${d.id})" style="border:1px solid #c4b5fd;color:#6d28d9">✏️ Corregir documentación</button>`:''}
     <button class="btn btn-ghost" onclick="closeModal();verHistorialPlaza('${d.nroPlaza}')" style="border:1px solid #c4b5fd;color:#6d28d9">🕓 Historial de la plaza</button>
     ${puedeGestionarPersonal()?`<button class="btn btn-ghost" onclick="closeModal();openEditDesig(${d.id})">✏️ Editar</button>`:''}
     ${puedeGestionarPersonal()&&d.estado==='activa'?`<button class="btn btn-danger" onclick="closeModal();inactivarDesig(${d.id})">Inactivar</button>`:''}
@@ -5507,7 +5516,7 @@ function openDesig(plazaId){
     </div>
     <div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:4px;border-left:4px solid #6d28d9">
       <div style="font-size:12px;font-weight:700;color:#6d28d9;margin-bottom:10px">✍️ Autorización del trámite (Rubro 7)</div>
-      ${formGroup('N° de Resolución (opcional)',inputH('f-nro-res','text','ej: 1234/26'))}
+      ${formGroup('N° de Resolución (opcional)',inputH('f-nro-res','text','','ej: 1234/26'))}
       <div style="font-size:11px;color:#94a3b8;margin-top:-8px">Se registra automáticamente con tu nombre (${currentUser.nombre}) como funcionario/a autorizante.</div>
     </div>
     <div class="form-actions">
@@ -6840,6 +6849,49 @@ function fuField(label, valor=''){
   return `<div class="fu-field"><label>${label}</label><div class="box">${valor||''}</div></div>`;
 }
 
+// Rubro 8 de Licencias: igual que en designaciones, se completa UNA SOLA VEZ
+// y de ahí en más el formulario se genera directo con esos datos guardados.
+function openGenerarFormularioLicencia(licId){
+  const lic = DB.licencias.find(l=>l.id===licId);
+  if(!lic) return;
+  if(lic.docsAdjuntosCompletado){ generarFormularioLicencia(licId); return; }
+  const defCert = lic.docCertificadoMedico||(lic.nroCertificadoMedico?`N° ${lic.nroCertificadoMedico}`:'');
+  const items=[
+    ['fnl-cert','Certificado médico',defCert,'ej: N° 04521, Dr. Pérez'],
+    ['fnl-dni','Copia de DNI',lic.docCopiaDNI||'','ej: copia adjunta'],
+    ['fnl-const','Constancia de trámite',lic.docConstanciaTramite||'','ej: constancia N° 123'],
+    ['fnl-otra','Otra documentación',lic.docOtra||'',''],
+  ];
+  showModal('Documentación adosada al trámite',`
+    <div class="alert-info" style="margin-bottom:14px;font-size:12px">
+      📎 Detallá la documentación que efectivamente está adosada a este trámite (Rubro 8 del FU-01).
+      Esto se completa <strong>una sola vez</strong>: de ahora en más, el formulario se va a generar directamente con estos datos.
+      Dejá vacío lo que no corresponda.
+    </div>
+    ${items.map(([id,label,val,ph])=>formGroup(label,inputH(id,'text',val,ph))).join('')}
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-success" onclick="confirmarGenerarFormularioLicencia(${licId})">🖨️ Guardar y Generar Formulario</button>
+    </div>`);
+}
+function confirmarGenerarFormularioLicencia(licId){
+  const lic = DB.licencias.find(l=>l.id===licId);
+  if(lic){
+    lic.docCertificadoMedico = document.getElementById('fnl-cert')?.value.trim()||'';
+    lic.docCopiaDNI = document.getElementById('fnl-dni')?.value.trim()||'';
+    lic.docConstanciaTramite = document.getElementById('fnl-const')?.value.trim()||'';
+    lic.docOtra = document.getElementById('fnl-otra')?.value.trim()||'';
+    lic.docsAdjuntosCompletado = true;
+  }
+  closeModal();
+  generarFormularioLicencia(licId);
+}
+// Permite corregir la documentación adosada ya guardada.
+function editarDocsAdjuntosLicencia(licId){
+  const lic = DB.licencias.find(l=>l.id===licId);
+  if(lic) lic.docsAdjuntosCompletado = false;
+  openGenerarFormularioLicencia(licId);
+}
 function generarFormularioLicencia(licId){
   const lic  = DB.licencias.find(l=>l.id===licId);
   if(!lic) return;
@@ -7034,12 +7086,10 @@ function generarFormularioLicencia(licId){
       <div class="rubro">
         <div class="rubro-title">Rubro 8: Listado de documentación adosada al trámite</div>
         <div class="rubro-body">
-          <div class="fu-chk-row" style="flex-direction:column;align-items:flex-start;gap:6px">
-            ${fuChk('Certificado médico', typeof lic.docCertificadoMedico==='boolean'?lic.docCertificadoMedico:!!lic.nroCertificadoMedico)}
-            ${fuChk('Copia de DNI', typeof lic.docCopiaDNI==='boolean'?lic.docCopiaDNI:!!doc.docDNI)}
-            ${fuChk('Constancia de trámite', typeof lic.docConstanciaTramite==='boolean'?lic.docConstanciaTramite:lic.estado!=='pendiente')}
-            ${fuChk('Otra documentación', !!lic.docOtra)}
-          </div>
+          ${fuField('Certificado médico', lic.docCertificadoMedico||(lic.nroCertificadoMedico?`N° ${lic.nroCertificadoMedico}`:''))}
+          ${fuField('Copia de DNI', lic.docCopiaDNI||'')}
+          ${fuField('Constancia de trámite', lic.docConstanciaTramite||'')}
+          ${fuField('Otra documentación', lic.docOtra||'')}
         </div>
       </div>
     </div>
@@ -7102,6 +7152,9 @@ function generarFormularioLicencia(licId){
 
 // El director/a o secretario/a elige qué documentación adjunta corresponde
 // marcar en el Rubro 8, antes de generar la notificación de designación.
+// Rubro 8 (documentación adosada) se completa UNA SOLA VEZ por designación.
+// Si ya se cargó antes (desig.docsAdjuntos), se va directo a la notificación
+// con esos datos ya guardados; si no, se pide una vez y queda persistido.
 function openGenerarNotifDesignacion(desigId){
   let desig = DB.designaciones.find(d=>d.id===desigId);
   let data = DB;
@@ -7110,34 +7163,51 @@ function openGenerarNotifDesignacion(desigId){
     if(!hallado) return;
     desig = hallado.item; data = hallado.data;
   }
+  if(desig.docsAdjuntos){
+    generarNotifDesignacion(desigId);
+    return;
+  }
   const doc = data.docentes.find(d=>d.id===desig.docenteId);
   if(!doc) return;
+  const labels={docTitulo:'Título habilitante / constancia',docDNI:'Copia de DNI',docFoto:'Foto carnet',docAntecedentes:'Certificado de antecedentes penales'};
   showModal('Documentación adosada al trámite',`
     <div class="alert-info" style="margin-bottom:14px;font-size:12px">
-      📎 Marcá la documentación que efectivamente está adosada a este trámite (Rubro 8 del FU-01).
-      Por defecto aparece según lo que ${doc.apellido||doc.nombre} tiene cargado en su legajo, pero podés ajustarlo.
+      📎 Detallá la documentación que efectivamente está adosada a este trámite (Rubro 8 del FU-01).
+      Esto se completa <strong>una sola vez</strong>: de ahora en más, la notificación se va a generar directamente con estos datos.
+      Dejá vacío lo que no corresponda.
     </div>
-    ${['docTitulo','docDNI','docFoto','docAntecedentes'].map((k,i)=>{
-      const labels={docTitulo:'Título habilitante / constancia',docDNI:'Copia de DNI',docFoto:'Foto carnet',docAntecedentes:'Certificado de antecedentes penales'};
-      return `<label style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8fafc;border-radius:8px;border:1.5px solid #e2e8f0;margin-bottom:8px;cursor:pointer">
-        <input type="checkbox" id="fnd-${k}" ${doc[k]?'checked':''} style="width:18px;height:18px;accent-color:#1a5c3a;cursor:pointer">
-        <span style="font-size:14px;font-weight:600;color:#334155">${labels[k]}</span>
-      </label>`;
-    }).join('')}
+    ${['docTitulo','docDNI','docFoto','docAntecedentes'].map(k=>formGroup(labels[k],inputH(`fnd-${k}`,'text','','ej: entregado el dd/mm')))
+      .join('')}
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-success" onclick="confirmarGenerarNotifDesignacion(${desigId})">🖨️ Generar Notificación</button>
+      <button class="btn btn-success" onclick="confirmarGenerarNotifDesignacion(${desigId})">🖨️ Guardar y Generar Notificación</button>
     </div>`);
 }
 function confirmarGenerarNotifDesignacion(desigId){
+  let desig = DB.designaciones.find(d=>d.id===desigId);
+  if(!desig){
+    const hallado = buscarRegistroGlobal('designaciones', desigId);
+    if(hallado) desig = hallado.item;
+  }
   const docsSel = {
-    docTitulo: !!document.getElementById('fnd-docTitulo')?.checked,
-    docDNI: !!document.getElementById('fnd-docDNI')?.checked,
-    docFoto: !!document.getElementById('fnd-docFoto')?.checked,
-    docAntecedentes: !!document.getElementById('fnd-docAntecedentes')?.checked,
+    docTitulo: document.getElementById('fnd-docTitulo')?.value.trim()||'',
+    docDNI: document.getElementById('fnd-docDNI')?.value.trim()||'',
+    docFoto: document.getElementById('fnd-docFoto')?.value.trim()||'',
+    docAntecedentes: document.getElementById('fnd-docAntecedentes')?.value.trim()||'',
   };
+  if(desig) desig.docsAdjuntos = docsSel; // se guarda una única vez en la designación
   closeModal();
-  generarNotifDesignacion(desigId, docsSel);
+  generarNotifDesignacion(desigId);
+}
+// Permite corregir la documentación adosada ya guardada, por si hizo falta un ajuste posterior.
+function editarDocsAdjuntosDesignacion(desigId){
+  let desig = DB.designaciones.find(d=>d.id===desigId);
+  if(!desig){
+    const hallado = buscarRegistroGlobal('designaciones', desigId);
+    if(hallado) desig = hallado.item;
+  }
+  if(desig) delete desig.docsAdjuntos;
+  openGenerarNotifDesignacion(desigId);
 }
 function generarNotifDesignacion(desigId, docsSel){
   let desig = DB.designaciones.find(d=>d.id===desigId);
@@ -7271,12 +7341,11 @@ function generarNotifDesignacion(desigId, docsSel){
       <div class="rubro">
         <div class="rubro-title">Rubro 8: Listado de documentación adosada al trámite</div>
         <div class="rubro-body">
-          <div class="fu-chk-row" style="flex-direction:column;align-items:flex-start;gap:6px">
-            ${fuChk('Título habilitante / constancia', docsSel?docsSel.docTitulo:!!doc.docTitulo)}
-            ${fuChk('Copia de DNI', docsSel?docsSel.docDNI:!!doc.docDNI)}
-            ${fuChk('Foto carnet', docsSel?docsSel.docFoto:!!doc.docFoto)}
-            ${fuChk('Certificado de antecedentes penales', docsSel?docsSel.docAntecedentes:!!doc.docAntecedentes)}
-          </div>
+          ${fuField('Título habilitante / constancia', (docsSel||desig.docsAdjuntos||{}).docTitulo||'')}
+          ${fuField('Copia de DNI', (docsSel||desig.docsAdjuntos||{}).docDNI||'')}
+          ${fuField('Foto carnet', (docsSel||desig.docsAdjuntos||{}).docFoto||'')}
+          ${fuField('Certificado de antecedentes penales', (docsSel||desig.docsAdjuntos||{}).docAntecedentes||'')}
+          ${desig.docsAdjuntos&&puedeGestionarPersonal()?`<div style="margin-top:8px;font-size:10px;color:#94a3b8">Documentación ya registrada para este trámite.</div>`:''}
         </div>
       </div>
     </div>
