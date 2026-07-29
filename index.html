@@ -305,8 +305,6 @@
       </div>
       <div id="login-error" style="display:none" class="alert-danger">⚠️ Usuario o contraseña incorrectos</div>
       <button class="btn btn-primary" style="width:100%;padding:13px;font-size:15px" onclick="doLogin()">Ingresar al Sistema</button>
-      <button class="btn btn-ghost" style="width:100%;margin-top:12px;padding:10px" onclick="toggleUsers()">▼ Ver usuarios de prueba</button>
-      <div id="users-list" class="users-preview" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -1328,6 +1326,8 @@ function intentarReconexionSilenciosaSheets(){
 }
 
 function initUsers(){
+  const listEl = document.getElementById('users-list');
+  if(!listEl) return; // Panel de usuarios de prueba oculto: no hace falta armarlo
   // Usuarios normales (sólo los de demostración, sin el admin; los creados desde Admin tampoco aparecen acá)
   const normalUsers = USUARIOS.filter(u=>USUARIOS_DEMO_IDS.has(u.id) && u.rol!=='admin').map(u=>`
     <button class="user-btn" onclick="fillLogin('${u.usuario}','${u.clave}')"
@@ -4242,13 +4242,10 @@ function renderLicencias(){
     }},
     {key:'estado', label:'Estado', render:r=>badge(r.estado)},
     {key:'doc',    label:'Documento', render:r=>`
-      <div style="display:flex;gap:5px;flex-wrap:wrap">
-        <button class="btn btn-sm" onclick="openGenerarFormularioLicencia(${r.id})"
-          style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
-          🖨️ Formulario
-        </button>
-        ${r.docsAdjuntosCompletado?`<button class="btn btn-sm" onclick="editarDocsAdjuntosLicencia(${r.id})" title="Corregir documentación adosada" style="border:1px solid #c4b5fd;color:#6d28d9">✏️</button>`:''}
-      </div>`},
+      <button class="btn btn-sm" onclick="generarFormularioLicencia(${r.id})"
+        style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
+        🖨️ Formulario
+      </button>`},
     {key:'acc',    label:'Acciones', render:r=>r.estado==='pendiente'?(
       licenciaTienePlazaAsociada(r)
         ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -4338,8 +4335,7 @@ function verDetalleLic(licId){
 
   const acciones = `<div class="form-actions" style="margin-top:16px">
     <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
-    <button class="btn btn-ghost" onclick="closeModal();${puedeGestionarPersonal()?`openGenerarFormularioLicencia(${lic.id})`:`generarFormularioLicencia(${lic.id})`}" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Formulario</button>
-    ${puedeGestionarPersonal()&&lic.docsAdjuntosCompletado?`<button class="btn btn-ghost" onclick="closeModal();editarDocsAdjuntosLicencia(${lic.id})" style="border:1px solid #c4b5fd;color:#6d28d9">✏️ Corregir documentación</button>`:''}
+    <button class="btn btn-ghost" onclick="closeModal();generarFormularioLicencia(${lic.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Formulario</button>
     ${puedeGestionarPersonal()&&lic.estado==='pendiente'?(
       licenciaTienePlazaAsociada(lic)
         ? `<button class="btn btn-ghost" onclick="closeModal();asociarPlaza(${lic.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar Plazas</button>
@@ -4560,14 +4556,9 @@ function registrarAutorizacionLic(lic){
     lic.remunerada = selRem.value==='SI';
     lic.porcentaje = v('f-porcentaje')||(lic.remunerada?'100%':'0%');
   }
-  // Rubro 8: documentación adosada, detallada como texto por el directivo
-  const elCert=document.getElementById('f-doc-certmedico');
-  if(elCert){
-    lic.docCertificadoMedico = elCert.value.trim();
-    lic.docCopiaDNI = document.getElementById('f-doc-dni')?.value.trim()||'';
-    lic.docConstanciaTramite = document.getElementById('f-doc-constancia')?.value.trim()||'';
-    lic.docOtra = document.getElementById('f-doc-otra')?.value.trim()||'';
-  }
+  // Rubro 8: documentación adosada, un único campo de texto libre
+  const elDocs=document.getElementById('f-docs-adjuntos');
+  if(elDocs) lic.docsAdjuntos = elDocs.value.trim();
   registrarHistorial(lic,'AUTORIZACIÓN REGISTRADA',`${nroRes?'Res. '+nroRes+'. ':''}Funcionario/a: ${currentUser.nombre}.`);
 }
 // Bloque HTML compartido (Rubro 4.2 remunerada, Rubro 8 documentación, Rubro 7 autorización)
@@ -4585,13 +4576,8 @@ function _htmlRubro7y8Licencia(lic){
     </div>
     <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:14px;border-left:4px solid #92400e">
       <div style="font-size:12px;font-weight:800;color:#92400e;text-transform:uppercase;margin-bottom:10px">📎 Rubro 8 — Documentación adosada al trámite</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        ${formGroup('Certificado médico',inputH('f-doc-certmedico','text',lic.docCertificadoMedico||'','ej: N° 04521, Dr. Pérez'))}
-        ${formGroup('Copia de DNI',inputH('f-doc-dni','text',lic.docCopiaDNI||'','ej: copia adjunta'))}
-        ${formGroup('Constancia de trámite',inputH('f-doc-constancia','text',lic.docConstanciaTramite||'','ej: constancia N° 123'))}
-        ${formGroup('Otra documentación',inputH('f-doc-otra','text',lic.docOtra||''))}
-      </div>
-      <div style="font-size:11px;color:#94a3b8;margin-top:4px">Detallá la documentación efectivamente presentada. Dejá el campo vacío si no corresponde.</div>
+      ${formGroup('Documentación presentada',`<textarea id="f-docs-adjuntos" class="form-input" style="min-height:70px" placeholder="ej: Certificado médico N° 04521 (Dr. Pérez), copia de DNI">${lic.docsAdjuntos||''}</textarea>`)}
+      <div style="font-size:11px;color:#94a3b8;margin-top:-8px">Detallá toda la documentación efectivamente presentada. Dejalo vacío si no corresponde.</div>
     </div>
     <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:4px;border-left:4px solid #6d28d9">
       <div style="font-size:12px;font-weight:800;color:#6d28d9;text-transform:uppercase;margin-bottom:10px">✍️ Rubro 7 — Autorización del trámite</div>
@@ -4801,13 +4787,10 @@ function renderDesignaciones(filtroCaracter=''){
     }},
     {key:'estado',    label:'Estado',    render:r=>badge(r.estado)},
     {key:'doc',       label:'Documento', render:r=>`
-      <div style="display:flex;gap:5px;flex-wrap:wrap">
-        <button class="btn btn-sm" onclick="openGenerarNotifDesignacion(${r.id})"
-          style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
-          🖨️ Notificación
-        </button>
-        ${r.docsAdjuntos?`<button class="btn btn-sm" onclick="editarDocsAdjuntosDesignacion(${r.id})" title="Corregir documentación adosada" style="border:1px solid #c4b5fd;color:#6d28d9">✏️</button>`:''}
-      </div>`},
+      <button class="btn btn-sm" onclick="generarNotifDesignacion(${r.id})"
+        style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
+        🖨️ Notificación
+      </button>`},
     {key:'acc',label:'',render:r=>{
       const vencidoPendiente=r.estado==='activa'&&['STF','Interino'].includes(r.caracter)&&r.hasta&&r.hasta<hoy;
       return `<div style="display:flex;gap:5px;flex-wrap:wrap">
@@ -4945,8 +4928,7 @@ function verDetalleDesig(desigId){
        <div class="form-actions" style="margin-top:10px"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>`
     : `<div class="form-actions" style="margin-top:16px">
     <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
-    <button class="btn btn-ghost" onclick="closeModal();${puedeGestionarPersonal()?`openGenerarNotifDesignacion(${d.id})`:`generarNotifDesignacion(${d.id})`}" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Notificación</button>
-    ${puedeGestionarPersonal()&&d.docsAdjuntos?`<button class="btn btn-ghost" onclick="closeModal();editarDocsAdjuntosDesignacion(${d.id})" style="border:1px solid #c4b5fd;color:#6d28d9">✏️ Corregir documentación</button>`:''}
+    <button class="btn btn-ghost" onclick="closeModal();generarNotifDesignacion(${d.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Notificación</button>
     <button class="btn btn-ghost" onclick="closeModal();verHistorialPlaza('${d.nroPlaza}')" style="border:1px solid #c4b5fd;color:#6d28d9">🕓 Historial de la plaza</button>
     ${puedeGestionarPersonal()?`<button class="btn btn-ghost" onclick="closeModal();openEditDesig(${d.id})">✏️ Editar</button>`:''}
     ${puedeGestionarPersonal()&&d.estado==='activa'?`<button class="btn btn-danger" onclick="closeModal();inactivarDesig(${d.id})">Inactivar</button>`:''}
@@ -5519,6 +5501,11 @@ function openDesig(plazaId){
       ${formGroup('N° de Resolución (opcional)',inputH('f-nro-res','text','','ej: 1234/26'))}
       <div style="font-size:11px;color:#94a3b8;margin-top:-8px">Se registra automáticamente con tu nombre (${currentUser.nombre}) como funcionario/a autorizante.</div>
     </div>
+    <div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:4px;border-left:4px solid #92400e">
+      <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:10px">📎 Documentación adosada al trámite (Rubro 8)</div>
+      ${formGroup('Documentación presentada',`<textarea id="f-docs-adjuntos" class="form-input" style="min-height:60px" placeholder="ej: Título habilitante, copia de DNI, foto carnet, antecedentes penales"></textarea>`)}
+      <div style="font-size:11px;color:#94a3b8;margin-top:-8px">Dejalo vacío si todavía no se presentó nada.</div>
+    </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-success" onclick="saveDesig()">Registrar Designación</button>
@@ -5548,6 +5535,7 @@ function openEditDesig(id){
       <div>${formGroup('Desde',inputH('f-desde','date',d.desde))}</div>
       <div>${formGroup('Hasta',inputH('f-hasta','date',d.hasta||''))}</div>
     </div>
+    ${formGroup('Documentación adosada al trámite (Rubro 8)',`<textarea id="f-docs-adjuntos" class="form-input" style="min-height:60px">${d.docsAdjuntos||''}</textarea>`)}
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveEditDesig(${id})">Guardar Cambios</button>
@@ -5614,6 +5602,8 @@ function saveDesig(){
     estado:'activa',docenteTitularId:titularId,desigTitularId:desigTitId,
     // Rubro 7: quien autoriza el trámite es siempre quien lo crea (Director/a, Secretario/a o Admin)
     nroResolucion:v('f-nro-res')||'', funcionarioAutorizante:currentUser.nombre, fechaAutorizacion:new Date().toISOString().split('T')[0],
+    // Rubro 8: documentación adosada al trámite (texto libre)
+    docsAdjuntos:(document.getElementById('f-docs-adjuntos')?.value||'').trim(),
   };
   registrarHistorial(nuevaDesig,'INGRESO FORMULARIO',`Plazas asociadas: ${v('f-plaza')}.`);
   DB.designaciones.push(nuevaDesig);
@@ -5644,7 +5634,8 @@ function saveEditDesig(id){
     nroPlaza:v('f-plaza'),docenteId:parseInt(v('f-doc')),caracter:v('f-caracter'),
     modalidad:v('f-modalidad')||antes.modalidad,
     cargo:v('f-cargo'),materia:v('f-materia'),curso:v('f-curso'),
-    horas:parseInt(v('f-horas'))||0,desde:v('f-desde'),hasta:v('f-hasta')
+    horas:parseInt(v('f-horas'))||0,desde:v('f-desde'),hasta:v('f-hasta'),
+    docsAdjuntos:(document.getElementById('f-docs-adjuntos')?.value||'').trim(),
   };
   const nueva=DB.designaciones[idx];
   // Notificaciones por cambios relevantes
@@ -6801,6 +6792,54 @@ function parsearNroTramite(nroExp){
   };
 }
 
+// Ciudad/localidad de la institución, deducida de la dirección (ej. "Av. San Martín 200, Federal, Entre Ríos" → "Federal")
+function ciudadInst(inst){
+  if(!inst) return 'Federal';
+  const partes=(inst.direccion||'').split(',').map(s=>s.trim()).filter(Boolean);
+  return partes.length>=2 ? partes[partes.length-2] : 'Federal';
+}
+function campoNotif(label, val, full){
+  return `<div class="campo${full?' full':''}"><label>${label}</label><div class="val">${val||''}</div></div>`;
+}
+function estilosNotifSimple(){
+  return `
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:Georgia,'Times New Roman',serif;background:#e5e7eb;padding:20px 0;color:#111}
+  .page{background:#fff;width:210mm;min-height:297mm;margin:0 auto 20px;padding:18mm 16mm;box-shadow:0 2px 10px rgba(0,0,0,.15);position:relative}
+  .header{text-align:center;border-bottom:2px solid #1a3a5c;padding-bottom:10px;margin-bottom:14px}
+  .header .inst{font-size:13pt;font-weight:bold;color:#1a3a5c;text-transform:uppercase}
+  .header .dep,.header .cge{font-size:9pt;color:#475569}
+  .titulo-doc{text-align:center;font-size:15pt;font-weight:bold;margin:14px 0 4px;text-transform:uppercase}
+  .subtitulo-doc{text-align:center;font-size:9.5pt;color:#475569;margin-bottom:14px}
+  .intro{font-size:10pt;text-align:justify;margin-bottom:16px;line-height:1.5}
+  .seccion{margin-bottom:16px}
+  .seccion-title{font-size:10.5pt;font-weight:bold;color:#1a3a5c;border-bottom:1px solid #1a3a5c;padding-bottom:3px;margin-bottom:8px;text-transform:uppercase}
+  .campo-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 20px}
+  .campo{margin-bottom:6px}
+  .campo label{display:block;font-size:8pt;font-weight:bold;text-transform:uppercase;color:#475569}
+  .campo .val{font-size:10.5pt;border-bottom:1px solid #94a3b8;padding:2px 0;min-height:16px}
+  .campo.full{grid-column:1/-1}
+  ul.condiciones{font-size:9.5pt;padding-left:18px;line-height:1.6}
+  .firma-bloque{display:flex;justify-content:space-between;margin-top:40px;gap:20px}
+  .firma-cel{flex:1;text-align:center;border-top:1px solid #000;padding-top:6px;font-size:9pt}
+  .fecha-notif{margin-top:24px;font-size:10pt}
+  .acuse{page-break-before:always;border-top:2px dashed #94a3b8;padding-top:16px;margin-top:20px}
+  .acuse-title{text-align:center;font-size:11pt;font-weight:bold;text-transform:uppercase;margin-bottom:14px}
+  .acuse p{font-size:10pt;line-height:1.7;margin-bottom:16px;text-align:justify}
+  .footer-legal{font-size:7.5pt;color:#64748b;margin-top:30px;border-top:1px solid #cbd5e1;padding-top:8px;text-align:justify}
+  table.tabla-plazas{width:100%;border-collapse:collapse;margin-top:6px;font-size:8.5pt}
+  table.tabla-plazas th{background:#f1f5f9;padding:4px 6px;text-align:left;border:1px solid #cbd5e1;font-size:7.5pt;text-transform:uppercase}
+  table.tabla-plazas td{padding:4px 6px;border:1px solid #cbd5e1}
+  .inst-subtitulo{font-size:8.5pt;font-weight:bold;color:#475569;margin:8px 0 2px}
+  .print-btn{position:fixed;top:14px;right:14px;background:#1a3a5c;color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:13pt;cursor:pointer;font-family:Arial,sans-serif;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.25);z-index:999}
+  @media print{
+    body{background:#fff;padding:0}
+    .page{box-shadow:none;margin:0;width:auto;min-height:auto}
+    .print-btn{display:none}
+  }
+  `;
+}
+
 function estilosFU01(){
   return `
   *{margin:0;padding:0;box-sizing:border-box}
@@ -6849,49 +6888,6 @@ function fuField(label, valor=''){
   return `<div class="fu-field"><label>${label}</label><div class="box">${valor||''}</div></div>`;
 }
 
-// Rubro 8 de Licencias: igual que en designaciones, se completa UNA SOLA VEZ
-// y de ahí en más el formulario se genera directo con esos datos guardados.
-function openGenerarFormularioLicencia(licId){
-  const lic = DB.licencias.find(l=>l.id===licId);
-  if(!lic) return;
-  if(lic.docsAdjuntosCompletado){ generarFormularioLicencia(licId); return; }
-  const defCert = lic.docCertificadoMedico||(lic.nroCertificadoMedico?`N° ${lic.nroCertificadoMedico}`:'');
-  const items=[
-    ['fnl-cert','Certificado médico',defCert,'ej: N° 04521, Dr. Pérez'],
-    ['fnl-dni','Copia de DNI',lic.docCopiaDNI||'','ej: copia adjunta'],
-    ['fnl-const','Constancia de trámite',lic.docConstanciaTramite||'','ej: constancia N° 123'],
-    ['fnl-otra','Otra documentación',lic.docOtra||'',''],
-  ];
-  showModal('Documentación adosada al trámite',`
-    <div class="alert-info" style="margin-bottom:14px;font-size:12px">
-      📎 Detallá la documentación que efectivamente está adosada a este trámite (Rubro 8 del FU-01).
-      Esto se completa <strong>una sola vez</strong>: de ahora en más, el formulario se va a generar directamente con estos datos.
-      Dejá vacío lo que no corresponda.
-    </div>
-    ${items.map(([id,label,val,ph])=>formGroup(label,inputH(id,'text',val,ph))).join('')}
-    <div class="form-actions">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-success" onclick="confirmarGenerarFormularioLicencia(${licId})">🖨️ Guardar y Generar Formulario</button>
-    </div>`);
-}
-function confirmarGenerarFormularioLicencia(licId){
-  const lic = DB.licencias.find(l=>l.id===licId);
-  if(lic){
-    lic.docCertificadoMedico = document.getElementById('fnl-cert')?.value.trim()||'';
-    lic.docCopiaDNI = document.getElementById('fnl-dni')?.value.trim()||'';
-    lic.docConstanciaTramite = document.getElementById('fnl-const')?.value.trim()||'';
-    lic.docOtra = document.getElementById('fnl-otra')?.value.trim()||'';
-    lic.docsAdjuntosCompletado = true;
-  }
-  closeModal();
-  generarFormularioLicencia(licId);
-}
-// Permite corregir la documentación adosada ya guardada.
-function editarDocsAdjuntosLicencia(licId){
-  const lic = DB.licencias.find(l=>l.id===licId);
-  if(lic) lic.docsAdjuntosCompletado = false;
-  openGenerarFormularioLicencia(licId);
-}
 function generarFormularioLicencia(licId){
   const lic  = DB.licencias.find(l=>l.id===licId);
   if(!lic) return;
@@ -6904,14 +6900,10 @@ function generarFormularioLicencia(licId){
   }
   if(!doc) return;
   const inst = getInstUser()||instActual();
+  const ciudad = ciudadInst(inst);
   const dias = lic.hasta ? Math.max(1,Math.round((new Date(lic.hasta)-new Date(lic.desde))/(1000*60*60*24))+1) : (lic.cantidadDias||'');
-  const segTramite = parsearNroTramite(lic.nroExp);
-  // Remunerada según tipo de licencia (Particular y Gremial suelen ser sin goce de sueldo salvo excepción)
-  // Si el/la directivo/a ya definió Remunerada/Porcentaje al aprobar (Rubro 4.2), se usa eso;
-  // si no (licencia aún pendiente), se sugiere según el tipo.
   const esRemunerada = typeof lic.remunerada === 'boolean' ? lic.remunerada : !['Particular'].includes(lic.tipo);
   const porcentajeTexto = lic.porcentaje || (esRemunerada?'100%':'0%');
-  // Art./Inc. sólo se completan si están realmente especificados en la Norma Legal declarada
   const matchArt = (lic.normaLegal||'').match(/art[íi]?c?u?l?o?\.?\s*(\d+)/i);
   const matchInc = (lic.normaLegal||'').match(/inc\.?\s*([a-záéíóú0-9]+)/i);
   const artNorma = matchArt ? matchArt[1] : '';
@@ -6940,287 +6932,129 @@ function generarFormularioLicencia(licId){
     if(pl) plazasObjs=[{...pl, _institucionId:currentInstitucionId, _inst:inst}];
   }
 
-  const SIT_REVISTA_DESC = {'Titular':'TITULAR','Interino':'INTERINO/A','Suplente':'SUPLENTE','Cargo Vacante':'SUP. CARGO VACANTE','STF':'SUP. TER. F. ART 80'};
+  const SIT_REVISTA_DESC = {'Titular':'Titular','Interino':'Interino/a','Suplente':'Suplente','Cargo Vacante':'Sup. Cargo Vacante','STF':'Sup. Ter. F. Art. 80'};
   const antigDoc = doc.fechaIngreso ? calcAntig(doc.fechaIngreso, lic.desde) : null;
   const antigTexto = antigDoc ? `${antigDoc.años}a ${antigDoc.meses}m` : '—';
 
-  // Rubro 5: si el docente tiene plazas en más de una institución, se generan
-  // bloques de "Establecimiento" separados, cada uno con su propio Nombre/CUE/Nivel.
+  // Plaza(s) afectada(s) por la licencia (equivalente al Rubro 5), agrupadas por institución
   const filaPlaza = (pl) => {
     const dataInst = INST_DATA[pl._institucionId];
     const desigPlaza = (!prec && dataInst) ? dataInst.designaciones.find(d=>d.nroPlaza===pl.nroPlaza && d.docenteId===lic.docenteId) : null;
-    const sitRevista = desigPlaza ? (SIT_REVISTA_DESC[desigPlaza.caracter]||desigPlaza.caracter) : (prec?'PRECEPTOR/A':'—');
+    const sitRevista = desigPlaza ? (SIT_REVISTA_DESC[desigPlaza.caracter]||desigPlaza.caracter) : (prec?'Preceptor/a':'—');
     const anioCurso = (pl.curso||'').match(/^\d+°?/)?.[0] || '—';
-    return `
-    <tr>
-      <td class="left">${(prec?'Preceptor/a':'Profesor/a').toUpperCase()} — ${pl.materia}</td>
-      <td>${pl.turno}</td><td>${anioCurso}</td><td>${pl.curso||'—'}</td>
-      <td>${pl.horasCatedra||0}</td><td>${sitRevista}</td>
-      <td>${antigTexto}</td><td>SI</td><td>L a V</td><td>${pl.turno}</td>
+    return `<tr>
+      <td>${pl.materia}</td><td>${pl.turno}</td><td>${anioCurso}</td><td>${pl.curso||'—'}</td>
+      <td>${pl.horasCatedra||0}</td><td>${sitRevista}</td><td>${antigTexto}</td>
     </tr>`;
   };
-
   const gruposPorInst = {};
   plazasObjs.forEach(pl=>{
     const key = pl._institucionId;
     if(!gruposPorInst[key]) gruposPorInst[key] = {inst: pl._inst, plazas: []};
     gruposPorInst[key].plazas.push(pl);
   });
-  const bloquesEstablecimiento = Object.values(gruposPorInst).map(grupo=>`
-      <div class="fu-row">
-        ${fuField('Nombre y N°', grupo.inst?grupo.inst.nombre:'')}
-        ${fuField('CUE', grupo.inst?.cue||'')}
-        ${fuField('Nivel', grupo.plazas[0]?.nivel||'Secundario')}
-      </div>
-      <table class="fu-tabla5">
-        <thead><tr>
-          <th>Cargo y materia</th><th>Turno</th><th>Año/Curso</th><th>Sec./Div.</th>
-          <th>Hs. Cátedra</th><th>Sit. Revista</th><th>Antigüedad</th><th>Frente a alumnos</th>
-          <th>Día</th><th>Horario</th>
-        </tr></thead>
+  const bloquesPlazas = Object.values(gruposPorInst).map(grupo=>`
+      <div class="inst-subtitulo">${grupo.inst?grupo.inst.nombre:''}${grupo.inst?.cue?' — CUE '+grupo.inst.cue:''}</div>
+      <table class="tabla-plazas">
+        <thead><tr><th>Materia</th><th>Turno</th><th>Año</th><th>Curso</th><th>Hs. Cátedra</th><th>Sit. Revista</th><th>Antigüedad</th></tr></thead>
         <tbody>${grupo.plazas.map(filaPlaza).join('')}</tbody>
-      </table>`).join('<div style="height:10px"></div>')
-    || `<div class="fu-row">${fuField('Nombre y N°', inst?inst.nombre:'')}${fuField('CUE', inst?.cue||'')}${fuField('Nivel','Secundario')}</div>
-        <table class="fu-tabla5"><thead><tr><th>Cargo y materia</th><th>Turno</th><th>Año/Curso</th><th>Sec./Div.</th><th>Hs. Cátedra</th><th>Sit. Revista</th><th>Antigüedad</th><th>Frente a alumnos</th><th>Día</th><th>Horario</th></tr></thead><tbody><tr><td colspan="10">—</td></tr></tbody></table>`;
+      </table>`).join('') || '<div style="font-size:9.5pt;color:#94a3b8">Sin plaza asociada todavía.</div>';
+
+  const hoy = new Date().toLocaleDateString('es-AR');
+  const tituloDoc = lic.estado==='pendiente' ? 'Solicitud de Licencia' : 'Notificación de Licencia';
 
   const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Solicitud de Licencia — ${doc.apellido}, ${doc.nombres}</title>
-<style>${estilosFU01()}</style>
+<title>${tituloDoc} — ${doc.apellido}, ${doc.nombres||doc.nombre}</title>
+<style>${estilosNotifSimple()}</style>
 </head>
 <body>
 <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
 <div class="page">
-
-  <div class="fu-header">
-    <div class="escudo">🎓</div>
-    <div class="titulo">
-      <h1>FORMULARIO UNIFICADO [FU-01]</h1>
-      <div class="sub">Gobierno de Entre Ríos<br>Consejo General de Educación</div>
-    </div>
-    <div style="width:50px"></div>
+  <div class="header">
+    <div class="inst">${(inst?.nombre||'').toUpperCase()}${ciudad?' — '+ciudad.toUpperCase():''}</div>
+    <div class="dep">Dirección Departamental de Escuelas · Departamento ${ciudad||'—'} — Entre Ríos</div>
+    <div class="cge">Consejo General de Educación de Entre Ríos</div>
+  </div>
+  <div class="titulo-doc">${tituloDoc}</div>
+  <div class="subtitulo-doc">Estatuto del Docente — Decreto N° 2547/87 · Ciclo Lectivo ${(lic.desde?new Date(lic.desde).getFullYear():new Date().getFullYear())}</div>
+  <div class="intro">
+    Por medio del presente, la Dirección de ${inst?.nombre||'la institución'}${ciudad?' de la ciudad de '+ciudad:''}, Provincia de Entre Ríos,
+    ${lic.estado==='pendiente'?'eleva la siguiente solicitud de licencia':'notifica a quien corresponde la siguiente licencia'}, conforme la normativa vigente del Estatuto del Docente de la Provincia de Entre Ríos.
   </div>
 
-  <div class="fu-cols2">
-    <div>
-      <!-- RUBRO 1 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 1: Carátula del trámite</div>
-        <div class="rubro-body">
-          ${fuField('Trámite','LICENCIA — '+(lic.tipo||''))}
-          <div style="margin-top:6px">
-            <label style="font-size:8pt;font-weight:bold">N° del Trámite</label>
-            <div class="fu-tramite-nro">
-              <div class="seg"><label>Tipo</label><div class="box">${segTramite.tipo}</div></div>
-              <div class="seg"><label>Dto</label><div class="box">${segTramite.dto}</div></div>
-              <div class="seg"><label>CUE</label><div class="box">${segTramite.cue}</div></div>
-              <div class="seg"><label>N°</label><div class="box">${segTramite.nro}</div></div>
-              <div class="seg"><label>Año</label><div class="box">${segTramite.anio}</div></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- RUBRO 2 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 2: Datos del solicitante</div>
-        <div class="rubro-body">
-          ${fuField('Apellidos', doc.apellido||(doc.nombre||'').split(',')[0])}
-          ${fuField('Nombres', doc.nombres||(doc.nombre||'').split(',')[1])}
-          ${fuField('N° Doc.', doc.dni)}
-          <div class="fu-row" style="margin-top:4px">
-            <div><label style="font-size:8pt;font-weight:bold">Tipo Doc.:</label>
-              <div class="fu-chk-row">${fuChk('DNI',true)}${fuChk('LE',false)}${fuChk('LC',false)}</div></div>
-          </div>
-          <div class="fu-row">
-            <div><label style="font-size:8pt;font-weight:bold">Sexo:</label>
-              <div class="fu-chk-row">${fuChk('Masculino', doc.sexo==='M')}${fuChk('Femenino', doc.sexo==='F')}</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- RUBRO 3 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 3: Datos del establecimiento iniciador</div>
-        <div class="rubro-body">
-          ${fuField('Nombre y Número', inst?inst.nombre:'')}
-          ${fuField('CUE', inst?.cue||'')}
-        </div>
-      </div>
-
-      <!-- RUBRO 4 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 4: Datos del Trámite</div>
-        <div class="rubro-body">
-          ${fuField('Fecha Desde o de Inicio', fmtDate(lic.desde))}
-          ${fuField('Fecha Hasta o de Finalización', lic.hasta?fmtDate(lic.hasta):'')}
-        </div>
-      </div>
-    </div>
-
-    <div>
-      <!-- RUBRO 4.2 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 4.2: Licencias</div>
-        <div class="rubro-body">
-          <div class="fu-row">
-            ${fuField('Remuneradas (Si/No)', esRemunerada?'SI':'NO')}
-            ${fuField('Porcentaje', porcentajeTexto)}
-          </div>
-          <div class="fu-row">
-            ${fuField('Cantidad de días solicitados', dias)}
-            ${fuField('Obligaciones', obligacionesTexto)}
-          </div>
-          ${fuField('Normal Legal', lic.normaLegal||'—')}
-          <div class="fu-row">
-            ${fuField('Art.', artNorma||'—')}
-            ${fuField('Inc.', incNorma||'—')}
-          </div>
-          ${lic.nroCertificadoMedico?fuField('N° Certificado Médico', lic.nroCertificadoMedico):''}
-        </div>
-      </div>
-
-      <!-- RUBRO 8 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 8: Listado de documentación adosada al trámite</div>
-        <div class="rubro-body">
-          ${fuField('Certificado médico', lic.docCertificadoMedico||(lic.nroCertificadoMedico?`N° ${lic.nroCertificadoMedico}`:''))}
-          ${fuField('Copia de DNI', lic.docCopiaDNI||'')}
-          ${fuField('Constancia de trámite', lic.docConstanciaTramite||'')}
-          ${fuField('Otra documentación', lic.docOtra||'')}
-        </div>
-      </div>
+  <div class="seccion">
+    <div class="seccion-title">I. Datos del Agente Solicitante</div>
+    <div class="campo-grid">
+      ${campoNotif('Apellido y Nombre', `${doc.apellido||''}, ${doc.nombres||doc.nombre}`, true)}
+      ${campoNotif('DNI', doc.dni)}
+      ${campoNotif('Sexo', doc.sexo==='M'?'Masculino':doc.sexo==='F'?'Femenino':'')}
     </div>
   </div>
 
-  <!-- RUBRO 5 -->
-  <div class="rubro">
-    <div class="rubro-title">Rubro 5: Descripción del cargo u horas afectados al trámite</div>
-    <div class="rubro-body">
-      ${bloquesEstablecimiento}
+  <div class="seccion">
+    <div class="seccion-title">II. Datos de la Licencia</div>
+    <div class="campo-grid">
+      ${campoNotif('Tipo de licencia', lic.tipo)}
+      ${campoNotif('Norma legal', lic.normaLegal||(artNorma?`Art. ${artNorma}${incNorma?' Inc. '+incNorma:''}`:''))}
+      ${campoNotif('Desde', fmtDate(lic.desde))}
+      ${campoNotif('Hasta', lic.hasta?fmtDate(lic.hasta):'')}
+      ${campoNotif('Cantidad de días', dias)}
+      ${campoNotif('Remunerada', esRemunerada?`Sí — ${porcentajeTexto}`:'No')}
+      ${lic.nroCertificadoMedico?campoNotif('N° Certificado médico', lic.nroCertificadoMedico):''}
+      ${campoNotif('N° de Resolución', lic.nroResolucion||'')}
+      ${campoNotif('Obligaciones', obligacionesTexto, true)}
+      ${campoNotif('Documentación adosada', lic.docsAdjuntos||'', true)}
     </div>
+    <div style="font-size:8pt;font-weight:bold;text-transform:uppercase;color:#475569;margin-top:6px">Plaza(s) afectada(s)</div>
+    ${bloquesPlazas}
   </div>
 
-  <!-- RUBRO 6 -->
-  <div class="rubro">
-    <div class="rubro-title">Rubro 6: Firma de los responsables del trámite</div>
-    <div class="rubro-body">
-      <div class="fu-decl">
-        LOS ABAJO FIRMANTES HEMOS CONFECCIONADO ESTE FORMULARIO CON CARÁCTER DE DECLARACIÓN JURADA SIN OMITIR NI FALSEAR
-        DATO ALGUNO QUE DEBE CONTENER, SIENDO FIEL EXPRESIÓN DE LA VERDAD. ESTE TRÁMITE TIENE CARÁCTER DE CONDICIONAL HASTA
-        QUE SEAN VERIFICADOS TODOS LOS DATOS EN LA SUBDIRECCIÓN DE RECURSOS HUMANOS DEL CGE.
-      </div>
-      <div class="fu-firma3">
-        <div class="cel"><div class="lbl">Firma y Aclaración del Solicitante</div></div>
-        <div class="cel"><div class="lbl">Firma, Aclaración y Sello del Director/a del Establecimiento Iniciador</div></div>
-        <div class="cel"><div class="lbl">Firma, Aclaración y Sello del Responsable</div></div>
-      </div>
-      <div class="fu-row" style="margin-top:6px">
-        ${fuField('Fecha')}${fuField('Fecha')}${fuField('Fecha')}
-      </div>
+  <div class="firma-bloque">
+    <div class="firma-cel">Firma y sello Director/a<br>${ciudad||'Federal'}, ${hoy}</div>
+    <div class="firma-cel">Firma del/la agente<br>${doc.apellido||''}, ${doc.nombres||doc.nombre}</div>
+  </div>
+  <div class="fecha-notif">Fecha de notificación: _____ / _____ / _______</div>
+
+  <div class="acuse">
+    <div class="acuse-title">Acuse de Recibo — Copia para la Institución</div>
+    <p>
+      Yo, ${doc.apellido||''}, ${doc.nombres||doc.nombre}, DNI ${doc.dni||'____________'}, me doy por notificado/a de mi licencia de tipo
+      ${lic.tipo}, con vigencia desde el ${fmtDate(lic.desde)}${lic.hasta?' hasta el '+fmtDate(lic.hasta):''}${dias?' ('+dias+' días)':''}.
+    </p>
+    <div class="firma-bloque" style="margin-top:50px">
+      <div class="firma-cel">Firma del/la agente</div>
+      <div class="firma-cel">Fecha: _____ / _____ / _______</div>
     </div>
+    <div style="margin-top:16px;font-size:9.5pt">Aclaración: ______________________________</div>
   </div>
 
-  <!-- RUBRO 7 -->
-  <div class="rubro">
-    <div class="rubro-title">Rubro 7: Autorización del trámite</div>
-    <div class="rubro-body">
-      <div class="fu-row">
-        <div><label style="font-size:8pt;font-weight:bold">¿Se autoriza el trámite? (SI/NO):</label>
-          <div class="fu-chk-row">${fuChk('SI', lic.estado==='aprobada')}${fuChk('NO', lic.estado==='rechazada')}</div></div>
-        ${fuField('N° Res.', lic.nroResolucion||'')}
-        ${fuField('Fecha', lic.fechaAutorizacion?fmtDate(lic.fechaAutorizacion):'')}
-      </div>
-      ${fuField('Observaciones', lic.observacionesAutorizacion||lic.motivo||'')}
-      <div class="fu-row" style="margin-top:6px">
-        ${fuField('Código del Funcionario Autorizante', lic.funcionarioAutorizante||'')}
-      </div>
-      <div class="fu-firma3" style="grid-template-columns:1fr">
-        <div class="cel"><div class="lbl">Firma, Aclaración y Sello del Funcionario Autorizante${lic.funcionarioAutorizante?'<br>'+lic.funcionarioAutorizante:''}</div></div>
-      </div>
-    </div>
+  <div class="footer-legal">
+    * Este documento tiene carácter oficial. Deberá ser firmado por el/la agente como constancia de haber tomado conocimiento de la presente licencia.
+    Una copia queda en poder del/la agente y otra en el legajo institucional. Estatuto del Docente — Decreto N° 2547/87 — Provincia de Entre Ríos.
   </div>
-
 </div>
 </body>
 </html>`;
 
-  mostrarDocumentoImprimible(html, `Solicitud de Licencia — ${doc.apellido}, ${doc.nombres||doc.nombre}`);
+  mostrarDocumentoImprimible(html, `${tituloDoc} — ${doc.apellido}, ${doc.nombres||doc.nombre}`);
 }
 
-// El director/a o secretario/a elige qué documentación adjunta corresponde
-// marcar en el Rubro 8, antes de generar la notificación de designación.
-// Rubro 8 (documentación adosada) se completa UNA SOLA VEZ por designación.
-// Si ya se cargó antes (desig.docsAdjuntos), se va directo a la notificación
-// con esos datos ya guardados; si no, se pide una vez y queda persistido.
-function openGenerarNotifDesignacion(desigId){
+function generarNotifDesignacion(desigId){
   let desig = DB.designaciones.find(d=>d.id===desigId);
   let data = DB;
   if(!desig){
     const hallado = buscarRegistroGlobal('designaciones', desigId);
     if(!hallado) return;
     desig = hallado.item; data = hallado.data;
-  }
-  if(desig.docsAdjuntos){
-    generarNotifDesignacion(desigId);
-    return;
   }
   const doc = data.docentes.find(d=>d.id===desig.docenteId);
   if(!doc) return;
-  const labels={docTitulo:'Título habilitante / constancia',docDNI:'Copia de DNI',docFoto:'Foto carnet',docAntecedentes:'Certificado de antecedentes penales'};
-  showModal('Documentación adosada al trámite',`
-    <div class="alert-info" style="margin-bottom:14px;font-size:12px">
-      📎 Detallá la documentación que efectivamente está adosada a este trámite (Rubro 8 del FU-01).
-      Esto se completa <strong>una sola vez</strong>: de ahora en más, la notificación se va a generar directamente con estos datos.
-      Dejá vacío lo que no corresponda.
-    </div>
-    ${['docTitulo','docDNI','docFoto','docAntecedentes'].map(k=>formGroup(labels[k],inputH(`fnd-${k}`,'text','','ej: entregado el dd/mm')))
-      .join('')}
-    <div class="form-actions">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-success" onclick="confirmarGenerarNotifDesignacion(${desigId})">🖨️ Guardar y Generar Notificación</button>
-    </div>`);
-}
-function confirmarGenerarNotifDesignacion(desigId){
-  let desig = DB.designaciones.find(d=>d.id===desigId);
-  if(!desig){
-    const hallado = buscarRegistroGlobal('designaciones', desigId);
-    if(hallado) desig = hallado.item;
-  }
-  const docsSel = {
-    docTitulo: document.getElementById('fnd-docTitulo')?.value.trim()||'',
-    docDNI: document.getElementById('fnd-docDNI')?.value.trim()||'',
-    docFoto: document.getElementById('fnd-docFoto')?.value.trim()||'',
-    docAntecedentes: document.getElementById('fnd-docAntecedentes')?.value.trim()||'',
-  };
-  if(desig) desig.docsAdjuntos = docsSel; // se guarda una única vez en la designación
-  closeModal();
-  generarNotifDesignacion(desigId);
-}
-// Permite corregir la documentación adosada ya guardada, por si hizo falta un ajuste posterior.
-function editarDocsAdjuntosDesignacion(desigId){
-  let desig = DB.designaciones.find(d=>d.id===desigId);
-  if(!desig){
-    const hallado = buscarRegistroGlobal('designaciones', desigId);
-    if(hallado) desig = hallado.item;
-  }
-  if(desig) delete desig.docsAdjuntos;
-  openGenerarNotifDesignacion(desigId);
-}
-function generarNotifDesignacion(desigId, docsSel){
-  let desig = DB.designaciones.find(d=>d.id===desigId);
-  let data = DB;
-  if(!desig){
-    const hallado = buscarRegistroGlobal('designaciones', desigId);
-    if(!hallado) return;
-    desig = hallado.item; data = hallado.data;
-  }
-  const doc  = data.docentes.find(d=>d.id===desig.docenteId);
-  if(!doc) return;
   const inst = getInstUser()||instActual();
-  const plaza= data.plazas.find(p=>p.nroPlaza===desig.nroPlaza);
+  const plaza = data.plazas.find(p=>p.nroPlaza===desig.nroPlaza);
+  const ciudad = ciudadInst(inst);
 
   const CARACTER_DESC = {
     'Cargo Vacante': 'Suplente — Cargo Vacante',
@@ -7228,195 +7062,96 @@ function generarNotifDesignacion(desigId, docsSel){
     'STF':           'Suplente por Titular con Funciones (STF) — Art. 80',
   };
   const carDesc = CARACTER_DESC[desig.caracter] || desig.caracter;
-  const titular = desig.docenteTitularId ? data.docentes.find(d=>d.id===desig.docenteTitularId) : null;
-  // Rubro 1: el trámite y el código "Tipo" dependen de la modalidad de designación (Concurso/Proyecto/Listado/Idóneo)
-  const tramiteLabelDesig = MODALIDAD_DESIG_LABEL[desig.modalidad] || ('DESIGNACIÓN — '+carDesc);
-  const tipoCodigoDesig = MODALIDAD_DESIG_CODIGO[desig.modalidad] || '--';
+  const antig = doc.fechaIngreso ? (a=>`${a.años}a ${a.meses}m`)(calcAntig(doc.fechaIngreso,desig.desde)) : '—';
+  const hoy = new Date().toLocaleDateString('es-AR');
 
   const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Notificación de Designación — ${doc.apellido}, ${doc.nombres}</title>
-<style>${estilosFU01()}</style>
+<title>Notificación de Designación — ${doc.apellido}, ${doc.nombres||doc.nombre}</title>
+<style>${estilosNotifSimple()}</style>
 </head>
 <body>
 <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
 <div class="page">
-
-  <div class="fu-header">
-    <div class="escudo">🎓</div>
-    <div class="titulo">
-      <h1>FORMULARIO UNIFICADO [FU-01]</h1>
-      <div class="sub">Gobierno de Entre Ríos<br>Consejo General de Educación</div>
-    </div>
-    <div style="width:50px"></div>
+  <div class="header">
+    <div class="inst">${(inst?.nombre||'').toUpperCase()}${ciudad?' — '+ciudad.toUpperCase():''}</div>
+    <div class="dep">Dirección Departamental de Escuelas · Departamento ${ciudad||'—'} — Entre Ríos</div>
+    <div class="cge">Consejo General de Educación de Entre Ríos</div>
+  </div>
+  <div class="titulo-doc">Notificación de Designación</div>
+  <div class="subtitulo-doc">Estatuto del Docente — Decreto N° 2547/87 · Ciclo Lectivo ${(desig.desde?new Date(desig.desde).getFullYear():new Date().getFullYear())}</div>
+  <div class="intro">
+    Por medio del presente, la Dirección de ${inst?.nombre||'la institución'}${ciudad?' de la ciudad de '+ciudad:''}, Provincia de Entre Ríos,
+    notifica a quien corresponde la siguiente designación docente, conforme la normativa vigente del Estatuto del Docente de la Provincia de Entre Ríos.
   </div>
 
-  <div class="fu-cols2">
-    <div>
-      <!-- RUBRO 1 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 1: Carátula del trámite</div>
-        <div class="rubro-body">
-          ${fuField('Trámite', tramiteLabelDesig)}
-          <div style="margin-top:6px">
-            <label style="font-size:8pt;font-weight:bold">N° del Trámite</label>
-            <div class="fu-tramite-nro">
-              <div class="seg"><label>Tipo</label><div class="box">${tipoCodigoDesig}</div></div>
-              <div class="seg"><label>Dto</label><div class="box">06</div></div>
-              <div class="seg"><label>CUE</label><div class="box">${inst?.cue||''}</div></div>
-              <div class="seg"><label>N°</label><div class="box">${String(desig.id).slice(-4)}</div></div>
-              <div class="seg"><label>Año</label><div class="box">${desig.desde?desig.desde.split('-')[0]:''}</div></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- RUBRO 2 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 2: Datos del solicitante</div>
-        <div class="rubro-body">
-          ${fuField('Apellidos', doc.apellido||(doc.nombre||'').split(',')[0])}
-          ${fuField('Nombres', doc.nombres||(doc.nombre||'').split(',')[1])}
-          ${fuField('N° Doc.', doc.dni)}
-          <div class="fu-row" style="margin-top:4px">
-            <div><label style="font-size:8pt;font-weight:bold">Tipo Doc.:</label>
-              <div class="fu-chk-row">${fuChk('DNI',true)}${fuChk('LE',false)}${fuChk('LC',false)}</div></div>
-          </div>
-          <div class="fu-row">
-            <div><label style="font-size:8pt;font-weight:bold">Sexo:</label>
-              <div class="fu-chk-row">${fuChk('Masculino', doc.sexo==='M')}${fuChk('Femenino', doc.sexo==='F')}</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- RUBRO 3 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 3: Datos del establecimiento iniciador</div>
-        <div class="rubro-body">
-          ${fuField('Nombre y Número', inst?inst.nombre:'')}
-          ${fuField('CUE', inst?.cue||'')}
-        </div>
-      </div>
-
-      <!-- RUBRO 4 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 4: Datos del Trámite</div>
-        <div class="rubro-body">
-          ${fuField('Fecha Desde o de Inicio', fmtDate(desig.desde))}
-          ${fuField('Fecha Hasta o de Finalización', desig.hasta?fmtDate(desig.hasta):'Sin vencimiento')}
-        </div>
-      </div>
-    </div>
-
-    <div>
-      <!-- RUBRO 4.1 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 4.1: Designaciones</div>
-        <div class="rubro-body">
-          ${fuField('Fecha Toma de Posesión', fmtDate(desig.desde))}
-          ${fuField('Apellido y Nombre Agente Reemplazado', titular?`${titular.apellido||''}, ${titular.nombres||titular.nombre}`:'—')}
-          ${fuField('N° Documento', titular?titular.dni||'':'—')}
-          <div style="font-size:7.5pt;font-style:italic;margin:4px 0">Completar sólo para designaciones por concurso</div>
-          <div class="fu-row">
-            ${fuField('N° Acta Adj.', '')}
-            ${fuField('Puntaje', '')}
-          </div>
-        </div>
-      </div>
-
-      <!-- CONDICIONES -->
-      <div class="rubro">
-        <div class="rubro-title">Condiciones de la designación</div>
-        <div class="rubro-body" style="font-size:8pt;line-height:1.5">
-          El/la agente designado/a queda obligado/a a cumplir el horario y la carga horaria asignada, presentar la
-          documentación requerida (título, DNI, antecedentes) dentro de los 5 días hábiles, y dar cumplimiento a las
-          obligaciones del Estatuto del Docente.
-          ${desig.caracter==='STF'?'<br><strong>Nota:</strong> designación de carácter transitorio; finaliza al reintegrarse el/la titular o al vencimiento del período.':''}
-        </div>
-      </div>
-
-      <!-- RUBRO 8 -->
-      <div class="rubro">
-        <div class="rubro-title">Rubro 8: Listado de documentación adosada al trámite</div>
-        <div class="rubro-body">
-          ${fuField('Título habilitante / constancia', (docsSel||desig.docsAdjuntos||{}).docTitulo||'')}
-          ${fuField('Copia de DNI', (docsSel||desig.docsAdjuntos||{}).docDNI||'')}
-          ${fuField('Foto carnet', (docsSel||desig.docsAdjuntos||{}).docFoto||'')}
-          ${fuField('Certificado de antecedentes penales', (docsSel||desig.docsAdjuntos||{}).docAntecedentes||'')}
-          ${desig.docsAdjuntos&&puedeGestionarPersonal()?`<div style="margin-top:8px;font-size:10px;color:#94a3b8">Documentación ya registrada para este trámite.</div>`:''}
-        </div>
-      </div>
+  <div class="seccion">
+    <div class="seccion-title">I. Datos del Agente Designado/a</div>
+    <div class="campo-grid">
+      ${campoNotif('Apellido y Nombre', `${doc.apellido||''}, ${doc.nombres||doc.nombre}`, true)}
+      ${campoNotif('DNI', doc.dni)}
+      ${campoNotif('Título habilitante', doc.tituloHab)}
+      ${campoNotif('Escalafón', doc.categoria?`Categoría ${doc.categoria}`:'')}
     </div>
   </div>
 
-  <!-- RUBRO 5 -->
-  <div class="rubro">
-    <div class="rubro-title">Rubro 5: Descripción del cargo u horas afectados al trámite</div>
-    <div class="rubro-body">
-      <div class="fu-row">
-        ${fuField('Nombre y N°', inst?inst.nombre:'')}
-        ${fuField('CUE', inst?.cue||'')}
-        ${fuField('Nivel', plaza?.nivel||'Secundario')}
-      </div>
-      <table class="fu-tabla5">
-        <thead><tr>
-          <th>Cargo y materia</th><th>Turno</th><th>Año/Curso</th><th>Sec./Div.</th>
-          <th>Hs. Cátedra</th><th>Sit. Revista</th><th>Antigüedad</th><th>Frente a alumnos</th>
-          <th>Día</th><th>Horario</th>
-        </tr></thead>
-        <tbody>
-          <tr>
-            <td class="left">${(desig.cargo||'Profesor/a').toUpperCase()} — ${desig.materia}</td>
-            <td>${plaza?.turno||'—'}</td><td>${(desig.curso||'').match(/^\d+°?/)?.[0]||'—'}</td><td>${desig.curso||'—'}</td>
-            <td>${desig.horas||0}</td><td>${carDesc}</td><td>${doc.fechaIngreso?(a=>`${a.años}a ${a.meses}m`)(calcAntig(doc.fechaIngreso,desig.desde)):'—'}</td><td>SI</td><td>L a V</td><td>${plaza?.turno||'—'}</td>
-          </tr>
-        </tbody>
-      </table>
+  <div class="seccion">
+    <div class="seccion-title">II. Datos de la Designación</div>
+    <div class="campo-grid">
+      ${campoNotif('Plaza N°', desig.nroPlaza)}
+      ${campoNotif('Carácter', carDesc)}
+      ${campoNotif('Nivel', plaza?.nivel||'Secundario')}
+      ${campoNotif('Modalidad de la designación', desig.modalidad)}
+      ${campoNotif('Espacio Curricular / Materia', desig.materia)}
+      ${campoNotif('Curso / División', desig.curso||'—')}
+      ${campoNotif('Cargo', desig.cargo)}
+      ${campoNotif('Horas cátedra semanales', desig.horas?`${desig.horas} hs/sem`:'')}
+      ${campoNotif('Turno', plaza?.turno||'—')}
+      ${campoNotif('Antigüedad', antig)}
+      ${campoNotif('Fecha de inicio (Alta)', fmtDate(desig.desde))}
+      ${campoNotif('Fecha de término (Baja)', desig.hasta?fmtDate(desig.hasta):'Sin vencimiento')}
+      ${campoNotif('N° de Resolución', desig.nroResolucion||'')}
+      ${campoNotif('Documentación adosada', desig.docsAdjuntos||'', true)}
     </div>
   </div>
 
-  <!-- RUBRO 6 -->
-  <div class="rubro">
-    <div class="rubro-title">Rubro 6: Firma de los responsables del trámite</div>
-    <div class="rubro-body">
-      <div class="fu-decl">
-        LOS ABAJO FIRMANTES HEMOS CONFECCIONADO ESTE FORMULARIO CON CARÁCTER DE DECLARACIÓN JURADA SIN OMITIR NI FALSEAR
-        DATO ALGUNO QUE DEBE CONTENER, SIENDO FIEL EXPRESIÓN DE LA VERDAD. ESTE TRÁMITE TIENE CARÁCTER DE CONDICIONAL HASTA
-        QUE SEAN VERIFICADOS TODOS LOS DATOS EN LA SUBDIRECCIÓN DE RECURSOS HUMANOS DEL CGE.
-      </div>
-      <div class="fu-firma3">
-        <div class="cel"><div class="lbl">Firma y Aclaración del/la Docente Designado/a<br>${doc.apellido||''}, ${doc.nombres||doc.nombre}</div></div>
-        <div class="cel"><div class="lbl">Firma, Aclaración y Sello del Director/a del Establecimiento Iniciador</div></div>
-        <div class="cel"><div class="lbl">Firma, Aclaración y Sello del Responsable</div></div>
-      </div>
-      <div class="fu-row" style="margin-top:6px">
-        ${fuField('Fecha')}${fuField('Fecha')}${fuField('Fecha')}
-      </div>
-    </div>
+  <div class="seccion">
+    <div class="seccion-title">III. Condiciones de la Designación</div>
+    <div style="font-size:9.5pt;margin-bottom:6px">El/la docente designado/a queda obligado/a a:</div>
+    <ul class="condiciones">
+      <li>Cumplir el horario y la carga horaria asignada según el turno establecido.</li>
+      <li>Presentar la documentación requerida (título certificado, DNI, antecedentes) en Secretaría dentro de los 5 días hábiles.</li>
+      <li>Notificar fehacientemente cualquier inasistencia con la anticipación establecida en el Estatuto.</li>
+      <li>Dar cumplimiento a todas las obligaciones previstas en el Estatuto del Docente y la normativa vigente.</li>
+    </ul>
   </div>
 
-  <!-- RUBRO 7 -->
-  <div class="rubro">
-    <div class="rubro-title">Rubro 7: Autorización del trámite</div>
-    <div class="rubro-body">
-      <div class="fu-row">
-        <div><label style="font-size:8pt;font-weight:bold">¿Se autoriza el trámite? (SI/NO):</label>
-          <div class="fu-chk-row">${fuChk('SI', desig.estado==='activa')}${fuChk('NO', desig.estado==='inactiva')}</div></div>
-        ${fuField('N° Res.', desig.nroResolucion||'')}
-        ${fuField('Fecha', desig.fechaAutorizacion?fmtDate(desig.fechaAutorizacion):fmtDate(desig.desde))}
-      </div>
-      ${fuField('Observaciones', '')}
-      <div class="fu-row" style="margin-top:6px">
-        ${fuField('Código del Funcionario Autorizante', desig.funcionarioAutorizante||'')}
-      </div>
-      <div class="fu-firma3" style="grid-template-columns:1fr">
-        <div class="cel"><div class="lbl">Firma, Aclaración y Sello del Funcionario Autorizante${desig.funcionarioAutorizante?'<br>'+desig.funcionarioAutorizante:''}</div></div>
-      </div>
+  <div class="firma-bloque">
+    <div class="firma-cel">Firma y sello Director/a<br>${ciudad||'Federal'}, ${hoy}</div>
+    <div class="firma-cel">Firma del/la docente designado/a<br>${doc.apellido||''}, ${doc.nombres||doc.nombre}</div>
+  </div>
+  <div class="fecha-notif">Fecha de notificación: _____ / _____ / _______</div>
+
+  <div class="acuse">
+    <div class="acuse-title">Acuse de Recibo — Copia para la Institución</div>
+    <p>
+      Yo, ${doc.apellido||''}, ${doc.nombres||doc.nombre}, DNI ${doc.dni||'____________'}, me doy por notificado/a de mi designación como
+      ${carDesc} en el espacio curricular ${desig.materia}${desig.curso?', curso '+desig.curso:''} (Plaza N° ${desig.nroPlaza}),
+      ${desig.horas||0} hs/sem, con vigencia desde el ${fmtDate(desig.desde)}.
+    </p>
+    <div class="firma-bloque" style="margin-top:50px">
+      <div class="firma-cel">Firma del/la docente</div>
+      <div class="firma-cel">Fecha: _____ / _____ / _______</div>
     </div>
+    <div style="margin-top:16px;font-size:9.5pt">Aclaración: ______________________________</div>
   </div>
 
+  <div class="footer-legal">
+    * Este documento tiene carácter oficial. Deberá ser firmado por el/la docente como constancia de haber tomado conocimiento de la presente designación.
+    Una copia queda en poder del/la docente y otra en el legajo institucional. Estatuto del Docente — Decreto N° 2547/87 — Provincia de Entre Ríos.
+  </div>
 </div>
 </body>
 </html>`;
