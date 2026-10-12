@@ -15162,7 +15162,7 @@ function renderMiCredencial(){
   const nom=crdNombre(o).toUpperCase();
   const ini=((o.apellido||o.nombre||'?')[0]||'?').toUpperCase()+((o.nombres||'')[0]||'').toUpperCase();
   const rec=crdRec(ag);
-  const est=rec?crdEstadoBadge(crdEstadoEf(rec,ag)):'<span style="background:#f1f5f9;color:#64748b;font-size:11px;font-weight:800;padding:3px 10px;border-radius:10px">Sin credencial</span>';
+  const est=(rec&&rec.estado!=='Anulada')?crdEstadoBadge(crdEstadoEf(rec,ag)):'<span style="background:#f1f5f9;color:#64748b;font-size:11px;font-weight:800;padding:3px 10px;border-radius:10px">Sin credencial</span>';
   const header=`<div style="background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-left:6px solid ${rc}">
     <div style="width:54px;height:54px;border-radius:50%;background:${rc};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:19px">${crdEsc(ini)}</div>
     <div style="flex:1;min-width:200px"><div style="font-size:17px;font-weight:900;color:#1e293b">${crdEsc(nom)} <span style="color:#94a3b8;font-weight:700">| DNI: ${crdEsc(o.dni||'—')}</span></div>
@@ -15377,7 +15377,7 @@ function crdSolicitudHTML(ag,rc){
       <button class="btn btn-primary" onclick="crdSolicitar()">🪪 Enviar solicitud</button>
       <div style="font-size:11.5px;color:#94a3b8;margin-top:10px">La credencial la emite el Administrador del sistema.</div></div>`;
   }
-  const fila=rec?`<tr><td style="padding:8px 12px;white-space:nowrap">${fmtDate(pen?pen.fechaSolicitud:(rec.fechaEmision||rec.fechaResolucion||rec.fechaSolicitud))}</td><td style="padding:8px 12px">${crdEsc(rec.motivo||'')}</td><td style="padding:8px 12px">${crdEstadoBadge(crdEstadoEf(rec,ag))}</td><td style="padding:8px 12px">${crdEsc(rec.nro||'—')}</td><td style="padding:8px 12px;color:#64748b">${crdEsc(crdResolucionTxt(rec,ag))}</td></tr>`
+  const fila=(rec&&rec.estado!=='Anulada')?`<tr><td style="padding:8px 12px;white-space:nowrap">${fmtDate(pen?pen.fechaSolicitud:(rec.fechaEmision||rec.fechaResolucion||rec.fechaSolicitud))}</td><td style="padding:8px 12px">${crdEsc(rec.motivo||'')}</td><td style="padding:8px 12px">${crdEstadoBadge(crdEstadoEf(rec,ag))}</td><td style="padding:8px 12px">${crdEsc(rec.nro||'—')}</td><td style="padding:8px 12px;color:#64748b">${crdEsc(crdResolucionTxt(rec,ag))}</td></tr>`
     :'<tr><td colspan="5" style="padding:16px;text-align:center;color:#94a3b8">Todavía no solicitaste tu credencial</td></tr>';
   return form+`<div style="margin-top:16px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>${['Fecha','Motivo','Estado','N°','Resolución'].map(h=>`<th style="padding:9px 12px;background:#f1f5f9;color:#334155;text-align:left;border-bottom:2px solid #cbd5e1">${h}</th>`).join('')}</tr></thead><tbody>${fila}</tbody></table></div>`;
 }
@@ -15409,7 +15409,7 @@ function crdCapNombres(ag){
   return l;
 }
 function crdCargosHTML(ag,total){
-  const R={DOC:0,HAB:-5,SUP:-7,'SUP 1D':-7}, orden={DOC:0,HAB:1,SUP:2,'SUP 1D':3}, m={};
+  const R={DOC:10,HAB:5,SUP:3,'SUP 1D':3}, orden={DOC:0,HAB:1,SUP:2,'SUP 1D':3}, m={};   // cada competencia = puntaje base + puntos del carácter
   const add=(n,k,t)=>{ n=String(n).toUpperCase(); if(!m[n]||orden[k]<orden[m[n].k]) m[n]={k,t}; };
   const tit=crdTitulos(ag);
   const esDoc=t=>/\bprof\b|profesor|docente|maestr|licenciad/i.test(t.nombre);
@@ -15435,7 +15435,7 @@ function crdFoto(ag,vivo){
   const total=r?+r.puntaje:live;
   return {r,total,live,
     tits:(r&&r.snapTits2)||crdTitulos(ag).map(t=>t.nombre),   // sólo los títulos de la sección Títulos (no capacitaciones)
-    rows:(r&&r.snapCargos)||crdCargosHTML(ag,total),
+    rows:(r&&r.snapCargos)?r.snapCargos.map(x=>r.snapV2?x:[x[0],x[1],(+x[2])+10].concat(x.slice(3))):crdCargosHTML(ag,total),   // snapshots viejos: el carácter no estaba sumado
     nTit:(r&&r.snapN!=null)?r.snapN:crdTitulos(ag).length+crdCapNombres(ag).length};
 }
 function crdAvisoPeriodo(ag){
@@ -15479,7 +15479,7 @@ function crdCredencialTabHTML(ag,rc){
       <button class="btn btn-primary btn-sm" onclick="crdImprimir('${ag.campo}',${ag.id},${v.id})">🖨️ Imprimir / Guardar PDF</button></div>`
    :`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;color:#92400e;font-size:13px;font-weight:600">📄 Vista previa con tus datos actuales. ${pen?'Tu solicitud está en trámite: el Administrador la emitirá.':'Para obtener la credencial oficial pedila en "Solicitud de Credencial"; la emite el Administrador.'}</div>`;
   const cz=crdCerrada(ag), D=cz&&cz.snapDes?cz.snapDes:(()=>{const q=crdPuntajes(ag);return {total:q.total,ant:q.antecedentes,antTit:q.antTit,antCap:q.antCap,servicios:q.servicios,zona:q.zona,conceptos:q.conceptos,jerarquia:q.jerarquia};})(), n2=x=>(+x).toFixed(2);
-  const desg=`<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:#334155;line-height:1.6">📊 <strong>Puntaje base de la credencial: ${n2(D.total)}</strong> = Servicios ${n2(D.servicios)} + <strong>Antecedentes ${n2(D.ant)}</strong> (títulos ${n2(D.antTit)} + capacitaciones ${n2(D.antCap)}) + Zona ${n2(D.zona)} + Conceptos ${n2(D.conceptos)} + Jerarquía ${n2(D.jerarquia)}. <span style="color:#64748b">Las capacitaciones suman puntaje aunque no se listen en la hoja.</span></div>`;
+  const desg=`<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:#334155;line-height:1.6">📊 <strong>Puntaje base de la credencial: ${n2(D.total)}</strong> = Servicios ${n2(D.servicios)} + <strong>Antecedentes ${n2(D.ant)}</strong> (títulos ${n2(D.antTit)} + capacitaciones ${n2(D.antCap)}) + Zona ${n2(D.zona)} + Conceptos ${n2(D.conceptos)} + Jerarquía ${n2(D.jerarquia)}. <span style="color:#64748b">Cada cargo/asignatura de la hoja = este puntaje base + puntos del carácter (Docente 10 · Habilitante 5 · Supletorio 3). Las capacitaciones suman aunque no se listen en la hoja.</span></div>`;
   return banner+crdAvisoPeriodo(ag)+desg+`<div style="background:#e5e7eb;padding:14px;border-radius:10px;overflow:auto;max-height:min(66vh,620px);border:1px solid #d1d5db">${crdPaginaHTML(ag,v)}</div>`;
 }
 
@@ -15555,7 +15555,7 @@ function crdEmitir(campo,id){
     emitidaPor:currentUser.nombre||currentUser.usuario,obsEmision:document.getElementById('crd-eobs')?.value||'',
     motivoRechazo:'',rechazoReciente:''});
   const F=crdFoto(ag,true);   // se congela lo computado a la fecha de emisión
-  Object.assign(rec,{puntaje:F.live,snapDes:(()=>{const q=crdPuntajes(ag);return {total:q.total,ant:q.antecedentes,antTit:q.antTit,antCap:q.antCap,servicios:q.servicios,zona:q.zona,conceptos:q.conceptos,jerarquia:q.jerarquia};})(),snapCargos:JSON.parse(JSON.stringify(crdCargosHTML(ag,F.live))),snapTits2:F.tits,snapN:F.nTit});
+  Object.assign(rec,{puntaje:F.live,snapV2:true,snapDes:(()=>{const q=crdPuntajes(ag);return {total:q.total,ant:q.antecedentes,antTit:q.antTit,antCap:q.antCap,servicios:q.servicios,zona:q.zona,conceptos:q.conceptos,jerarquia:q.jerarquia};})(),snapCargos:JSON.parse(JSON.stringify(crdCargosHTML(ag,F.live))),snapTits2:F.tits,snapN:F.nTit});
   guardarEstado(); closeModal(); showToast('✅ Credencial '+rec.nro+(yaEmitida?' actualizada':' emitida')); navigate('credenciales');
 }
 function crdRechazarModal(cid){
