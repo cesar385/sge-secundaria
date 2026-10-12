@@ -411,7 +411,7 @@ function createEmptyInstData(){
     notificaciones:[], reintegros:[], conceptosPeriodo:[],
     justificaciones:[], comunicados:[],
     traslados:[], permutas:[], bajasTramite:[], certificacionesMedicas:[], antecedentesAgente:[],
-    liquidaciones:[], liqExcluidas:[],
+    liquidaciones:[], liqExcluidas:[], credenciales:[], competenciasExtra:[], puntajesCap:[],
   };
 }
 
@@ -1351,7 +1351,7 @@ const ENTIDADES_INST = ['docentes','alumnos','cursos','notas','asistencias','lic
   'designaciones','plazas','solicitudesPlaza','preceptores','notificaciones','reintegros',
   'conceptosPeriodo','justificaciones','comunicados',
   'traslados','permutas','bajasTramite','certificacionesMedicas','antecedentesAgente',
-  'liquidaciones','liqExcluidas','asistenciasMateria',
+  'liquidaciones','liqExcluidas','asistenciasMateria','credenciales','competenciasExtra','puntajesCap',
   'preinscripciones','movimientosAlumnos','pases','materiasAdeudadas','diasClase','cierreNotas','serviciosAlumno','configBoletin'];
 const HOJAS_GLOBALES = ['USUARIOS','INSTITUCIONES'];
 const HOJA_META = 'META';
@@ -2637,6 +2637,7 @@ function renderAdmin(sec){
     {id:'designaciones',icon:'📌', label:'Designaciones',   grupo:'docentes'},
     {id:'reintegros',   icon:'🔄', label:'Reintegros',      grupo:'docentes'},
     {id:'preceptores',  icon:'🗂️', label:'Preceptores',     grupo:'docentes'},
+    {id:'credenciales', icon:'🪪', label:'Credenciales'+(crdCantPendientes()?' <span style="background:#dc2626;color:#fff;border-radius:10px;padding:0 6px;font-size:11px">'+crdCantPendientes()+'</span>':''), grupo:'docentes'},
     {id:'cert-medicas', icon:'🩺', label:'Certificaciones Médicas', grupo:'docentes'},
     ...(puedeLiquidar()?[{id:'liquidaciones',icon:'💰', label:'Liquidaciones',   grupo:'docentes'}]:[]),
     {id:'alumnos',      icon:'🎓', label:'Alumnos',         grupo:'alumnos'},
@@ -2684,6 +2685,7 @@ function renderAdmin(sec){
   else if(sec==='reintegros')     content=renderReintegros();
   else if(sec==='preceptores')    content=renderPreceptoresAdmin();
   else if(sec==='cert-medicas')   content=renderCertificacionesMedicas();
+  else if(sec==='credenciales')   content=renderCredencialesAdmin();
   else if(sec==='liquidaciones')  content=puedeLiquidar()?renderLiquidaciones():`${sectionHeader('Liquidaciones')}<div class="alert-info">Las liquidaciones las gestiona el Administrador.</div>`;
   else if(sec==='alumnos')        content=renderAlumnos();
   else if(sec==='lua')            content=renderLUA();
@@ -2704,6 +2706,7 @@ function renderDirector(sec){
     {id:'cargar-tramite',icon:'🧾',label:'CARGAR TRAMITE', grupo:'general'},
     {id:'consulta-tramites',icon:'🔎',label:'CONSULTA DE TRAMITES', grupo:'general'},
     {id:'mi-legajo',    icon:'📋',label:'Mi Legajo',       grupo:'personal'},
+    {id:'mi-credencial',icon:'🪪',label:'Mi credencial',grupo:'personal'},
     {id:'mis-desig',    icon:'📌',label:'Mis Designaciones',grupo:'personal'},
     {id:'mis-licencias',icon:'📋',label:'Mis Licencias',   grupo:'personal'},
     {id:'plazas',       icon:'🏛️',label:'Plazas',          grupo:'docentes'},
@@ -2730,6 +2733,7 @@ function renderDirector(sec){
   else if(sec==='cargar-tramite') content=renderCargarTramite();
   else if(sec==='consulta-tramites') content=renderConsultaTramites();
   else if(sec==='mi-legajo')     { content=''; setTimeout(()=>abrirLegajoPropio(currentUser.docenteId,'personal'),0); }
+  else if(sec==='mi-credencial') content=renderMiCredencial();
   else if(sec==='mis-desig')     content=renderMisDesig();
   else if(sec==='mis-licencias') content=renderMisLicencias();
   else if(sec==='plazas')        content=renderPlazas();
@@ -2759,6 +2763,7 @@ function renderSecretario(sec){
     {id:'cargar-tramite',icon:'🧾',label:'CARGAR TRAMITE', grupo:'general'},
     {id:'consulta-tramites',icon:'🔎',label:'CONSULTA DE TRAMITES', grupo:'general'},
     {id:'mi-legajo',    icon:'📋',label:'Mi Legajo',       grupo:'personal'},
+    {id:'mi-credencial',icon:'🪪',label:'Mi credencial',grupo:'personal'},
     {id:'mis-desig',    icon:'📌',label:'Mis Designaciones',grupo:'personal'},
     {id:'mis-licencias',icon:'📋',label:'Mis Licencias',   grupo:'personal'},
     {id:'plazas',       icon:'🏛️',label:'Plazas',          grupo:'docentes'},
@@ -2785,6 +2790,7 @@ function renderSecretario(sec){
   else if(sec==='cargar-tramite') content=renderCargarTramite();
   else if(sec==='consulta-tramites') content=renderConsultaTramites();
   else if(sec==='mi-legajo')     { content=''; setTimeout(()=>abrirLegajoPropio(currentUser.docenteId,'personal'),0); }
+  else if(sec==='mi-credencial') content=renderMiCredencial();
   else if(sec==='mis-desig')     content=renderMisDesig();
   else if(sec==='mis-licencias') content=renderMisLicencias();
   else if(sec==='plazas')        content=renderPlazas();
@@ -3956,9 +3962,9 @@ function _logAuto(msg){
 
 // ── Accesos directos del Panel General ──
 const ACCESOS_DIRECTOS=[
-  ['Gestión',[['cargar-tramite','🧾','Cargar trámite'],['consulta-tramites','🔎','Consulta de trámites'],['mi-legajo','📋','Mi legajo']]],
+  ['Gestión',[['cargar-tramite','🧾','Cargar trámite'],['consulta-tramites','🔎','Consulta de trámites'],['mi-legajo','📋','Mi legajo'],['mi-credencial','🪪','Mi credencial']]],
   ['Gestión Docente',[['docentes','👩‍🏫','Docentes'],['designaciones','📌','Designaciones'],['licencias','📋','Licencias'],['plazas','🏛️','Plazas'],
-    ['preceptores','🗂️','Preceptores'],['cert-medicas','🩺','Cert. médicas'],['liquidaciones','💰','Liquidaciones']]],
+    ['preceptores','🗂️','Preceptores'],['credenciales','🪪','Credenciales'],['cert-medicas','🩺','Cert. médicas'],['liquidaciones','💰','Liquidaciones']]],
   ['Gestión Alumnos',[['alumnos','🎓','Alumnos'],['lua','🧑‍🎓','Operaciones con alumnos'],['cursos','📚','Cursos'],['asistencias','✅','Asistencias'],['notas','📝','Notas']]]
 ];
 const ACCESOS_CAT_ESTILO={'Gestión':['#0e7490','#ecfeff','🗂️'],'Gestión Docente':['#166534','#f0fdf4','👩‍🏫'],'Gestión Alumnos':['#6d28d9','#f5f3ff','🎓']};
@@ -7717,6 +7723,7 @@ function renderDocente(sec){
     {id:'inicio',       icon:'🏠', label:'Inicio',           grupo:'personal'},
     {id:'notificaciones',icon:'🔔',label:'Notificaciones',   grupo:'personal'},
     {id:'mi-legajo',    icon:'📋', label:'Mi Legajo',         grupo:'personal'},
+    {id:'mi-credencial',icon:'🪪', label:'Mi credencial',     grupo:'personal'},
     {id:'mis-licencias',icon:'📋', label:'Mis Licencias',     grupo:'personal'},
     {id:'mis-desig',    icon:'📌', label:'Mis Designaciones', grupo:'personal'},
     {id:'asistencia',   icon: puedeGestionarSB?'✅':'🔒', label:`Tomar Asistencia${puedeGestionarSB?'':' <span style="font-size:10px;opacity:0.6">(sin cargo)</span>'}`, grupo:'academico'},
@@ -7768,6 +7775,7 @@ function renderDocente(sec){
     else if(sec==='notificaciones')  content=renderNotificaciones();
     else if(sec==='mis-licencias')   content=renderMisLicencias();
     else if(sec==='mis-desig')       content=renderMisDesig();
+    else if(sec==='mi-credencial')   content=renderMiCredencial();
   }
   buildLayout(sidebar,content);
   // Mi Legajo se renderiza después del layout (necesita que .main-content exista)
@@ -11161,7 +11169,10 @@ function estadoBadgeAntecedente(estado){
 function renderAntecedentesEstructuradosHTML(personaId, filterField, puedeValidar){
   const registros=(DB.antecedentesAgente||[]).filter(r=>r[filterField]===personaId).sort((a,b)=>(b.fechaCarga||'').localeCompare(a.fechaCarga||''));
   const titulos=registros.filter(r=>r.tipo==='Titulo');
-  const capacitaciones=registros.filter(r=>r.tipo==='Capacitacion');
+  const todasCap=registros.filter(r=>r.tipo==='Capacitacion');
+  // Las validadas pasan a la tabla "Capacitaciones del agente"; acá quedan sólo las pendientes / rechazadas
+  const capacitaciones=todasCap.filter(r=>r.estado!=='Validado');
+  const nCapValidadas=todasCap.length-capacitaciones.length;
 
   function accionesHTML(r){
     if(puedeValidar){
@@ -11196,7 +11207,7 @@ function renderAntecedentesEstructuradosHTML(personaId, filterField, puedeValida
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
         <div>
           <div style="font-weight:700;color:#1e293b;font-size:13.5px">${c.nombre}</div>
-          <div style="font-size:12px;color:#64748b;margin-top:2px">${fmtDate(c.fechaInicio)} → ${fmtDate(c.fechaFin)} · ${c.cursado||'—'} · ${c.hCat||0} hs cát.${c.resolucion?' · Res. '+c.resolucion:''}${c.caracter?' · '+c.caracter:''}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:2px">${c.tematica?'Temática: '+String(c.tematica).replace(/</g,'&lt;')+' · ':''}${fmtDate(c.fechaInicio)} → ${fmtDate(c.fechaFin)} · ${c.cursado||'—'} · ${c.hCat||0} hs cát.${c.resolucion?' · Res. '+c.resolucion:''}${c.caracter?' · '+c.caracter:''}</div>
         </div>
         ${estadoBadgeAntecedente(c.estado)}
       </div>
@@ -11215,7 +11226,8 @@ function renderAntecedentesEstructuradosHTML(personaId, filterField, puedeValida
       <div style="font-weight:800;color:#1a3a5c;font-size:13.5px">🎓 Capacitaciones ${puedeValidar?'(cargadas por el/la agente)':''}</div>
       ${puedeValidar?'':`<button class="btn btn-ghost btn-sm" onclick="abrirFormAntecedenteAgente(${personaId},'${filterField}','Capacitacion')" style="border:1px solid #1d4ed8;color:#1d4ed8">➕ Agregar capacitación</button>`}
     </div>
-    ${capacitaciones.length?capacitaciones.map(filaCap).join(''):`<div style="color:#94a3b8;font-size:12.5px;padding:14px;text-align:center;background:#f8fafc;border-radius:8px">Sin capacitaciones cargadas por el/la agente.</div>`}`;
+    ${capacitaciones.length?capacitaciones.map(filaCap).join(''):`<div style="color:#94a3b8;font-size:12.5px;padding:14px;text-align:center;background:#f8fafc;border-radius:8px">${nCapValidadas?'No hay capacitaciones pendientes de validación.':'Sin capacitaciones cargadas por el/la agente.'}</div>`}
+    ${nCapValidadas?`<div style="font-size:12px;color:#166534;margin-top:8px">✅ ${nCapValidadas} capacitación${nCapValidadas>1?'es validadas pasaron':' validada pasó'} a la tabla <strong>Capacitaciones del agente</strong>.</div>`:''}`;
 }
 // Overlay liviano (no reemplaza la pestaña, así no se pierde lo tipeado en
 // el resto del formulario) para agregar o editar un título/capacitación.
@@ -11233,6 +11245,7 @@ function abrirFormAntecedenteAgente(personaId, filterField, tipo, editId){
       </div>`
     : `
       ${formGroup('Nombre de la capacitación',`<input id="aa-nombre" type="text" class="form-input" value="${existing?existing.nombre||'':''}" placeholder="ej: Taller de Tecnología Educativa">`,true)}
+      ${formGroup('Temática',`<input id="aa-tematica" type="text" class="form-input" value="${existing?(existing.tematica||'').replace(/"/g,'&quot;'):''}" placeholder="ej: Tecnología educativa">`)}
       <div class="form-grid-2">
         ${formGroup('Fecha inicio',`<input id="aa-fechaInicio" type="date" class="form-input" value="${existing?existing.fechaInicio||'':''}">`)}
         ${formGroup('Fecha fin',`<input id="aa-fechaFin" type="date" class="form-input" value="${existing?existing.fechaFin||'':''}">`)}
@@ -11286,6 +11299,7 @@ function guardarAntecedenteAgente(personaId, filterField, tipo, editId){
     anio:(document.getElementById('aa-anio')?.value||'').trim(),
   } : {
     nombre,
+    tematica:(document.getElementById('aa-tematica')?.value||'').trim(),
     fechaInicio:document.getElementById('aa-fechaInicio')?.value||'',
     fechaFin:document.getElementById('aa-fechaFin')?.value||'',
     cursado:document.getElementById('aa-cursado')?.value||'PRESENCIAL',
@@ -11413,21 +11427,21 @@ function bannerTitulosValidadosHTML(persona, filterField){
 function renderAntecedentesSageHTML(doc, filterField){
   return `<div id="antecedentes-sage-box">${_renderAntecedentesSageInner(doc, filterField)}</div>`;
 }
-function _renderAntecedentesSageInner(doc, filterField){
+function _renderAntecedentesSageInner(doc, filterField, conPuntaje){
   const capacitaciones = parseCapacitacionesDoc(doc.cursos);
   // Capacitaciones cargadas por el/la agente (antecedentes estructurados): también van en la tabla
   const esc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   if(filterField){
-    (DB.antecedentesAgente||[]).filter(r=>r[filterField]===doc.id && r.tipo==='Capacitacion').forEach(r=>{
+    (DB.antecedentesAgente||[]).filter(r=>r[filterField]===doc.id && r.tipo==='Capacitacion' && r.estado==='Validado').forEach(r=>{
       const col={Validado:'#166534',Rechazado:'#991b1b'}[r.estado]||'#92400e';
       capacitaciones.push({
-        nombre:`${esc(r.nombre||'')} <span style="font-size:10px;font-weight:700;color:${col}">(${r.estado||'Pendiente'})</span>`,
-        tematica:'', fechaInicio:r.fechaInicio||'', fechaFin:r.fechaFin||'', cursado:r.cursado||'',
-        hCat:r.hCat||0, anio:(r.fechaInicio||'').slice(0,4), resolucion:esc(r.resolucion||''), caracter:esc(r.caracter||'')
+        nombre:esc(r.nombre||''),
+        tematica:esc(r.tematica||''), fechaInicio:r.fechaInicio||'', fechaFin:r.fechaFin||'', cursado:r.cursado||'',
+        hCat:r.hCat||0, anio:(r.fechaInicio||'').slice(0,4), resolucion:esc(r.resolucion||''), caracter:esc(r.caracter||''), rechazada:r.estado==='Rechazado'
       });
     });
   }
-  const headCols=['Nombre','Tematica','Fecha Inicio','Fecha Fin','Cursado','H Cat','Anio','Resolucion','Caracter'];
+  const headCols=['Nombre','Temática','Fecha Inicio','Fecha Fin','Cursado','H Cat','Año','Resolución','Carácter'].concat(conPuntaje?['Puntaje']:[]);
   const theadHTML=`<tr>${headCols.map(c=>`<th style="padding:8px 10px;background:#e2e8f0;color:#334155;font-weight:800;font-size:11.5px;text-align:left;white-space:nowrap;border-bottom:2px solid #cbd5e1">${c}</th>`).join('')}</tr>`;
   const filterRowHTML=`<tr style="background:#fff">${headCols.map(()=>`<td style="padding:4px 6px;border-bottom:1px solid #e2e8f0"><input class="form-input" style="padding:5px 7px;font-size:11px;width:100%"></td>`).join('')}</tr>`;
   const capRowsHTML = capacitaciones.map((c,i)=>`
@@ -11441,6 +11455,7 @@ function _renderAntecedentesSageInner(doc, filterField){
       <td style="padding:6px 10px;text-align:center">${c.anio}</td>
       <td style="padding:6px 10px">${c.resolucion}</td>
       <td style="padding:6px 10px">${c.caracter}</td>
+      ${conPuntaje?`<td style="padding:6px 10px;text-align:center;font-weight:800;color:#1a3a5c">${c.rechazada?'0.00':crdPuntajeCap(c.hCat).toFixed(2)}</td>`:''}
     </tr>`).join('');
 
   const titulos = parseTitulosDoc(doc);
@@ -11455,7 +11470,7 @@ function _renderAntecedentesSageInner(doc, filterField){
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead>${theadHTML}${filterRowHTML}</thead>
-        <tbody>${capacitaciones.length?capRowsHTML:`<tr><td colspan="9" style="padding:16px;text-align:center;color:#94a3b8">Sin capacitaciones registradas</td></tr>`}</tbody>
+        <tbody>${capacitaciones.length?capRowsHTML+(conPuntaje?`<tr style="background:#f1f5f9;font-weight:900"><td colspan="${headCols.length-1}" style="padding:8px 10px;text-align:right">Total capacitaciones</td><td style="padding:8px 10px;text-align:center">${capacitaciones.reduce((t,c)=>t+(c.rechazada?0:crdPuntajeCap(c.hCat)),0).toFixed(2)}</td></tr>`:''):`<tr><td colspan="${headCols.length}" style="padding:16px;text-align:center;color:#94a3b8">Sin capacitaciones registradas</td></tr>`}</tbody>
       </table>
     </div>`;
 }
@@ -12904,6 +12919,7 @@ function renderPreceptor(sec){
   const items=[
     {id:'inicio',       icon:'🏠', label:'Inicio',           grupo:'general'},
     {id:'mi-legajo',    icon:'📋', label:'Mi Legajo',        grupo:'personal'},
+    {id:'mi-credencial',icon:'🪪', label:'Mi credencial',    grupo:'personal'},
     {id:'mis-desig',    icon:'📌', label:'Mis Designaciones',grupo:'personal'},
     {id:'mis-licencias',icon:'📋', label:'Mis Licencias',    grupo:'personal'},
     {id:'confirmar-asist', icon:'☑️', label:'Confirmar Asistencia'+(acPendientesPrec(prec)?' <span style="background:#dc2626;color:#fff;border-radius:10px;padding:0 6px;font-size:11px">'+acPendientesPrec(prec)+'</span>':''), grupo:'alumnos'},
@@ -12921,6 +12937,7 @@ function renderPreceptor(sec){
   let content='';
   if(sec==='inicio')          content=renderPrecInicio(prec);
   else if(sec==='mi-legajo')       content=renderPrecMiLegajo(prec);
+  else if(sec==='mi-credencial')   content=renderMiCredencial();
   else if(sec==='mis-desig')       content=renderPrecMisDesig(prec);
   else if(sec==='mis-licencias')   content=renderPrecMisLicencias(prec);
   else if(sec==='confirmar-asist') content=renderPrecConfirmar(prec);
@@ -14916,6 +14933,655 @@ function btnVolverPanel(){
 }
 (function(){ const orig=navigate; navigate=function(sec){ if(sec!==_accesoSec) _accesoSec=null; const r=orig.apply(this,arguments); try{ btnVolverPanel(); }catch(e){} return r; }; })();
 ptSeedDemo();
+// ══════════════════════════════════════════════════════════════
+// MI CREDENCIAL (docentes, preceptores, secretarios y directores)
+// Cada agente consulta sus puntajes, analítico, títulos y antecedentes,
+// y solicita la credencial. SÓLO el Administrador la emite, la rechaza
+// o la anula (sección "Credenciales" del administrador).
+// ══════════════════════════════════════════════════════════════
+const CRD_BAREMO={
+  servicioPorAnio:1,            // puntos por año de servicio (proporcional por mes)
+  tituloHabilitante:10, tituloOtro:4,
+  
+  concepto:{'Muy Bueno':2,'Bueno':1.5,'Regular':1,'Insatisfactorio':0},
+  jerarquia:{'Director':0.25,'Vice':0.2,'Secretario':0.15}   // puntos por año en el cargo
+};
+const CRD_MOTIVOS=['Primera emisión','Renovación','Duplicado por extravío','Actualización de datos'];
+const CRD_TABS=[['puntajes','Puntajes'],['analitico','Analítico'],['titulos','Títulos'],['antecedentes','Antecedentes'],['solicitud','Solicitud de Credencial'],['credencial','Credencial']];
+let crdF={tab:'puntajes'}, crdAdminF={q:'',est:'todos'}, crdAnaQ='', crdAnaK='', crdAntQ='', crdAntE='';
+
+function puedeEmitirCredencial(){ return !!currentUser && currentUser.rol==='admin'; }
+function crdEsc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+function crdLista(){
+  if(!DB.credenciales) DB.credenciales=[];
+  const L=DB.credenciales, g={};
+  L.forEach(c=>{ (g[c.campo+'|'+c.personaId]=g[c.campo+'|'+c.personaId]||[]).push(c); });
+  Object.keys(g).forEach(k=>{ if(g[k].length>1){   // una sola fila por agente: se conserva la más relevante
+    const base=g[k].filter(c=>c.estado==='Emitida'||c.estado==='Actualizada').pop()||g[k][g[k].length-1];
+    g[k].forEach(c=>{ if(c!==base) L.splice(L.indexOf(c),1); }); } });
+  L.forEach(c=>{ if(c.estado==='Reemplazada') c.estado='Emitida'; if(c.nro&&c.emitida===undefined) c.emitida=true; });
+  return L;
+}
+function crdNombre(o){ return (o.apellido&&o.nombres)?`${o.apellido}, ${o.nombres}`:(o.nombre||''); }
+function crdRolLabel(ag){
+  if(ag.campo==='preceptorId') return 'Preceptor/a';
+  const r=ag.obj.rolInstitucional;
+  return r==='director'?'Director/a':r==='secretario'?'Secretario/a':'Docente';
+}
+function crdAgenteDe(campo,id){
+  if(campo==='preceptorId'){ const o=(DB.preceptores||[]).find(x=>x.id===id); return o?{obj:o,campo,id}:null; }
+  const o=(DB.docentes||[]).find(x=>x.id===id); return o?{obj:o,campo:'docenteId',id}:null;
+}
+function crdAgenteActual(){
+  const u=currentUser; if(!u) return null;
+  if(u.rol==='preceptor') return crdAgenteDe('preceptorId',u.preceptorId);
+  if(u.rol==='director'||u.rol==='secretario'){ const d=asegurarRegistroDirectivo(); return d?crdAgenteDe('docenteId',d.id):null; }
+  if(u.rol==='docente'){ const v=docenteInstituciones(u)[0]; return v?crdAgenteDe('docenteId',v.docenteId):null; }
+  return null;
+}
+function crdAgentesInst(){
+  const a=[];
+  (DB.docentes||[]).forEach(d=>a.push({obj:d,campo:'docenteId',id:d.id}));
+  (DB.preceptores||[]).forEach(p=>a.push({obj:p,campo:'preceptorId',id:p.id}));
+  return a.sort((x,y)=>crdNombre(x.obj).localeCompare(crdNombre(y.obj)));
+}
+function crdRec(ag){ return crdLista().find(c=>c.campo===ag.campo&&c.personaId===ag.id)||null; }
+// Antecedentes (títulos / capacitaciones) que el administrador todavía no evaluó
+function crdPendientesAnt(ag){ return (DB.antecedentesAgente||[]).filter(r=>r[ag.campo]===ag.id&&r.estado==='Pendiente'&&(r.tipo==='Titulo'||(r.tipo==='Capacitacion'&&!crdEsProx(r.fechaFin,r.fechaInicio,'')))).length; }
+// Estado que se muestra: una solicitud con antecedentes sin evaluar figura "En revisión"
+function crdEstadoEf(c,ag){ if(!c) return 'Sin credencial'; return (c.estado==='Solicitada'&&crdPendientesAnt(ag)>0)?'En revisión':c.estado; }
+// Motivo automático: Primera emisión si nunca tuvo credencial; si ya la tuvo, Renovación (vencida) o Actualización
+function crdMotivoAuto(ag){ const c=crdRec(ag); if(!c||!c.nro) return 'Primera emisión'; return (c.vigencia&&c.vigencia<new Date().toISOString().slice(0,10))?'Renovación':'Actualización de datos'; }
+function crdResolucionTxt(c,ag){
+  const e=crdEstadoEf(c,ag), n=crdPendientesAnt(ag), v=c.vigencia?' · vigente hasta '+fmtDate(c.vigencia):'';
+  let t={'En revisión':`${n} antecedente${n>1?'s':''} pendiente${n>1?'s':''} de evaluación por el Administrador`,Solicitada:'A la espera de la emisión del Administrador',Emitida:'Emitida el '+fmtDate(c.fechaEmision)+v,Actualizada:'Actualizada el '+fmtDate(c.fechaEmision)+v,Rechazada:c.motivoRechazo||'',Anulada:c.motivoRechazo||''}[e]||'';
+  if(c.rechazoReciente) t+=(t?' · ':'')+'Última solicitud rechazada: '+c.rechazoReciente;
+  return t;
+}
+function crdDe(ag){ const r=crdRec(ag); return r?[r]:[]; }
+function crdVigente(ag){ const r=crdRec(ag); return r&&r.emitida&&r.estado!=='Anulada'?r:null; }
+function crdPendiente(ag){ const r=crdRec(ag); return r&&r.estado==='Solicitada'?r:null; }
+function crdCantPendientes(){ try{ return ((DB&&DB.credenciales)||[]).filter(c=>c.estado==='Solicitada').length; }catch(e){ return 0; } }
+
+// ── Cálculo de puntajes (simulación basada en los datos del legajo) ──
+function crdCorte(){
+  const h=new Date(), y=h.getFullYear();
+  const c=new Date(y,6,31);
+  const yy=h>=c?y:y-1; return `${yy}-07-31`;
+}
+function crdInicio(ag){ return (fechaPrimeraDesignacion(ag.obj)||ag.obj.fechaIngreso||'').slice(0,10); }
+function crdDesigsAgente(ag){
+  return (DB.designaciones||[]).filter(d=>d[ag.campo]===ag.id && d.desde && !['rechazada','anulada','pendiente'].includes(d.estado));
+}
+function crdFraccionAnio(desde,hasta,anio){   // fracción (0..1) del año cubierta por [desde,hasta]
+  const a=new Date(anio,0,1), b=new Date(anio,11,31);
+  const s=new Date(Math.max(new Date(desde),a)), e=new Date(Math.min(new Date(hasta),b));
+  if(isNaN(s)||isNaN(e)||e<s) return 0;
+  return Math.min(1, (Math.round((e-s)/86400000)+1)/365);
+}
+function crdPuntajes(ag){
+  const corte=crdCorte(), ini=crdInicio(ag), B=CRD_BAREMO;
+  const inst=(typeof instActual==='function'&&instActual())||getInstUser?.()||null;
+  const zonaAnio=parseFloat(inst&&inst.zonaPuntaje)||0;
+  const r2=n=>Math.round(n*100)/100;
+  const filas=[]; let serv=0, conc=0, jer=0, zona=0;
+  const desigs=crdDesigsAgente(ag);
+  if(ini){
+    const y0=parseInt(ini.slice(0,4)), y1=parseInt(corte.slice(0,4));
+    for(let y=y0;y<=y1;y++){
+      const f=crdFraccionAnio(ini,corte,y);
+      const s=f*B.servicioPorAnio;
+      const cs=(DB.conceptosPeriodo||[]).filter(c=>c[ag.campo]===ag.id&&c.tipo==='Concepto Anual'&&String(c.ciclo)===String(y)&&c.calificacion);
+      const cp=cs.length?(B.concepto[cs[cs.length-1].calificacion]||0):0;
+      let jp=0;
+      desigs.forEach(d=>{
+        const k=/vice/i.test(d.cargo||'')?'Vice':/director/i.test(d.cargo||'')?'Director':/secretari/i.test(d.cargo||'')?'Secretario':null;
+        if(k) jp+=crdFraccionAnio(d.desde,d.hasta||corte,y)*B.jerarquia[k];
+      });
+      const zp=f*zonaAnio;
+      serv+=s; conc+=cp; jer+=jp; zona+=zp;
+      filas.push({anio:y,concepto:r2(cp),jerarquia:r2(jp),zona:r2(zp),servicios:r2(s)});
+    }
+  }
+  const tit=crdTitulos(ag);
+  let antTit=0, antCap=0;
+  tit.forEach(t=>{ antTit+=crdPuntajeTitulo(ag,t); });
+  crdCapList(ag).forEach(c=>{ antCap+=crdPuntajeComputa(ag,c); });
+  const ant=antTit+antCap;
+  const A=ini?calcAntig(ini,corte):{años:0,meses:0,dias:0};
+  const res={corte,inicio:ini,antig:A,servicios:r2(serv),antecedentes:r2(ant),antTit:r2(antTit),antCap:r2(antCap),zona:r2(zona),conceptos:r2(conc),jerarquia:r2(jer),filas,
+    fechaEval:new Date().toISOString().slice(0,10)};
+  res.total=r2(res.servicios+res.antecedentes+res.zona+res.conceptos+res.jerarquia);
+  return res;
+}
+function crdTitulos(ag){
+  const l=parseTitulosDoc(ag.obj).map(t=>({nombre:t.nombre,fecha:t.fecha,estado:'Registrado',habilitante:false}));
+  (DB.antecedentesAgente||[]).filter(r=>r[ag.campo]===ag.id&&r.tipo==='Titulo'&&r.estado!=='Rechazado').forEach(r=>{
+    if(!String(r.nombre||'').trim()) return;
+    if(!l.some(t=>t.nombre.trim().toLowerCase()===String(r.nombre).trim().toLowerCase()))
+      l.push({nombre:r.nombre,fecha:r.anio?`01-01-${r.anio}`:(r.fechaFin||''),estado:r.estado||'Pendiente',habilitante:false,institucion:r.institucion||''});
+  });
+  if(l.length) l[0].habilitante=true;   // el primero (título docente/habilitante) suma el puntaje mayor
+  return l;
+}
+// Puntaje por capacitación (orientativo): 0,5 si tiene 60 h cátedra o más; 0,2 en los demás casos
+function crdPuntajeCap(hCat){ return (parseFloat(hCat)||0)>=60?0.5:0.2; }
+// Fecha de corte de actualización: 31/07 de cada año (período siguiente). Lo realizado desde el 01/08 computa en la próxima emisión.
+function crdFechaISO(t){
+  t=String(t||'').trim(); let m;
+  if((m=t.match(/^(\d{4})-(\d{2})-(\d{2})/))) return m[0];
+  if((m=t.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})/))) return `${m[3]}-${m[2]}-${m[1]}`;
+  return '';
+}
+function crdProxCorte(){ return `${parseInt(crdCorte().slice(0,4))+1}-07-31`; }
+// ¿La capacitación (fin, inicio o sólo año) es posterior al corte vigente?
+function crdEsProx(fin,ini,anio){
+  const f=crdFechaISO(fin)||crdFechaISO(ini);
+  if(f) return f>crdCorte();
+  const a=parseInt(anio); return !isNaN(a)&&a>parseInt(crdCorte().slice(0,4));
+}
+function crdCapList(ag){
+  const o=ag.obj, list=[];
+  try{ parseCapacitacionesDoc(o.cursos).forEach(c=>{ const n=String(c.nombre||'').replace(/<[^>]*>/g,''), fi=c.fechaInicio||'';
+    list.push({key:'p'+crdNorm(n)+'|'+fi,n,t:c.tematica||'',fi,ff:c.fechaFin||'',cu:c.cursado||'',h:c.hCat||0,a:c.anio||'',r:String(c.resolucion||'').replace(/<[^>]*>/g,''),ca:String(c.caracter||'').replace(/<[^>]*>/g,''),e:'Registrado',prox:crdEsProx(c.fechaFin,fi,c.anio)}); }); }catch(e){}
+  (DB.antecedentesAgente||[]).filter(r=>r[ag.campo]===ag.id&&r.tipo==='Capacitacion').forEach(r=>list.push({key:'r'+r.id,n:r.nombre||'',t:r.tematica||'',fi:r.fechaInicio||'',ff:r.fechaFin||'',cu:r.cursado||'',h:r.hCat||0,a:(r.fechaInicio||'').slice(0,4),r:r.resolucion||'',ca:r.caracter||'',e:r.estado||'Pendiente',prox:crdEsProx(r.fechaFin,r.fechaInicio,'')}));
+  return list;
+}
+// Puntaje que efectivamente computa en la emisión actual (las posteriores al corte no suman)
+function crdPuntajeComputa(ag,c){ return c.prox?0:crdPuntajeItem(ag,c); }
+// Puntaje de una capacitación: el asignado por el Administrador, o el automático por horas
+function crdPuntajeOverride(ag,key){ return (DB.puntajesCap||[]).find(x=>x.campo===ag.campo&&x.personaId===ag.id&&x.clave===key)||null; }
+function crdPuntajeItem(ag,c){ if(c.e==='Rechazado') return 0; const o=crdPuntajeOverride(ag,c.key); return o?o.puntaje:crdPuntajeCap(c.h); }
+function crdAntigStr(a){ return `${a.años} años ${a.meses} meses,${a.dias} dias`; }
+function crdPuntajesHTML(p,color){
+  const f=n=>(+n).toFixed(2);
+  const cor=fmtDate(p.corte), c31=cor.slice(0,5)+'/'+(parseInt(p.corte.slice(0,4))-1), cA=`31/12/${parseInt(p.corte.slice(0,4))-1}`;
+  const fila=(l,v)=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #eef2f7;font-size:13px"><span style="color:#475569">${l}</span><strong style="color:#1e293b;text-align:right">${v}</strong></div>`;
+  const tot=['concepto','jerarquia','zona','servicios'].map(k=>p.filas.reduce((s,x)=>s+x[k],0));
+  return `<div style="display:grid;grid-template-columns:minmax(260px,1fr) minmax(300px,1.5fr);gap:18px;align-items:start">
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px">
+      <div style="font-weight:900;color:${color};font-size:15px;margin-bottom:6px">Resumen de puntajes</div>
+      ${fila(`Antigüedad al ${cor}`,p.inicio?crdAntigStr(p.antig):'Sin designaciones')}
+      ${fila(`Servicios al ${cor}`,f(p.servicios))}
+      ${fila(`Antecedentes al ${cor}`,`${f(p.antecedentes)}<div style="font-size:11px;font-weight:500;color:#64748b">Títulos ${f(p.antTit)} + Capacitaciones ${f(p.antCap)}</div>`)}
+      ${fila(`Zona al ${cA}`,f(p.zona))}
+      ${fila(`Conceptos al ${cA}`,f(p.conceptos))}
+      ${fila(`Jerarquía al ${cA}`,f(p.jerarquia))}
+      ${fila('Fecha de Evaluación',fmtDate(p.fechaEval))}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;background:${color};color:#fff;border-radius:10px;padding:12px 16px"><span style="font-weight:800">Total</span><span style="font-size:22px;font-weight:900">${f(p.total)}</span></div>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px;overflow-x:auto">
+      <div style="font-weight:900;color:${color};font-size:15px;margin-bottom:10px">Detalle de puntajes</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>${['Año','Concepto','Jerarquía','Zona','Servicios'].map((h,i)=>`<th style="padding:8px 10px;background:#f1f5f9;color:#334155;text-align:${i?'right':'left'};border-bottom:2px solid #cbd5e1">${h}</th>`).join('')}</tr></thead>
+      <tbody>${p.filas.length?p.filas.map((x,i)=>`<tr style="background:${i%2?'#fafbfc':'#fff'}"><td style="padding:7px 10px;font-weight:700">${x.anio}</td><td style="padding:7px 10px;text-align:right">${f(x.concepto)}</td><td style="padding:7px 10px;text-align:right">${f(x.jerarquia)}</td><td style="padding:7px 10px;text-align:right">${f(x.zona)}</td><td style="padding:7px 10px;text-align:right">${f(x.servicios)}</td></tr>`).join('')
+        :'<tr><td colspan="5" style="padding:18px;text-align:center;color:#94a3b8">Sin servicios registrados</td></tr>'}
+      ${p.filas.length?`<tr style="background:#f1f5f9;font-weight:900"><td style="padding:8px 10px"></td>${tot.map(t=>`<td style="padding:8px 10px;text-align:right">${f(t)}</td>`).join('')}</tr>`:''}</tbody></table>
+      <div style="font-size:11px;color:#94a3b8;margin-top:10px">Cálculo orientativo según los datos del legajo (servicios: ${CRD_BAREMO.servicioPorAnio} pto/año; títulos: Doctorado 10 · Maestría 8 · Profesorado/Grado 6 · Diplomatura 5 · Especialización 4 · Actualización 2 · Bachiller 0; conceptos anuales: Muy Bueno 2 · Bueno 1.5 · Regular 1).</div>
+    </div></div>`;
+}
+
+// ── Vista del agente ──
+// ── Incumbencias: materias que puede dictar según el/los título/s ──
+// hab = títulos habilitantes (incumbencia directa); afin = materias afines / supletorias
+const CRD_ESPEC_TEC=['Aeronáutica','Construcción en Navales','Electricidad','Electricidad Orientación en Electrónica Industrial','Electromecánica','Electrónica','Hidráulica','Industria de la Alimentación','Industria de la Madera y el Mueble','Industria del Vestir','Maestro Mayor de Obras','Mecánica'];
+const CRD_INCUMBENCIAS=[
+ {re:/matem[aá]tic/i, area:'Matemática', hab:['Matemática','Matemática Aplicada','Álgebra','Geometría','Estadística y Probabilidad',...CRD_ESPEC_TEC.map(e=>'Análisis Matemático - Especialidad '+e)], habSolo:['Algoritmos Estadísticos por Computadora - Especialidad Computación'], afin:['Física','Informática','Tecnología de la Información','Economía (cálculo)']},
+ {re:/f[ií]sic(a|o)/i, area:'Física', hab:['Física','Físico-Química','Fisicoquímica','Mecánica y Termodinámica'], afin:['Matemática','Tecnología','Química']},
+ {re:/qu[ií]mic/i, area:'Química', hab:['Química','Fisicoquímica','Química Orgánica','Química Analítica'], afin:['Biología','Ciencias Naturales','Educación Ambiental']},
+ {re:/biolog|ciencias naturales|ciencias biol/i, area:'Biología', hab:['Biología','Ciencias Naturales','Educación para la Salud','Salud y Adolescencia','Educación Ambiental','Ambiente, Desarrollo y Sociedad'], afin:['Química','Ciencias de la Tierra','Ecología']},
+ {re:/lengua|letras|literatura/i, area:'Lengua y Literatura', hab:['Lengua y Literatura','Literatura','Lengua','Comunicación y Lenguajes','Taller de Lectura y Escritura'], afin:['Comunicación Social','Latín','Prácticas del Lenguaje']},
+ {re:/historia/i, area:'Historia', hab:['Historia','Ciencias Sociales','Historia Argentina y Latinoamericana'], afin:['Formación Ética y Ciudadana','Construcción de Ciudadanía','Geografía']},
+ {re:/geograf/i, area:'Geografía', hab:['Geografía','Ciencias Sociales','Geografía Argentina y Mundial'], afin:['Ambiente, Desarrollo y Sociedad','Historia']},
+ {re:/ciudadan|c[ií]vic|[eé]tic/i, area:'Formación Ética y Ciudadana', hab:['Formación Ética y Ciudadana','Construcción de Ciudadanía','Política y Ciudadanía'], afin:['Sociología','Derecho']},
+ {re:/ingl[eé]s|franc[eé]s|portugu[eé]s|idioma|lenguas extranjeras/i, area:'Lenguas extranjeras', hab:['Inglés','Idioma Extranjero','Portugués','Francés'], afin:[]},
+ {re:/educaci[oó]n f[ií]sica|deport/i, area:'Educación Física', hab:['Educación Física','Deportes','Educación Física y Salud'], afin:['Salud y Adolescencia']},
+ {re:/inform[aá]tic|computaci|sistemas|programaci|an[aá]lisis de sistemas|tecnolog[ií]as de la informaci/i, area:'Informática', hab:['Informática','Tecnología de la Información','Programación','Sistemas de Información','Operador Informático','Computación'], afin:['Tecnología','Robótica','Matemática (aplicada)']},
+ {re:/tecnolog|ingenier|electr[oó]n|electromec|mec[aá]nic|maestro mayor|construcci/i, area:'Tecnología', hab:['Tecnología','Educación Tecnológica','Taller','Dibujo Técnico','Robótica'], afin:['Informática','Física']},
+ {re:/administraci|econom|contab|gesti[oó]n|negocios|p[uú]blica/i, area:'Administración y Economía', hab:['Administración','Economía','Contabilidad','Gestión Organizacional','Sistemas de Información Contable','Introducción a la Economía','Microemprendimientos','Gestión Administrativa'], afin:['Derecho','Matemática Financiera','Formación para la Vida y el Trabajo','Informática (ofimática)']},
+ {re:/derecho|abogac|jur[ií]d/i, area:'Derecho', hab:['Derecho','Instituciones Jurídicas','Formación Ética y Ciudadana (ámbito legal)'], afin:['Economía','Administración']},
+ {re:/arte|m[uú]sic|pl[aá]stic|visual|teatro|danza|dise[nñ]o/i, area:'Artes', hab:['Educación Artística','Música','Plástica','Artes Visuales','Teatro','Danza','Diseño'], afin:['Comunicación Social']},
+ {re:/filosof|psicolog|pedagog|ciencias de la educaci|sociolog|trabajo social|comunicaci[oó]n social/i, area:'Humanidades y Ciencias Sociales', hab:['Filosofía','Psicología','Pedagogía','Sociología','Ciencias Sociales','Comunicación Social','Trabajo y Ciudadanía'], afin:['Formación Ética y Ciudadana','Historia']},
+ {re:/profesor.*(secundaria|educaci[oó]n)/i, area:'Docencia (general)', hab:[], afin:[]},
+];
+function crdIncumbenciasDe(nombre){
+  const n=String(nombre||''); const out=[];
+  CRD_INCUMBENCIAS.forEach(x=>{ if((x.hab.length||x.afin.length)&&x.re.test(n)) out.push(x); });
+  return out;
+}
+
+function crdTab(t){ crdF.tab=t; navigate('mi-credencial'); }
+function crdEstadoBadge(e){
+  const m={Solicitada:['#fef9c3','#854d0e'],'En revisión':['#dbeafe','#1e40af'],Actualizada:['#ccfbf1','#0f766e'],Emitida:['#dcfce7','#166534'],Rechazada:['#fee2e2','#991b1b'],Anulada:['#e5e7eb','#374151'],Reemplazada:['#e5e7eb','#374151']}[e]||['#e5e7eb','#374151'];
+  return `<span style="background:${m[0]};color:${m[1]};font-size:11px;font-weight:800;padding:3px 10px;border-radius:10px;white-space:nowrap">${e}</span>`;
+}
+function renderMiCredencial(){
+  const ag=crdAgenteActual();
+  if(!ag) return `${sectionHeader('Mi credencial')}<div class="alert-info">No se encontró tu registro de agente en esta institución.</div>`;
+  const rc=ROL_COLOR[currentUser.rol]||'#1a3a5c', o=ag.obj;
+  const tab=CRD_TABS.some(t=>t[0]===crdF.tab)?crdF.tab:'puntajes';
+  const nom=crdNombre(o).toUpperCase();
+  const ini=((o.apellido||o.nombre||'?')[0]||'?').toUpperCase()+((o.nombres||'')[0]||'').toUpperCase();
+  const rec=crdRec(ag);
+  const est=rec?crdEstadoBadge(crdEstadoEf(rec,ag)):'<span style="background:#f1f5f9;color:#64748b;font-size:11px;font-weight:800;padding:3px 10px;border-radius:10px">Sin credencial</span>';
+  const header=`<div style="background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-left:6px solid ${rc}">
+    <div style="width:54px;height:54px;border-radius:50%;background:${rc};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:19px">${crdEsc(ini)}</div>
+    <div style="flex:1;min-width:200px"><div style="font-size:17px;font-weight:900;color:#1e293b">${crdEsc(nom)} <span style="color:#94a3b8;font-weight:700">| DNI: ${crdEsc(o.dni||'—')}</span></div>
+      <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span style="background:${rc};color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:10px">${crdRolLabel(ag)}</span>${est}</div></div></div>`;
+  const tabs=`<div style="background:${rc};border-radius:8px 8px 0 0;padding:6px 8px 0;display:flex;gap:3px;flex-wrap:wrap">${CRD_TABS.map(([id,l])=>`<button onclick="crdTab('${id}')" style="background:${tab===id?'#fff':'transparent'};color:${tab===id?rc:'#fff'};opacity:${tab===id?1:.85};border:none;border-radius:6px 6px 0 0;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit">${l}</button>`).join('')}</div>`;
+  let body='';
+  const aviso=['puntajes','analitico','antecedentes'].includes(tab)?crdAvisoPeriodo(ag):'';
+  if(tab==='puntajes') body=crdPuntajesHTML(crdPuntajes(ag),rc);
+  else if(tab==='analitico') body=crdAnaliticoHTML(ag);
+  else if(tab==='titulos') body=crdTitulosHTML(ag);
+  else if(tab==='antecedentes') body=crdAntecedentesHTML(ag);
+  else if(tab==='solicitud') body=crdSolicitudHTML(ag,rc);
+  else body=crdCredencialTabHTML(ag,rc);
+  return `<div style="max-width:1100px">${header}${tabs}<div style="background:#f8fafc;border-radius:0 0 12px 12px;padding:20px;box-shadow:0 1px 6px rgba(0,0,0,.07);border-top:1px solid #e2e8f0">${aviso}${body}</div></div>`;
+}
+function crdAnaliticoHTML(ag,adm){
+  const F=crdFoto(ag,adm), rows=F.rows, nTit=F.nTit;
+  const car={DOC:'Docente | 10.00',HAB:'Habilitante | 5.00',SUP:'Supletorio | 3.00','SUP 1D':'Supletorio 1D | 3.00'};
+  const colK={DOC:['#166534','#dcfce7'],HAB:['#1e40af','#dbeafe'],SUP:['#854d0e','#fef9c3'],'SUP 1D':['#854d0e','#fef9c3']};
+  crdAnaQ=''; crdAnaK='';
+  const cnt={DOC:0,HAB:0,SUP:0}; rows.forEach(r=>cnt[r[1]==='SUP 1D'?'SUP':r[1]]++);
+  const td='padding:6px 10px;border-bottom:1px solid #eef2f7;font-size:12.5px;vertical-align:middle';
+  const trs=rows.map(r=>{ const e=r[4], c=colK[r[1]]; return `<tr class="crd-comp" data-n="${crdEsc(crdNorm(r[0]+' '+r[3]))}" data-k="${r[1]==='SUP 1D'?'SUP':r[1]}">
+    <td style="${td};min-width:260px"><div style="font-weight:800;color:#374151">${crdEsc(r[0])}${e?' <span title="Agregada por el Administrador" style="font-size:10px;background:#dbeafe;color:#1e40af;padding:1px 7px;border-radius:10px">➕ Admin</span>':''}</div><div style="font-size:11px;color:#94a3b8;margin-top:1px">${crdEsc(String(r[3]).toUpperCase())}</div></td>
+    <td style="${td};white-space:nowrap"><span style="background:${c[1]};color:${c[0]};font-size:11px;font-weight:800;padding:2px 9px;border-radius:10px">${car[r[1]]}</span></td>
+    <td style="${td};text-align:center">${e?(parseFloat(e.antig)||0).toFixed(1):'0.0'}</td>
+    <td style="${td};text-align:center">${Math.max(0,nTit-1)}</td>
+    <td style="${td};text-align:center;font-weight:800;color:#1a3a5c">${r[2].toFixed(2)}</td>
+    <td style="${td};white-space:nowrap">${e&&e.res?crdEsc(e.res):'—'}</td>
+    ${adm?`<td style="${td};text-align:right">${e?`<button class="btn btn-ghost btn-sm" title="Quitar" onclick="crdCompBorrar(${e.id},'${ag.campo}',${ag.id})">🗑️</button>`:''}</td>`:''}</tr>`; }).join('');
+  const th=(l,al)=>`<th style="position:sticky;top:0;z-index:1;background:#1e293b;color:#fff;padding:8px 10px;font-size:11.5px;text-align:${al||'left'};white-space:nowrap">${l}</th>`;
+  const chip=(k,l,n,c)=>`<button type="button" data-chip="${k}" onclick="crdAnaCar('${k}')" style="border:1.5px solid ${c};background:${k===''?c:'#fff'};color:${k===''?'#fff':c};border-radius:16px;padding:4px 13px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">${l} (${n})</button>`;
+  return (adm?crdCompFormHTML(ag):'')+`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+     <input class="form-input" style="flex:1;min-width:220px" placeholder="🔍 Buscar Cargo / Asignatura" oninput="crdAnaFiltro(this.value)">
+     <div id="crd-ana-chips" style="display:flex;gap:6px;flex-wrap:wrap">${chip('','Todas',rows.length,'#1e293b')}${chip('DOC','Docente',cnt.DOC,'#166534')}${chip('HAB','Habilitante',cnt.HAB,'#1e40af')}${chip('SUP','Supletorio',cnt.SUP,'#854d0e')}</div></div>
+   <div style="margin-bottom:8px;color:#475569;font-size:13px">Listado de competencias: <strong id="crd-ana-n">${rows.length}</strong></div>
+   <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:min(62vh,560px);overflow:auto"><table style="width:100%;border-collapse:collapse">
+     <thead><tr>${th('Cargo / Asignatura (título evaluado)')}${th('Carácter')}${th('Antigüedad título','center')}${th('Otros títulos','center')}${th('Puntaje','center')}${th('Resolución')}${adm?th(''):''}</tr></thead>
+     <tbody id="crd-ana-lista">${trs||'<tr><td colspan="7" style="padding:18px;text-align:center;color:#94a3b8">Sin competencias: cargá tu título en Mi Legajo → Antecedentes.</td></tr>'}</tbody></table></div>`;
+}
+function crdCompNombresSug(){
+  const set=new Set(['Preceptor','Preceptor Residencia Estudiantil','Bibliotecario Nivel Secundario']);
+  CRD_INCUMBENCIAS.forEach(x=>{ x.hab.forEach(n=>set.add(n)); (x.habSolo||[]).forEach(n=>set.add(n)); x.afin.forEach(n=>set.add(n)); });
+  return [...set].sort();
+}
+function crdCompFormHTML(ag){
+  const tit=crdTitulos(ag).map(t=>t.nombre);
+  return `<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:14px 16px;margin-bottom:16px">
+    <div style="font-weight:900;color:#0369a1;margin-bottom:10px">➕ Agregar competencia</div>
+    <div class="form-grid-2">${formGroup('Cargo / Asignatura',`<input id="cc-nombre" list="cc-sug" class="form-input" placeholder="Ej: Física - Especialidad Electrónica"><datalist id="cc-sug">${crdCompNombresSug().map(n=>`<option value="${crdEsc(n)}">`).join('')}</datalist>`,true)}
+    ${formGroup('Título evaluado',`<input id="cc-titulo" list="cc-tits" class="form-input" value="${crdEsc(tit[0]||'')}"><datalist id="cc-tits">${tit.map(n=>`<option value="${crdEsc(n)}">`).join('')}</datalist>`)}
+    ${formGroup('Carácter',`<select id="cc-car" class="form-input"><option value="DOC">Docente | 10.00</option><option value="HAB">Habilitante | 5.00</option><option value="SUP">Supletorio | 3.00</option><option value="SUP 1D">Supletorio 1D | 3.00</option></select>`)}
+    ${formGroup('Antigüedad título',`<input id="cc-antig" type="number" step="0.1" min="0" class="form-input" value="0">`)}
+    ${formGroup('Resolución',`<input id="cc-res" class="form-input" placeholder="Ej: 4540 / 2013">`)}</div>
+    <div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="crdCompAgregar('${ag.campo}',${ag.id})">Agregar competencia</button></div></div>`;
+}
+function crdAnaModal(campo,id){
+  if(!puedeEmitirCredencial()) return;
+  const ag=crdAgenteDe(campo,id); if(!ag) return;
+  showModal('Analítico — '+crdNombre(ag.obj),`<div style="background:#f8fafc;padding:10px;border-radius:10px">${crdAvisoPeriodo(ag)}${crdAnaliticoHTML(ag,true)}</div>`);
+}
+function crdCompAgregar(campo,id){
+  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador puede agregar competencias','#991b1b'); return; }
+  const g=i=>(document.getElementById(i)?.value||'').trim();
+  const nombre=g('cc-nombre'); if(!nombre){ showToast('Indicá el cargo o asignatura','#991b1b'); return; }
+  if(!DB.competenciasExtra) DB.competenciasExtra=[];
+  DB.competenciasExtra=DB.competenciasExtra.filter(e=>!(e.campo===campo&&e.personaId===id&&String(e.nombre).toUpperCase()===nombre.toUpperCase()));
+  DB.competenciasExtra.push({id:uid(),campo,personaId:id,nombre,titulo:g('cc-titulo'),caracter:g('cc-car')||'DOC',antig:parseFloat(g('cc-antig'))||0,res:g('cc-res'),
+    agregadaPor:currentUser.usuario,fecha:new Date().toISOString().slice(0,10)});
+  guardarEstado(); showToast('✅ Competencia agregada'); crdAnaModal(campo,id);
+}
+function crdCompBorrar(cid,campo,id){
+  if(!puedeEmitirCredencial()) return;
+  DB.competenciasExtra=(DB.competenciasExtra||[]).filter(e=>e.id!==cid);
+  guardarEstado(); showToast('Competencia quitada'); crdAnaModal(campo,id);
+}
+function crdNorm(t){ return String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function crdAntecedentesHTML(ag,adm){
+  const esc=crdEsc, list=crdCapList(ag);
+  const tot=list.reduce((t,c)=>t+crdPuntajeComputa(ag,c),0), nProx=list.filter(c=>c.prox).length;
+  crdAntQ=''; crdAntE='';
+  const cnt=k=>list.filter(c=>k==='V'?c.e==='Validado':c.e==='Pendiente').length;
+  const eb={Validado:['#166534','#dcfce7'],Pendiente:['#854d0e','#fef9c3'],Rechazado:['#991b1b','#fee2e2']};
+  const td='padding:6px 10px;border-bottom:1px solid #eef2f7;font-size:12.5px;vertical-align:middle';
+  const trs=list.map(c=>{ const col=eb[c.e], ov=crdPuntajeOverride(ag,c.key), pt=crdPuntajeItem(ag,c);
+    const celda=adm&&c.e!=='Rechazado'
+      ?`<input type="number" step="0.05" min="0" data-key="${esc(c.key)}" value="${pt.toFixed(2)}" title="Dejá vacío para volver al puntaje automático" onchange="crdCapPuntaje('${ag.campo}',${ag.id},this.dataset.key,this.value,this)" style="width:78px;text-align:center;font-weight:800;color:#1a3a5c;border:1.5px solid ${ov?'#2563eb':'#cbd5e1'};border-radius:6px;padding:4px;font-family:inherit">`
+      :`<span style="font-weight:800;color:${c.prox?'#94a3b8':'#1a3a5c'}">${c.prox?'—':pt.toFixed(2)}</span>${ov?' <span title="Puntaje asignado por el Administrador" style="color:#2563eb">✎</span>':''}`;
+    return `<tr class="crd-ant" style="${c.prox?'background:#f8fafc;color:#64748b':''}" data-p="${c.prox?1:0}" data-n="${esc(crdNorm(c.n+' '+c.t+' '+c.r))}" data-e="${c.e==='Validado'?'V':c.e==='Pendiente'?'P':'O'}">
+    <td style="${td};min-width:240px"><div style="font-weight:700;color:#1e40af">${esc(c.n)}</div>${col?`<span style="font-size:10px;font-weight:800;background:${col[1]};color:${col[0]};padding:1px 7px;border-radius:10px">${c.e}</span>`:''}${c.prox?` <span title="Posterior al corte del ${fmtDate(crdCorte())}" style="font-size:10px;font-weight:800;background:#e0e7ff;color:#3730a3;padding:1px 7px;border-radius:10px">⏭ Próxima emisión</span>`:''}${c.t&&c.t!==c.n?`<span style="font-size:11px;color:#94a3b8;margin-left:6px">${esc(c.t)}</span>`:''}</td>
+    <td style="${td};white-space:nowrap">${esc(c.fi||'—')}</td><td style="${td};white-space:nowrap">${esc(c.ff||'—')}</td>
+    <td style="${td}">${esc(c.cu)}</td><td style="${td};text-align:center">${esc(c.h)}</td><td style="${td};text-align:center">${esc(c.a)}</td>
+    <td style="${td};white-space:nowrap">${esc(c.r)}</td><td style="${td}">${esc(c.ca)}</td>
+    <td style="${td};text-align:center">${celda}</td></tr>`; }).join('');
+  const th=(l,al)=>`<th style="position:sticky;top:0;z-index:1;background:#1e293b;color:#fff;padding:8px 10px;font-size:11.5px;text-align:${al||'left'};white-space:nowrap">${l}</th>`;
+  const chip=(k,l,n,c)=>`<button type="button" data-chip="${k}" onclick="crdAntEst('${k}')" style="border:1.5px solid ${c};background:${k===''?c:'#fff'};color:${k===''?'#fff':c};border-radius:16px;padding:4px 13px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">${l} (${n})</button>`;
+  const corteInfo=`<div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:12.5px;color:#3730a3">📅 Computan las capacitaciones realizadas hasta el <strong>${fmtDate(crdCorte())}</strong> (corte de actualización: 31/07 de cada año, para el período siguiente). Las realizadas desde el 01/08 computan en la próxima emisión (corte ${fmtDate(crdProxCorte())}).</div>`;
+  return corteInfo+(adm?`<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:12.5px;color:#0369a1">✏️ Podés asignar el puntaje de cada capacitación (se guarda al salir del campo). Vacío = puntaje automático por horas. Los modificados se marcan en azul.</div>`:'')+`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+    <input class="form-input" style="flex:1;min-width:220px" placeholder="🔍 Buscar antecedente" oninput="crdAntFiltro(this.value)">
+    <div id="crd-ant-chips" style="display:flex;gap:6px;flex-wrap:wrap">${chip('','Todos',list.length,'#1e293b')}${chip('V','Validados',cnt('V'),'#166534')}${chip('P','Pendientes',cnt('P'),'#854d0e')}${nProx?chip('X','Próxima emisión',nProx,'#3730a3'):''}</div></div>
+   <div style="margin-bottom:8px;color:#475569;font-size:13px">Capacitaciones del agente: <strong id="crd-ant-n">${list.length}</strong> · Total: <strong id="crd-ant-tot">${tot.toFixed(2)}</strong></div>
+   <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:min(62vh,560px);overflow:auto"><table style="width:100%;border-collapse:collapse">
+    <thead><tr>${th('Nombre')}${th('Inicio')}${th('Fin')}${th('Cursado')}${th('H Cat','center')}${th('Año','center')}${th('Resolución')}${th('Carácter')}${th('Puntaje','center')}</tr></thead>
+    <tbody id="crd-ant-lista">${trs||'<tr><td colspan="9" style="padding:18px;text-align:center;color:#94a3b8">Sin capacitaciones registradas</td></tr>'}</tbody></table></div>`;
+}
+function crdAntModal(campo,id){
+  if(!puedeEmitirCredencial()) return;
+  const ag=crdAgenteDe(campo,id); if(!ag) return;
+  showModal('Antecedentes — '+crdNombre(ag.obj),`<div style="background:#f8fafc;padding:10px;border-radius:10px">${crdAvisoPeriodo(ag)}${crdAntecedentesHTML(ag,true)}</div>`);
+}
+function crdCapPuntaje(campo,id,key,val,el){
+  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador puede asignar puntajes','#991b1b'); return; }
+  const ag=crdAgenteDe(campo,id); if(!ag) return;
+  if(!DB.puntajesCap) DB.puntajesCap=[];
+  DB.puntajesCap=DB.puntajesCap.filter(x=>!(x.campo===campo&&x.personaId===id&&x.clave===key));
+  const txt=String(val).trim();
+  if(txt!==''){
+    const v=parseFloat(txt);
+    if(isNaN(v)||v<0){ showToast('Ingresá un puntaje válido (0 o más)','#991b1b'); }
+    else DB.puntajesCap.push({id:uid(),campo,personaId:id,clave:key,puntaje:Math.round(v*100)/100,asignadoPor:currentUser.usuario,fecha:new Date().toISOString().slice(0,10)});
+  }
+  guardarEstado();
+  if(key[0]==='t'){
+    const tt=crdTitulos(ag).find(x=>crdTituloKey(x)===key);
+    if(el&&tt){ el.value=crdPuntajeTitulo(ag,tt).toFixed(2); el.style.borderColor=crdPuntajeOverride(ag,key)?'#2563eb':'#cbd5e1'; }
+    const tl=document.getElementById('crd-tit-tot'); if(tl) tl.textContent=crdTitulos(ag).reduce((a,x)=>a+crdPuntajeTitulo(ag,x),0).toFixed(2);
+  }else{
+    const it=crdCapList(ag).find(c=>c.key===key);
+    if(el&&it){ const ov=crdPuntajeOverride(ag,key); el.value=crdPuntajeItem(ag,it).toFixed(2); el.style.borderColor=ov?'#2563eb':'#cbd5e1'; }
+    const t=document.getElementById('crd-ant-tot'); if(t) t.textContent=crdCapList(ag).reduce((a,c)=>a+crdPuntajeComputa(ag,c),0).toFixed(2);
+  }
+  showToast('✅ Puntaje guardado');
+}
+function crdAntFiltro(q){
+  if(q!==undefined) crdAntQ=crdNorm(q).trim();
+  let n=0;
+  document.querySelectorAll('#crd-ant-lista .crd-ant').forEach(c=>{ const ok=(!crdAntQ||c.dataset.n.includes(crdAntQ))&&(!crdAntE||(crdAntE==='X'?c.dataset.p==='1':c.dataset.e===crdAntE)); c.style.display=ok?'':'none'; if(ok) n++; });
+  const e=document.getElementById('crd-ant-n'); if(e) e.textContent=n;
+}
+function crdAntEst(k){
+  crdAntE=k;
+  document.querySelectorAll('#crd-ant-chips button').forEach(b=>{ const on=b.dataset.chip===k, col=b.style.borderColor; b.style.background=on?col:'#fff'; b.style.color=on?'#fff':col; });
+  crdAntFiltro();
+}
+function crdAnaFiltro(q){
+  if(q!==undefined) crdAnaQ=crdNorm(q).trim();
+  let n=0;
+  document.querySelectorAll('#crd-ana-lista .crd-comp').forEach(c=>{ const ok=(!crdAnaQ||c.dataset.n.includes(crdAnaQ))&&(!crdAnaK||c.dataset.k===crdAnaK); c.style.display=ok?'':'none'; if(ok) n++; });
+  const e=document.getElementById('crd-ana-n'); if(e) e.textContent=n;
+}
+function crdAnaCar(k){
+  crdAnaK=k;
+  document.querySelectorAll('#crd-ana-chips button').forEach(b=>{ const on=b.dataset.chip===k, col=b.style.borderColor; b.style.background=on?col:'#fff'; b.style.color=on?'#fff':col; });
+  crdAnaFiltro();
+}
+// Escala orientativa de puntaje por tipo de título ("Otros títulos"); el Administrador puede modificarla título por título
+function crdPuntajeTituloAuto(nombre){
+  const n=crdNorm(nombre);
+  if(/doctor/.test(n)) return 10;
+  if(/maestria|magister/.test(n)) return 8;
+  if(/diplomatura/.test(n)) return 5;
+  if(/especializaci/.test(n)) return 4;
+  if(/actualizaci/.test(n)) return 2;
+  if(/bachiller|perito|polimodal|ciclo basico/.test(n)) return 0;
+  if(/\bprof\b|profesor|profesorado|licenciad|titulo de grado|contador|ingenier|abogad|tecnico superior|tecnico universitario|analista/.test(n)) return 6;
+  return 2;
+}
+function crdTituloKey(t){ return 't'+crdNorm(t.nombre); }
+function crdPuntajeTitulo(ag,t){ const o=crdPuntajeOverride(ag,crdTituloKey(t)); return o?o.puntaje:crdPuntajeTituloAuto(t.nombre); }
+function crdTituloId(t){ let h=0; const k=crdNorm(t.nombre); for(let i=0;i<k.length;i++) h=(h*31+k.charCodeAt(i))%90000; return 10000+h; }
+function crdTitulosHTML(ag,adm){
+  const esc=crdEsc, list=crdTitulos(ag), tot=list.reduce((a,t)=>a+crdPuntajeTitulo(ag,t),0);
+  const td='padding:11px 12px;border-bottom:1px solid #eef2f7;font-size:13.5px;color:#1e293b;vertical-align:middle';
+  const th=(l,al,extra)=>`<th style="position:sticky;top:0;z-index:1;background:#fff;padding:10px 12px;font-size:13px;font-weight:600;color:#334155;text-align:${al||'left'};border-bottom:1.5px solid #1e293b;white-space:nowrap">${l}${extra||''}</th>`;
+  const trs=list.map(t=>{ const ov=crdPuntajeOverride(ag,crdTituloKey(t)), pt=crdPuntajeTitulo(ag,t), f=crdFechaISO(t.fecha);
+    const celda=adm?`<input type="number" step="0.5" min="0" data-key="${esc(crdTituloKey(t))}" value="${pt.toFixed(2)}" title="Dejá vacío para volver al puntaje automático" onchange="crdCapPuntaje('${ag.campo}',${ag.id},this.dataset.key,this.value,this)" style="width:78px;text-align:center;font-weight:700;border:1.5px solid ${ov?'#2563eb':'#cbd5e1'};border-radius:6px;padding:4px;font-family:inherit">`:`${pt.toFixed(2)}${ov?' <span title="Puntaje asignado por el Administrador" style="color:#2563eb">✎</span>':''}`;
+    const est=t.estado==='Validado'?['#166534','#dcfce7']:t.estado==='Pendiente'?['#854d0e','#fef9c3']:null;
+    return `<tr class="crd-tit" data-n="${esc(crdNorm(t.nombre))}"><td style="${td};text-align:center">${crdTituloId(t)}</td>
+      <td style="${td};text-transform:uppercase">${esc(t.nombre)}${est?` <span style="font-size:10px;font-weight:800;background:${est[1]};color:${est[0]};padding:1px 7px;border-radius:10px;text-transform:none">${t.estado}</span>`:''}</td>
+      <td style="${td};text-align:center;white-space:nowrap">${f?fmtDate(f):'—'}</td><td style="${td};text-align:center">${celda}</td></tr>`; }).join('');
+  return (adm?`<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:12.5px;color:#0369a1">✏️ Podés asignar el puntaje de cada título (se guarda al salir del campo). Vacío = escala automática. Los modificados se marcan en azul.</div>`:'')+`
+   <div style="font-size:15px;color:#1e293b;margin-bottom:8px">Buscar título</div>
+   <input class="form-input" style="width:100%;margin-bottom:14px" placeholder="Buscar por NOMBRE" oninput="crdTitFiltro(this.value)">
+   <div style="font-size:15px;color:#1e293b;margin-bottom:8px">Listado completo de títulos <span style="font-size:12.5px;color:#64748b">· <span id="crd-tit-n">${list.length}</span> · Total: <strong id="crd-tit-tot">${tot.toFixed(2)}</strong></span></div>
+   <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:min(62vh,560px);overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>${th('ID','center')}${th('Nombre título')}${th('Fecha de egreso','center')}${th('Puntaje (Otros títulos)','center',' <span title="Puntaje que suma cada título a Antecedentes, según su tipo (Doctorado 10 · Maestría 8 · Profesorado/Grado 6 · Diplomatura 5 · Especialización 4 · Actualización 2 · Bachiller 0)" style="display:inline-block;width:16px;height:16px;line-height:15px;border:1px solid #64748b;border-radius:50%;font-size:11px;text-align:center;cursor:help">i</span>')}</tr></thead>
+   <tbody id="crd-tit-lista">${trs||'<tr><td colspan="4" style="padding:18px;text-align:center;color:#94a3b8">Sin títulos cargados. Podés cargarlos en Mi Legajo → Antecedentes.</td></tr>'}</tbody></table></div>`;
+}
+function crdTitFiltro(q){
+  q=crdNorm(q).trim(); let n=0;
+  document.querySelectorAll('#crd-tit-lista .crd-tit').forEach(r=>{ const ok=!q||r.dataset.n.includes(q); r.style.display=ok?'':'none'; if(ok) n++; });
+  const e=document.getElementById('crd-tit-n'); if(e) e.textContent=n;
+}
+function crdTitModal(campo,id){
+  if(!puedeEmitirCredencial()) return;
+  const ag=crdAgenteDe(campo,id); if(!ag) return;
+  showModal('Títulos — '+crdNombre(ag.obj),`<div style="background:#f8fafc;padding:10px;border-radius:10px">${crdAvisoPeriodo(ag)}${crdTitulosHTML(ag,true)}</div>`);
+}
+function crdSolicitudHTML(ag,rc){
+  const rec=crdRec(ag), pen=crdPendiente(ag), nPend=crdPendientesAnt(ag);
+  let form;
+  if(pen){
+    form=`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;font-size:13px;color:#92400e">⏳ Tenés una solicitud <strong>${crdEstadoEf(pen,ag).toLowerCase()}</strong> (${crdEsc(pen.motivo)}, ${fmtDate(pen.fechaSolicitud)}). ${nPend?`Tenés ${nPend} antecedente${nPend>1?'s':''} sin evaluar: el Administrador debe validarlos antes de emitir.`:'El Administrador la va a emitir o rechazar.'}</div>`;
+  }else{
+    const primera=!rec||!rec.nro, auto=crdMotivoAuto(ag);
+    const motivo=primera
+      ? `<div class="form-input" style="background:#f1f5f9;font-weight:700">Primera emisión <span style="font-weight:500;color:#64748b">(automático)</span></div><input type="hidden" id="crd-motivo" value="Primera emisión">`
+      : `<select id="crd-motivo" class="form-input">${['Renovación','Duplicado por extravío','Actualización de datos'].map(m=>`<option ${m===auto?'selected':''}>${m}</option>`).join('')}</select>`;
+    form=`<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px">
+      <div style="font-weight:900;color:${rc};margin-bottom:12px">${primera?'Solicitar credencial':'Solicitar actualización / renovación'}</div>
+      ${nPend?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:9px 12px;font-size:12.5px;color:#1e40af;margin-bottom:12px">ℹ️ Tenés ${nPend} antecedente${nPend>1?'s':''} pendiente${nPend>1?'s':''} de evaluación: tu solicitud quedará <strong>En revisión</strong> hasta que el Administrador los valide.</div>`:''}
+      <div class="form-grid-2">${formGroup('Motivo',motivo)}${formGroup('Observaciones',`<input id="crd-obs" class="form-input" placeholder="Opcional">`)}</div>
+      <button class="btn btn-primary" onclick="crdSolicitar()">🪪 Enviar solicitud</button>
+      <div style="font-size:11.5px;color:#94a3b8;margin-top:10px">La credencial la emite el Administrador del sistema.</div></div>`;
+  }
+  const fila=rec?`<tr><td style="padding:8px 12px;white-space:nowrap">${fmtDate(pen?pen.fechaSolicitud:(rec.fechaEmision||rec.fechaResolucion||rec.fechaSolicitud))}</td><td style="padding:8px 12px">${crdEsc(rec.motivo||'')}</td><td style="padding:8px 12px">${crdEstadoBadge(crdEstadoEf(rec,ag))}</td><td style="padding:8px 12px">${crdEsc(rec.nro||'—')}</td><td style="padding:8px 12px;color:#64748b">${crdEsc(crdResolucionTxt(rec,ag))}</td></tr>`
+    :'<tr><td colspan="5" style="padding:16px;text-align:center;color:#94a3b8">Todavía no solicitaste tu credencial</td></tr>';
+  return form+`<div style="margin-top:16px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>${['Fecha','Motivo','Estado','N°','Resolución'].map(h=>`<th style="padding:9px 12px;background:#f1f5f9;color:#334155;text-align:left;border-bottom:2px solid #cbd5e1">${h}</th>`).join('')}</tr></thead><tbody>${fila}</tbody></table></div>`;
+}
+function crdSolicitar(){
+  const ag=crdAgenteActual(); if(!ag||crdPendiente(ag)) return;
+  let rec=crdRec(ag);
+  const motivo=(!rec||!rec.nro)?'Primera emisión':(document.getElementById('crd-motivo')?.value||crdMotivoAuto(ag));
+  if(!rec){ rec={id:uid(),campo:ag.campo,personaId:ag.id,creada:Date.now(),emitida:false}; crdLista().push(rec); }
+  rec.estadoPrevio=rec.estado; rec.motivoPrevio=rec.motivo;
+  Object.assign(rec,{estado:'Solicitada',motivo,obsSolicitud:document.getElementById('crd-obs')?.value||'',
+    fechaSolicitud:new Date().toISOString().slice(0,10),solicitadaPor:currentUser.usuario,rechazoReciente:''});
+  guardarEstado(); showToast('✅ Solicitud enviada al Administrador'); navigate('mi-credencial');
+}
+
+// ── Tarjeta imprimible ──
+function crdCardHTML(ag,c,inst){
+  const o=ag.obj, rc=({docente:'#1a5c3a',preceptor:'#0f766e',director:'#4c1d95',secretario:'#b45309'})[ag.campo==='preceptorId'?'preceptor':(o.rolInstitucional||'docente')]||'#1a3a5c';
+  const ini=((o.apellido||o.nombre||'?')[0]||'?').toUpperCase()+((o.nombres||'')[0]||'').toUpperCase();
+  const vig=c.vigencia?fmtDate(c.vigencia):'—';
+  const fila=(l,v)=>`<div style="font-size:11px;margin-top:4px"><span style="color:#64748b">${l}:</span> <strong>${crdEsc(v)}</strong></div>`;
+  return `<div style="width:420px;max-width:100%;border:1.5px solid #cbd5e1;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12);font-family:Arial,Helvetica,sans-serif"><div style="background:${rc};color:#fff;padding:12px 16px"><div style="font-size:10px;letter-spacing:1px;opacity:.85">PROVINCIA · CONSEJO GENERAL DE EDUCACIÓN</div><div style="font-size:15px;font-weight:900;margin-top:2px">CREDENCIAL ${crdRolLabel(ag).toUpperCase()}</div></div>
+   <div style="display:flex;gap:14px;padding:16px;align-items:flex-start"><div style="width:78px;height:96px;border-radius:8px;background:${rc};color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;flex-shrink:0">${crdEsc(ini)}</div><div style="flex:1"><div style="font-size:15px;font-weight:900;color:#1e293b">${crdEsc(crdNombre(o).toUpperCase())}</div>${fila('DNI',o.dni||'—')}${fila('CUIL',o.cuil||'—')}${fila('Establecimiento',inst?inst.nombre:'—')}${fila('Puntaje',c.puntaje!=null?(+c.puntaje).toFixed(2):'—')}</div></div>
+   <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#f8fafc;border-top:1px solid #e2e8f0;padding:9px 16px;font-size:10.5px;color:#475569"><span>N° <strong>${crdEsc(c.nro||'')}</strong></span><span>Emitida: <strong>${fmtDate(c.fechaEmision)}</strong></span><span>Válida hasta: <strong>${vig}</strong></span></div></div>`;
+}
+function crdCapNombres(ag){
+  const l=[];
+  try{ parseCapacitacionesDoc(ag.obj.cursos).forEach(c=>{ const n=String(c.nombre||'').replace(/<[^>]*>/g,'').trim(); if(n) l.push(n); }); }catch(e){}
+  (DB.antecedentesAgente||[]).filter(r=>r[ag.campo]===ag.id&&r.tipo==='Capacitacion'&&r.estado!=='Rechazado'&&r.nombre).forEach(r=>l.push(String(r.nombre).trim()));
+  return l;
+}
+function crdCargosHTML(ag,total){
+  const R={DOC:0,HAB:-5,SUP:-7,'SUP 1D':-7}, orden={DOC:0,HAB:1,SUP:2,'SUP 1D':3}, m={};
+  const add=(n,k,t)=>{ n=String(n).toUpperCase(); if(!m[n]||orden[k]<orden[m[n].k]) m[n]={k,t}; };
+  const tit=crdTitulos(ag);
+  const esDoc=t=>/\bprof\b|profesor|docente|maestr|licenciad/i.test(t.nombre);
+  const hayDoc=tit.some(esDoc), tBase=(tit.find(esDoc)||tit[0]||{}).nombre||'';
+  if(tit.length){ add('Preceptor',hayDoc?'DOC':'HAB',tBase); add('Preceptor Residencia Estudiantil',hayDoc?'DOC':'HAB',tBase); }
+  if(hayDoc) add('Bibliotecario Nivel Secundario','SUP 1D',tBase);
+  tit.forEach(t=>{
+    const doc=esDoc(t);
+    crdIncumbenciasDe(t.nombre).forEach(x=>{ x.hab.forEach(n=>add(n,doc?'DOC':'HAB',t.nombre)); (x.habSolo||[]).forEach(n=>add(n,'HAB',t.nombre)); x.afin.forEach(n=>add(n,'SUP',t.nombre)); });
+  });
+  (DB.competenciasExtra||[]).filter(e=>e.campo===ag.campo&&e.personaId===ag.id).forEach(e=>{
+    const n=String(e.nombre).toUpperCase(); m[n]={k:e.caracter,t:e.titulo||tBase,e};   // lo cargado por el Administrador prevalece
+  });
+  return Object.keys(m).sort((x,y)=>orden[m[x].k]-orden[m[y].k]||x.localeCompare(y)).map(n=>[n,m[n].k,Math.max(0,total+R[m[n].k]),m[n].t,m[n].e||null]);
+}
+// ── Período de cómputo ──
+// Mientras la credencial está en período de emisión o revisión (solicitud abierta, o aún sin emitir) los puntajes se
+// actualizan en vivo. Una vez emitida/actualizada, conserva lo computado a esa fecha: los cambios posteriores
+// (títulos, capacitaciones, puntajes asignados) se computan en la próxima emisión.
+function crdCerrada(ag){ const r=crdRec(ag); return r&&r.emitida&&['Emitida','Actualizada'].includes(r.estado)&&r.puntaje!=null?r:null; }
+function crdFoto(ag,vivo){
+  const r=vivo?null:crdCerrada(ag), live=crdPuntajes(ag).total;
+  const total=r?+r.puntaje:live;
+  return {r,total,live,
+    tits:(r&&r.snapTits2)||crdTitulos(ag).map(t=>t.nombre),   // sólo los títulos de la sección Títulos (no capacitaciones)
+    rows:(r&&r.snapCargos)||crdCargosHTML(ag,total),
+    nTit:(r&&r.snapN!=null)?r.snapN:crdTitulos(ag).length+crdCapNombres(ag).length};
+}
+function crdAvisoPeriodo(ag){
+  const rec=crdRec(ag), r=crdCerrada(ag);
+  const caja=(bg,bd,c,t)=>`<div style="background:${bg};border:1px solid ${bd};border-radius:10px;padding:10px 14px;margin-bottom:14px;color:${c};font-size:12.5px;line-height:1.45">${t}</div>`;
+  if(r){ const live=crdPuntajes(ag).total, dif=Math.abs(live-r.puntaje)>0.004;
+    return caja('#f1f5f9','#cbd5e1','#334155',`🔒 Credencial ${r.estado==='Actualizada'?'actualizada':'emitida'} el <strong>${fmtDate(r.fechaEmision)}</strong> con <strong>${(+r.puntaje).toFixed(2)}</strong> puntos. ${dif?`Puntaje actual a computar: <strong>${live.toFixed(2)}</strong>. `:''}Los cambios posteriores (títulos, capacitaciones, puntajes) se computan en la próxima emisión.`); }
+  if(rec&&rec.estado==='Solicitada') return caja('#ecfdf5','#a7f3d0','#065f46',`🟢 Período de ${crdEstadoEf(rec,ag)==='En revisión'?'revisión':'emisión'}: los puntajes se actualizan automáticamente en la credencial hasta que sea emitida.`);
+  return '';
+}
+function crdPaginaHTML(ag,c){
+  const o=ag.obj, F=crdFoto(ag), tits=F.tits, rows=F.rows;
+  const f=F.r?fmtDate(F.r.fechaEmision):fmtDate(new Date().toISOString().slice(0,10));
+  const mono="font-family:'Courier New',Courier,monospace;color:#111";
+  return `<div style="${mono};background:#fff;padding:26px 30px;max-width:820px;margin:0 auto;font-size:12px;line-height:1.35;position:relative" class="crdp"><style>.crdp table th,.crdp table td{padding:2px 6px!important;border:0!important;background:none!important;text-transform:none!important;font-size:12px!important;color:#111!important;letter-spacing:0!important;font-family:inherit!important;height:auto!important}.crdp table th{font-weight:bold!important;padding-bottom:6px!important}.crdp table tr{background:none!important;border:0!important}</style>
+   <div style="display:flex;gap:14px;align-items:flex-start">
+     <div style="width:80px;height:46px;background:#8a8a8a;color:#fff;font:900 40px/46px Arial,sans-serif;letter-spacing:-3px;text-align:center;border-radius:3px;flex-shrink:0">ER</div>
+     <div style="flex:1"><div style="text-align:center;font-weight:bold;font-size:14px">GOBIERNO DE ENTRE RÍOS - CONSEJO GENERAL DE EDUCACIÓN</div>
+       <div style="margin-top:6px">CONCURSO DE NIVEL SECUNDARIO</div>
+       <div style="border-top:1.5px solid #111;margin-top:4px"></div></div></div>
+   <div style="display:flex;justify-content:space-between;gap:14px;margin-top:2px;border-bottom:1.5px solid #111;padding-bottom:5px">
+     <div style="flex:1"><div style="font-size:9px">APELLIDO/S Y NOMBRE/S:</div><div style="font-weight:bold">${crdEsc(crdNombre(o).toUpperCase())}</div></div>
+     <div><div style="font-size:9px">DOCUMENTO:</div><div style="font-weight:bold">${crdEsc(String(o.dni||'').replace(/\D/g,'')||'—')}</div></div>
+     <div><div style="font-size:9px">FECHA EMISIÓN</div><div style="font-weight:bold">${f}</div></div>
+     <div><div style="font-size:9px">PÁGINA</div><div style="font-weight:bold">1</div></div></div>
+   <div style="margin-top:18px"><u>Títulos:</u>${tits.length?tits.map(t=>`<div style="padding-left:6px">- ${crdEsc(t.toUpperCase())}</div>`).join(''):'<div style="padding-left:6px">- SIN TÍTULOS REGISTRADOS</div>'}</div>
+   <table style="width:100%;border-collapse:collapse;margin-top:26px"><thead><tr><th style="text-align:center;padding:4px 6px">Cargo/Asignatura</th><th style="text-align:center;padding:4px 6px;width:90px">Carácter</th><th style="text-align:center;padding:4px 6px;width:90px">Puntaje</th></tr></thead>
+   <tbody>${rows.length?rows.map(r=>`<tr><td style="padding:3px 6px 3px 14px;font-weight:bold">${crdEsc(r[0])}</td><td style="text-align:center;font-weight:bold">${r[1]}</td><td style="text-align:center;font-weight:bold">${r[2].toFixed(2)}</td></tr>`).join(''):'<tr><td colspan="3" style="padding:14px;text-align:center">Sin cargos ni asignaturas habilitados (cargá tu título en Mi Legajo → Antecedentes)</td></tr>'}</tbody></table>
+   <div style="margin-top:22px;font-size:10px;border-top:1px solid #111;padding-top:6px">HAB: habilitante · DOC: docente · SUP: supletorio · SUP 1D: supletorio de 1ª división.${c&&c.nro?` Credencial N° ${crdEsc(c.nro)}${c.vigencia?' · válida hasta '+fmtDate(c.vigencia):''}.`:''}</div></div>`;
+}
+function crdDocHTML(ag,c){
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Credencial ${crdEsc((c&&c.nro)||'')}</title><style>body{margin:0;background:#fff}@page{margin:12mm}</style></head><body>${crdPaginaHTML(ag,c)}</body></html>`;
+}
+function crdImprimir(campo,id,cid){
+  const ag=crdAgenteDe(campo,id), c=crdLista().find(x=>x.id===cid); if(!ag||!c) return;
+  mostrarDocumentoImprimible(crdDocHTML(ag,c),'Credencial '+(c.nro||''));
+}
+function crdCredencialTabHTML(ag,rc){
+  const v=crdVigente(ag), pen=crdPendiente(ag);
+  const banner=v?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#dcfce7;border:1px solid #86efac;border-radius:10px;padding:10px 14px;margin-bottom:14px;color:#166534;font-size:13px;font-weight:700">✅ Credencial N° ${crdEsc(v.nro)} ${v.estado==='Actualizada'?'actualizada':'emitida'} el ${fmtDate(v.fechaEmision)} · válida hasta ${v.vigencia?fmtDate(v.vigencia):'—'}
+      <button class="btn btn-primary btn-sm" onclick="crdImprimir('${ag.campo}',${ag.id},${v.id})">🖨️ Imprimir / Guardar PDF</button></div>`
+   :`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;color:#92400e;font-size:13px;font-weight:600">📄 Vista previa con tus datos actuales. ${pen?'Tu solicitud está en trámite: el Administrador la emitirá.':'Para obtener la credencial oficial pedila en "Solicitud de Credencial"; la emite el Administrador.'}</div>`;
+  const cz=crdCerrada(ag), D=cz&&cz.snapDes?cz.snapDes:(()=>{const q=crdPuntajes(ag);return {total:q.total,ant:q.antecedentes,antTit:q.antTit,antCap:q.antCap,servicios:q.servicios,zona:q.zona,conceptos:q.conceptos,jerarquia:q.jerarquia};})(), n2=x=>(+x).toFixed(2);
+  const desg=`<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:#334155;line-height:1.6">📊 <strong>Puntaje base de la credencial: ${n2(D.total)}</strong> = Servicios ${n2(D.servicios)} + <strong>Antecedentes ${n2(D.ant)}</strong> (títulos ${n2(D.antTit)} + capacitaciones ${n2(D.antCap)}) + Zona ${n2(D.zona)} + Conceptos ${n2(D.conceptos)} + Jerarquía ${n2(D.jerarquia)}. <span style="color:#64748b">Las capacitaciones suman puntaje aunque no se listen en la hoja.</span></div>`;
+  return banner+crdAvisoPeriodo(ag)+desg+`<div style="background:#e5e7eb;padding:14px;border-radius:10px;overflow:auto;max-height:min(66vh,620px);border:1px solid #d1d5db">${crdPaginaHTML(ag,v)}</div>`;
+}
+
+// ── Administrador: emisión ──
+function renderCredencialesAdmin(){
+  if(!puedeEmitirCredencial()) return `${sectionHeader('Credenciales')}<div class="alert-info">Las credenciales las emite el Administrador.</div>`;
+  const ags=crdAgentesInst();
+  const q=(crdAdminF.q||'').toLowerCase();
+  const info=ags.map(a=>({a,v:crdVigente(a),p:crdPendiente(a),u:crdRec(a)}));
+  const nSol=info.filter(x=>x.p).length, nEm=info.filter(x=>x.v).length, nSin=info.filter(x=>!x.v&&!x.p).length;
+  const estDe=x=>x.p?'sol':x.v?'em':'sin';
+  const lista=info.filter(x=>(crdAdminF.est==='todos'||estDe(x)===crdAdminF.est)&&(!q||(crdNombre(x.a.obj)+' '+(x.a.obj.dni||'')).toLowerCase().includes(q)));
+  const kpi=(l,n,c,e)=>`<button onclick="crdAdminF.est='${e}';navigate('credenciales')" style="flex:1;min-width:140px;background:#fff;border:1.5px solid ${crdAdminF.est===e?c:'#e2e8f0'};border-top:4px solid ${c};border-radius:10px;padding:12px;cursor:pointer;font-family:inherit;text-align:left"><div style="font-size:24px;font-weight:900;color:${c}">${n}</div><div style="font-size:12px;font-weight:700;color:#475569">${l}</div></button>`;
+  const inst=instActual();
+  const filas=lista.map(({a,v,p,u})=>{
+    const st=u?crdEstadoBadge(crdEstadoEf(u,a)):'<span style="color:#94a3b8;font-size:12px">Sin credencial</span>';
+    const b=(l,fn,cls='btn-ghost')=>`<button class="btn ${cls} btn-sm" onclick="${fn}">${l}</button>`;
+    return `<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:9px 12px;font-weight:700">${crdEsc(crdNombre(a.obj))}</td><td style="padding:9px 12px">${crdEsc(a.obj.dni||'—')}</td><td style="padding:9px 12px">${crdRolLabel(a)}</td><td style="padding:9px 12px">${st}${p?`<div style="font-size:11px;color:#92400e;margin-top:3px">${crdEsc(p.motivo)} · ${fmtDate(p.fechaSolicitud)}${crdPendientesAnt(a)?' · '+crdPendientesAnt(a)+' antecedente(s) a evaluar':''}</div>`:''}</td><td style="padding:9px 12px">${crdEsc(v?v.nro:'—')}${v&&v.vigencia?`<div style="font-size:11px;color:#64748b">hasta ${fmtDate(v.vigencia)}</div>`:''}</td>
+      <td style="padding:9px 12px;white-space:nowrap;display:flex;gap:5px;flex-wrap:wrap">${b('📊 Puntajes',`crdVerPuntajes('${a.campo}',${a.id})`)}${b('📚 Analítico',`crdAnaModal('${a.campo}',${a.id})`)}${b('🎓 Títulos',`crdTitModal('${a.campo}',${a.id})`)}${b('📎 Antecedentes',`crdAntModal('${a.campo}',${a.id})`)}${b(v?'🔁 Actualizar':'🪪 Emitir',`crdEmitirModal('${a.campo}',${a.id})`,'btn-primary')}${p?b('✖ Rechazar',`crdRechazarModal(${p.id})`):''}${v?b('🖨️',`crdImprimir('${a.campo}',${a.id},${v.id})`)+b('🚫 Anular',`crdAnularModal(${v.id})`):''}</td></tr>`;
+  }).join('');
+  return `${sectionHeader('Credenciales')}
+   <div class="alert-info" style="margin-bottom:14px">🪪 Sólo el <strong>Administrador</strong> emite las credenciales de docentes, preceptores, secretarios y directores.</div>
+   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kpi('Solicitudes pendientes',nSol,'#d97706','sol')}${kpi('Credenciales emitidas',nEm,'#166534','em')}${kpi('Sin credencial',nSin,'#64748b','sin')}${kpi('Todos los agentes',ags.length,'#1a3a5c','todos')}</div>
+   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><input id="crd-q" class="form-input" style="max-width:280px" placeholder="Buscar por nombre o DNI" value="${crdEsc(crdAdminF.q)}" oninput="crdAdminF.q=this.value;crdRefrescarLista()">
+    <span style="font-size:12px;color:#64748b">Puntaje de zona por año:</span><input id="crd-zona" type="number" step="0.05" min="0" class="form-input" style="width:90px" value="${parseFloat(inst&&inst.zonaPuntaje)||0}" onchange="crdGuardarZona(this.value)"></div>
+   <div id="crd-lista" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>${['Agente','DNI','Rol','Estado','N° / Vigencia','Acciones'].map(h=>`<th style="padding:9px 12px;background:#f1f5f9;color:#334155;text-align:left;border-bottom:2px solid #cbd5e1">${h}</th>`).join('')}</tr></thead><tbody>${filas||'<tr><td colspan="6" style="padding:20px;text-align:center;color:#94a3b8">Sin agentes para mostrar</td></tr>'}</tbody></table></div>`;
+}
+function crdRefrescarLista(){
+  const pos=document.getElementById('crd-q')?.selectionStart;
+  navigate('credenciales');
+  const el=document.getElementById('crd-q'); if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(e){} }
+}
+function crdGuardarZona(v){
+  if(!puedeEmitirCredencial()) return;
+  const inst=instActual(); if(!inst) return;
+  inst.zonaPuntaje=Math.max(0,parseFloat(v)||0); guardarEstado(); showToast('✅ Puntaje de zona actualizado');
+}
+function crdVerPuntajes(campo,id){
+  const ag=crdAgenteDe(campo,id); if(!ag) return;
+  showModal('Puntajes — '+crdNombre(ag.obj),`<div style="background:#f8fafc;padding:6px;border-radius:10px">${crdPuntajesHTML(crdPuntajes(ag),'#1a3a5c')}</div>`);
+}
+function crdEmitirModal(campo,id){
+  if(!puedeEmitirCredencial()) return;
+  const ag=crdAgenteDe(campo,id); if(!ag) return;
+  const p=crdPuntajes(ag), h=new Date(), nPend=crdPendientesAnt(ag), act=!!crdVigente(ag);
+  h.setFullYear(h.getFullYear()+2);
+  const rec=crdPendiente(ag), motivo=rec?rec.motivo:crdMotivoAuto(ag);
+  const cab=`<div style="font-size:13px;margin-bottom:12px"><strong>${crdEsc(crdNombre(ag.obj))}</strong> · DNI ${crdEsc(ag.obj.dni||'—')} · ${crdRolLabel(ag)}<br>Motivo: <strong>${crdEsc(motivo)}</strong> · Puntaje total: <strong>${p.total.toFixed(2)}</strong></div>`;
+  if(nPend) return showModal(act?'Actualizar credencial':'Emitir credencial',cab+`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 14px;font-size:13px;color:#1e40af">🔎 <strong>En revisión:</strong> el agente tiene ${nPend} antecedente${nPend>1?'s':''} (títulos / capacitaciones) pendiente${nPend>1?'s':''} de evaluación. Validalos para poder ${act?'actualizar':'emitir'} la credencial.</div>
+   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button><button class="btn btn-primary" onclick="crdIrValidar('${campo}',${id})">📂 Evaluar antecedentes</button></div>`);
+  showModal(act?'Actualizar credencial':'Emitir credencial',cab+`<div class="form-grid-2">${formGroup('Válida hasta',`<input id="crd-vig" type="date" class="form-input" value="${h.toISOString().slice(0,10)}">`)}${formGroup('Observaciones',`<input id="crd-eobs" class="form-input" placeholder="Opcional">`)}</div>
+   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="crdEmitir('${campo}',${id})">🪪 ${act?'Actualizar':'Emitir'} credencial</button></div>`);
+}
+function crdIrValidar(campo,id){
+  closeModal();
+  if(campo==='preceptorId') abrirLegajoPropioPrec(id,'antecedentes','admin'); else abrirLegajoAdmin(id,'antecedentes');
+}
+function crdEmitir(campo,id){
+  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador puede emitir credenciales','#991b1b'); return; }
+  const ag=crdAgenteDe(campo,id); if(!ag) return;
+  if(crdPendientesAnt(ag)){ showToast('Hay antecedentes pendientes de evaluar','#991b1b'); return; }
+  const vig=document.getElementById('crd-vig')?.value||'';
+  const hoy=new Date().toISOString().slice(0,10);
+  if(!vig||vig<hoy){ showToast('Indicá una vigencia posterior a hoy','#991b1b'); return; }
+  const lista=crdLista(), anio=hoy.slice(0,4);
+  let rec=crdRec(ag);
+  const yaEmitida=!!crdVigente(ag);
+  const motivo=(rec&&rec.estado==='Solicitada'&&rec.motivo)?rec.motivo:crdMotivoAuto(ag);
+  if(!rec){ rec={id:uid(),campo:ag.campo,personaId:id,creada:Date.now(),fechaSolicitud:hoy}; lista.push(rec); }
+  if(!rec.nro) rec.nro=`CR-${anio}-${String(lista.filter(c=>c.nro&&c.nro.startsWith('CR-'+anio)).length+1).padStart(4,'0')}`;
+  if(!rec.fechaPrimeraEmision) rec.fechaPrimeraEmision=hoy;
+  Object.assign(rec,{estado:yaEmitida?'Actualizada':'Emitida',emitida:true,motivo,fechaEmision:hoy,fechaResolucion:hoy,vigencia:vig,
+    emitidaPor:currentUser.nombre||currentUser.usuario,obsEmision:document.getElementById('crd-eobs')?.value||'',
+    motivoRechazo:'',rechazoReciente:''});
+  const F=crdFoto(ag,true);   // se congela lo computado a la fecha de emisión
+  Object.assign(rec,{puntaje:F.live,snapDes:(()=>{const q=crdPuntajes(ag);return {total:q.total,ant:q.antecedentes,antTit:q.antTit,antCap:q.antCap,servicios:q.servicios,zona:q.zona,conceptos:q.conceptos,jerarquia:q.jerarquia};})(),snapCargos:JSON.parse(JSON.stringify(crdCargosHTML(ag,F.live))),snapTits2:F.tits,snapN:F.nTit});
+  guardarEstado(); closeModal(); showToast('✅ Credencial '+rec.nro+(yaEmitida?' actualizada':' emitida')); navigate('credenciales');
+}
+function crdRechazarModal(cid){
+  if(!puedeEmitirCredencial()) return;
+  showModal('Rechazar solicitud',`${formGroup('Motivo del rechazo',`<input id="crd-mot" class="form-input" placeholder="Ej: falta documentación">`,true)}
+   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="crdResolver(${cid},'Rechazada')">Rechazar</button></div>`);
+}
+function crdAnularModal(cid){
+  if(!puedeEmitirCredencial()) return;
+  showModal('Anular credencial',`${formGroup('Motivo de la anulación',`<input id="crd-mot" class="form-input">`,true)}
+   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="crdResolver(${cid},'Anulada')">Anular</button></div>`);
+}
+function crdResolver(cid,estado){
+  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador puede resolver credenciales','#991b1b'); return; }
+  const c=crdLista().find(x=>x.id===cid); if(!c) return;
+  const m=(document.getElementById('crd-mot')?.value||'').trim();
+  if(!m){ showToast('Indicá el motivo','#991b1b'); return; }
+  if(estado==='Rechazada'&&c.emitida&&c.nro){   // rechazo de una actualización: la credencial vigente se mantiene
+    c.estado=['Emitida','Actualizada'].includes(c.estadoPrevio)?c.estadoPrevio:'Emitida'; c.rechazoReciente=m;
+    if(c.motivoPrevio) c.motivo=c.motivoPrevio;
+  }else{ c.estado=estado; c.motivoRechazo=m; }
+  Object.assign(c,{fechaResolucion:new Date().toISOString().slice(0,10),resueltaPor:currentUser.usuario});
+  guardarEstado(); closeModal(); showToast('Credencial: '+estado.toLowerCase()); navigate('credenciales');
+}
+
+
 iniciarSincronizacionYSesion();
 </script>
 </body>
