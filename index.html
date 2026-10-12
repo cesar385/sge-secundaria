@@ -1280,7 +1280,11 @@ const HOJAS_GLOBALES = ['USUARIOS','INSTITUCIONES'];
 const HOJA_META = 'META';
 
 const SHEETS_ID_PREDETERMINADO = '15Iz1QYDvUkb86oPXFVDswAl5uvZ_QMrWouZfEhDtVGw';   // planilla de sincronización del sistema
-let sheetsCfg = { clientId:'', spreadsheetId:SHEETS_ID_PREDETERMINADO, conectado:false };
+const SHEETS_CLIENT_ID_PREDETERMINADO = '798799890922-pr7g7fd3u9fi63tp6eg36t0i1ctr8vss.apps.googleusercontent.com';
+// La sincronización con Sheets está SIEMPRE activada: no se puede desconectar.
+let sheetsCfg = { clientId:SHEETS_CLIENT_ID_PREDETERMINADO, spreadsheetId:SHEETS_ID_PREDETERMINADO, conectado:true };
+let sheetsTokenVence = 0;          // timestamp (ms) en que vence el token actual
+let _sheetsUltimoPedidoToken = 0;  // para no pedir token en cada clic
 // Acepta el ID o la URL completa de la planilla
 function extraerIdPlanilla(txt){ const t=String(txt||'').trim(); const m=/\/d\/([a-zA-Z0-9_-]+)/.exec(t); return m?m[1]:t; }
 let sheetsTokenClient = null;
@@ -1302,6 +1306,8 @@ function cargarConfigSheets(){
     const raw = localStorage.getItem(SGE_SHEETS_CFG_KEY);
     if(raw) sheetsCfg = Object.assign(sheetsCfg, JSON.parse(raw));
     if(!sheetsCfg.spreadsheetId) sheetsCfg.spreadsheetId = SHEETS_ID_PREDETERMINADO;
+    if(!sheetsCfg.clientId) sheetsCfg.clientId = SHEETS_CLIENT_ID_PREDETERMINADO;
+    sheetsCfg.conectado = true; // siempre activada
     sheetsUltimoSync = localStorage.getItem('sge_sheets_ultimo_sync') || null;
   }catch(e){ /* sin config previa */ }
 }
@@ -1340,20 +1346,26 @@ function _gisTokenCallback(resp){
   if(resp.error){
     console.error('Error de autorización de Google Sheets:', resp);
     sheetsUltimoError = 'No se pudo autorizar el acceso a Google (' + resp.error + ')';
-    navigate('configuracion');
-    showToast('⚠️ No se pudo autorizar Google Sheets','#b91c1c');
+    actualizarBannerSheets();
     return;
   }
   sheetsAccessToken = resp.access_token;
+  sheetsTokenVence = Date.now() + (Number(resp.expires_in)||3600)*1000;
+  // Renovar el token un par de minutos antes de que venza
+  clearTimeout(window._sheetsRenovarTimer);
+  window._sheetsRenovarTimer = setTimeout(()=>pedirTokenSheets(''), Math.max(60000, sheetsTokenVence - Date.now() - 120000));
+  const _eraPrimeraConexion = !sheetsCfg._yaAutorizado;
+  sheetsCfg._yaAutorizado = true;
   sheetsCfg.conectado = true;
   sheetsUltimoError = null;
   guardarConfigSheets();
   // Tomamos la versión actual de la planilla como línea base, así el primer
   // guardado de esta sesión también puede detectar si alguien más escribió
   // mientras el sistema estaba cerrado en este navegador.
-  leerMetaSheets().then(m=>{ sheetsVersionConocida = m.version; }).catch(()=>{});
-  navigate('configuracion');
-  showToast('✅ Conectado a Google Sheets','#166534');
+  leerMetaSheets().then(m=>{ if(sheetsVersionConocida===null) sheetsVersionConocida = m.version; }).catch(()=>{});
+  actualizarBannerSheets();
+  if(_eraPrimeraConexion) showToast('✅ Conectado a Google Sheets','#166534');
+  if(currentUser && currentSection==='configuracion') navigate('configuracion');
 }
 
 function initSheetsTokenClient(){
@@ -1363,6 +1375,7 @@ function initSheetsTokenClient(){
     client_id: sheetsCfg.clientId,
     scope: 'https://www.googleapis.com/auth/spreadsheets',
     callback: _gisTokenCallback,
+    error_callback: (err)=>{ console.warn('Google Sheets: no se pudo obtener el token', err); actualizarBannerSheets(); },
   });
   return sheetsTokenClient;
 }
@@ -1387,15 +1400,50 @@ function conectarGoogleSheets(){
 }
 
 function desconectarGoogleSheets(){
-  sheetsCfg.conectado = false;
-  sheetsAccessToken = null;
-  guardarConfigSheets();
-  navigate('configuracion');
-  showToast('🔌 Desconectado de Google Sheets (la planilla no se borra)','#334155');
+  // La sincronización está siempre activada: no se permite desconectar.
+  showToast('☁️ La sincronización con Google Sheets está siempre activada','#334155');
 }
+
+function sheetsTokenValido(){ return !!sheetsAccessToken && Date.now() < sheetsTokenVence - 30000; }
+
+// Pide (o renueva) el token de Google. prompt '' = sin pantalla de consentimiento
+// si el usuario ya autorizó antes; 'consent' = forzar la pantalla.
+function pedirTokenSheets(prompt){
+  if(!sheetsConfigurado()) return;
+  const tc = initSheetsTokenClient();
+  if(!tc) return;
+  _sheetsUltimoPedidoToken = Date.now();
+  try{ tc.requestAccessToken({ prompt: prompt ?? (sheetsCfg._yaAutorizado ? '' : 'consent') }); }
+  catch(e){ console.warn('Google Sheets: error al pedir token', e); }
+}
+
+// Aviso fijo arriba de la app cuando la sincronización no está funcionando.
+function actualizarBannerSheets(){
+  let b = document.getElementById('sheets-banner');
+  const app = document.getElementById('app-screen');
+  const mostrar = currentUser && app && app.style.display!=='none' && !sheetsTokenValido();
+  if(!mostrar){ if(b) b.remove(); return; }
+  if(!b){
+    b = document.createElement('div');
+    b.id = 'sheets-banner';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#fef3c7;color:#854d0e;border-bottom:1px solid #fcd34d;padding:8px 14px;font-size:13px;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap';
+    document.body.appendChild(b);
+  }
+  b.innerHTML = '☁️ La sincronización con Google Sheets no está activa en este momento.'
+    + '<button class="btn btn-primary btn-sm" onclick="pedirTokenSheets()">🔗 Conectar con Google</button>';
+}
+
+// Si el token falta o venció, el próximo clic del usuario lo renueva
+// (los navegadores sólo permiten abrir la ventana de Google ante un clic).
+document.addEventListener('click', ()=>{
+  if(!currentUser || sheetsTokenValido()) return;
+  if(Date.now() - _sheetsUltimoPedidoToken < 60000) return;
+  pedirTokenSheets();
+}, true);
 
 async function _sheetsFetch(path, options={}){
   if(!sheetsAccessToken) throw new Error('Sin token de acceso a Google Sheets');
+  if(!sheetsTokenValido()){ sheetsAccessToken = null; actualizarBannerSheets(); throw new Error('El token de Google Sheets venció'); }
   const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetsCfg.spreadsheetId}${path}`, {
     ...options,
     headers: { 'Authorization':`Bearer ${sheetsAccessToken}`, 'Content-Type':'application/json', ...(options.headers||{}) },
@@ -1616,13 +1664,15 @@ function autoguardadoTick(){
 // Si Google no puede renovarlo sin interacción, el usuario deberá reconectar
 // manualmente desde Configuración — no rompe nada, sólo no auto-sincroniza.
 function intentarReconexionSilenciosaSheets(){
-  if(!(sheetsCfg.conectado && sheetsCfg.clientId && sheetsCfg.spreadsheetId)) return;
-  setTimeout(()=>{
-    const tc = initSheetsTokenClient();
-    if(!tc) return;
-    try{ tc.requestAccessToken({ prompt:'' }); }
-    catch(e){ console.warn('No se pudo reconectar en silencio a Google Sheets:', e); }
-  }, 1000);
+  if(!sheetsConfigurado()) return;
+  // Espera a que cargue Google Identity Services y pide el token.
+  let intentos = 0;
+  const t = setInterval(()=>{
+    if(++intentos > 40){ clearInterval(t); return; }
+    if(!(window.google && google.accounts && google.accounts.oauth2)) return;
+    clearInterval(t);
+    if(sheetsCfg._yaAutorizado) pedirTokenSheets('');
+  }, 250);
 }
 
 function initUsers(){
@@ -1761,6 +1811,10 @@ function _bootApp(){
   renderTopbar();
   renderApp();
   setTimeout(()=>checkAutomatismos(), 500);
+  // Sincronización con Sheets siempre activada: el clic en "Ingresar" permite
+  // abrir la ventana de Google para autorizar/renovar el token.
+  if(!sheetsTokenValido()) pedirTokenSheets();
+  setTimeout(actualizarBannerSheets, 1500);
 }
 function doLogout(){
   guardarEstadoInmediato();
@@ -1771,6 +1825,7 @@ function doLogout(){
   DB = INST_DATA[1]; // reset to default
   document.getElementById('login-screen').style.display='flex';
   document.getElementById('app-screen').style.display='none';
+  actualizarBannerSheets();
   document.getElementById('inp-user').value='';
   document.getElementById('inp-pass').value='';
   // Refresh login panel so new users/institutions appear
@@ -2730,9 +2785,9 @@ function renderConfiguracion(){
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
         <div style="font-size:13px;color:#334155">
-          <strong>Estado:</strong> ${sheetsCfg.conectado && sheetsAccessToken
-            ? '<span style="color:#166534">✅ Conectado</span>'
-            : (sheetsCfg.conectado ? '<span style="color:#854d0e">⚠️ Conectado antes, pero hace falta reautorizar</span>' : '<span style="color:#94a3b8">○ No conectado</span>')}
+          <strong>Estado:</strong> ${sheetsTokenValido()
+            ? '<span style="color:#166534">✅ Sincronización activa (siempre activada)</span>'
+            : '<span style="color:#854d0e">⚠️ Siempre activada — falta autorizar Google en este navegador</span>'}
         </div>
         ${sheetsUltimoSync?`<div style="font-size:12px;color:#94a3b8">Último envío a Sheets: ${new Date(sheetsUltimoSync).toLocaleString('es-AR')}</div>`:''}
         ${sheetsUltimoError?`<div style="font-size:12px;color:#b91c1c">⚠️ ${sheetsUltimoError}</div>`:''}
@@ -2751,7 +2806,6 @@ function renderConfiguracion(){
         <button class="btn btn-primary btn-sm" onclick="conectarGoogleSheets()">🔗 ${sheetsCfg.conectado?'Reconectar':'Conectar'} con Google</button>
         <button class="btn btn-success btn-sm" onclick="${sheetsConflicto?`if(confirm('Hay cambios de '+${JSON.stringify(sheetsConflicto.porUsuario||'otra persona')}+' sin cargar todavía. Si subís ahora, se van a perder. ¿Forzar de todos modos?')){sheetsVersionConocida=null;}else{return;}`:''}guardarEstadoEnSheets().then(ok=>{navigate('configuracion');showToast(ok?'✅ Estado subido a Google Sheets':(sheetsConflicto?'⚠️ Conflicto: alguien más guardó primero':'⚠️ No se pudo subir a Sheets'), ok?'#166534':'#b91c1c')})">⬆️ Subir estado actual</button>
         <button class="btn btn-warning btn-sm" onclick="if(confirm('Esto reemplaza TODO lo que ves ahora mismo en pantalla por lo que esté guardado en la planilla de Google Sheets. ¿Continuar?')){cargarEstadoDesdeSheets().then(()=>navigate('configuracion'))}">⬇️ Cargar desde Sheets</button>
-        ${sheetsCfg.conectado?'<button class="btn btn-danger btn-sm" onclick="desconectarGoogleSheets()">🔌 Desconectar</button>':''}
       </div>
     </div>
 
