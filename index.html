@@ -412,6 +412,7 @@ function createEmptyInstData(){
     notificaciones:[], reintegros:[], conceptosPeriodo:[],
     justificaciones:[], comunicados:[],
     traslados:[], permutas:[], bajasTramite:[], certificacionesMedicas:[], antecedentesAgente:[],
+    liquidaciones:[], liqExcluidas:[],
   };
 }
 
@@ -903,7 +904,7 @@ function registrarHistorial(obj, operacion, comentario=''){
 function colorOperacionHist(op){
   op=(op||'').toUpperCase();
   if(op.includes('APROB')) return '#c2410c';
-  if(op.includes('RECHAZ')||op.includes('BAJA')||op.includes('INACTIV')) return '#991b1b';
+  if(op.includes('RECHAZ')||op.includes('BAJA')||op.includes('INACTIV')||op.includes('ANUL')) return '#991b1b';
   if(op.includes('AGREGAR')||op.includes('PLAZA')) return '#0f766e';
   return '#78350f';
 }
@@ -1024,6 +1025,8 @@ function badge(estado){
     pendiente:'<span class="badge badge-yellow">Pendiente</span>',
     aprobada:'<span class="badge badge-green">Aprobada</span>',
     rechazada:'<span class="badge badge-red">Rechazada</span>',
+    finalizada:'<span class="badge badge-gray">Finalizada</span>',
+    anulada:'<span class="badge badge-gray" style="text-decoration:line-through">Anulada</span>',
     activa:'<span class="badge badge-blue">Activa</span>',
     inactiva:'<span class="badge badge-gray">Inactiva</span>',
     presente:'<span class="badge badge-green">Presente</span>',
@@ -1270,25 +1273,16 @@ function borrarEstadoGuardado(){
 const SGE_SHEETS_CFG_KEY = 'sge_secundaria_sheets_cfg_v1';
 const ENTIDADES_INST = ['docentes','alumnos','cursos','notas','asistencias','licencias',
   'designaciones','plazas','solicitudesPlaza','preceptores','notificaciones','reintegros',
-  'conceptosPeriodo','justificaciones','comunicados'];
+  'conceptosPeriodo','justificaciones','comunicados',
+  'traslados','permutas','bajasTramite','certificacionesMedicas','antecedentesAgente',
+  'liquidaciones','liqExcluidas'];
 const HOJAS_GLOBALES = ['USUARIOS','INSTITUCIONES'];
 const HOJA_META = 'META';
 
-// Valores por defecto: con esto la sincronización queda configurada en cualquier
-// navegador/equipo sin tener que cargar los IDs a mano (no son secretos: la
-// planilla sólo es accesible para cuentas de Google con permiso sobre ella).
-const SHEETS_DEFAULT = {
-  clientId: '798799890922-pr7g7fd3u9fi63tp6eg36t0i1ctr8vss.apps.googleusercontent.com',
-  spreadsheetId: '15Iz1QYDvUkb86oPXFVDswAl5uvZ_QMrWouZfEhDtVGw',
-};
-let sheetsCfg = { clientId:SHEETS_DEFAULT.clientId, spreadsheetId:SHEETS_DEFAULT.spreadsheetId, conectado:true };
-let sheetsTokenVence = 0;            // timestamp (ms) en que vence el token actual
-let sheetsPidiendoToken = false;     // hay un pedido de token en curso
-let sheetsUltimoIntentoToken = 0;    // para no abrir popups en cada clic si el usuario los cierra
-let sheetsTimerRenovacion = null;
-let sheetsPedidoManual = false;      // el pedido de token vino del botón "Conectar"
-const SHEETS_VERSION_KEY = 'sge_sheets_version_local';
-const SHEETS_HASH_KEY = 'sge_sheets_hash_local';
+const SHEETS_ID_PREDETERMINADO = '15Iz1QYDvUkb86oPXFVDswAl5uvZ_QMrWouZfEhDtVGw';   // planilla de sincronización del sistema
+let sheetsCfg = { clientId:'', spreadsheetId:SHEETS_ID_PREDETERMINADO, conectado:false };
+// Acepta el ID o la URL completa de la planilla
+function extraerIdPlanilla(txt){ const t=String(txt||'').trim(); const m=/\/d\/([a-zA-Z0-9_-]+)/.exec(t); return m?m[1]:t; }
 let sheetsTokenClient = null;
 let sheetsAccessToken = null;
 let sheetsSyncing = false;
@@ -1307,44 +1301,10 @@ function cargarConfigSheets(){
   try{
     const raw = localStorage.getItem(SGE_SHEETS_CFG_KEY);
     if(raw) sheetsCfg = Object.assign(sheetsCfg, JSON.parse(raw));
+    if(!sheetsCfg.spreadsheetId) sheetsCfg.spreadsheetId = SHEETS_ID_PREDETERMINADO;
     sheetsUltimoSync = localStorage.getItem('sge_sheets_ultimo_sync') || null;
-    const v = localStorage.getItem(SHEETS_VERSION_KEY);
-    if(v!==null && v!=='') sheetsVersionConocida = parseInt(v,10);
   }catch(e){ /* sin config previa */ }
-  // La sincronización queda SIEMPRE activa: si falta algún dato, se completa con los valores por defecto.
-  if(!sheetsCfg.clientId) sheetsCfg.clientId = SHEETS_DEFAULT.clientId;
-  if(!sheetsCfg.spreadsheetId) sheetsCfg.spreadsheetId = SHEETS_DEFAULT.spreadsheetId;
-  sheetsCfg.conectado = true;
-  try{ guardarConfigSheets(); }catch(e){}
 }
-
-// Huella del estado actual: sirve para saber si hubo cambios locales desde la
-// última sincronización (y así decidir si hay que subir, bajar, o avisar conflicto).
-function _hashEstadoSheets(){
-  let str='';
-  try{ str = JSON.stringify([INST_DATA, USUARIOS, INSTITUCIONES]); }catch(e){ return ''; }
-  let h1=0x811c9dc5, h2=0;
-  for(let i=0;i<str.length;i++){
-    const c=str.charCodeAt(i);
-    h1 = Math.imul(h1 ^ c, 16777619);
-    h2 = (Math.imul(h2, 31) + c) | 0;
-  }
-  return (h1>>>0).toString(16)+'-'+(h2>>>0).toString(16)+'-'+str.length;
-}
-function _marcarSincronizadoSheets(version, hash){
-  sheetsVersionConocida = version;
-  try{
-    localStorage.setItem(SHEETS_VERSION_KEY, String(version));
-    localStorage.setItem(SHEETS_HASH_KEY, hash || _hashEstadoSheets());
-  }catch(e){}
-}
-function _hayCambiosLocalesSheets(){
-  let guardado=null;
-  try{ guardado = localStorage.getItem(SHEETS_HASH_KEY); }catch(e){}
-  if(!guardado) return true;
-  return guardado !== _hashEstadoSheets();
-}
-function _sheetsTokenValido(){ return !!sheetsAccessToken && Date.now() < sheetsTokenVence - 60*1000; }
 
 // Descarga un archivo JSON con una copia completa de todo el sistema tal como
 // está en este momento (independiente de Google Sheets). Sirve como resguardo
@@ -1377,77 +1337,23 @@ function sheetsConfigurado(){ return !!(sheetsCfg.clientId && sheetsCfg.spreadsh
 function sheetsListoParaUsar(){ return sheetsConfigurado() && !!sheetsAccessToken; }
 
 function _gisTokenCallback(resp){
-  const manual = sheetsPedidoManual;
-  sheetsPedidoManual = false;
-  sheetsPidiendoToken = false;
   if(resp.error){
     console.error('Error de autorización de Google Sheets:', resp);
     sheetsUltimoError = 'No se pudo autorizar el acceso a Google (' + resp.error + ')';
-    actualizarIndicadorSheets();
-    if(manual){
-      if(currentUser) navigate('configuracion');
-      showToast('⚠️ No se pudo autorizar Google Sheets','#b91c1c');
-    }
+    navigate('configuracion');
+    showToast('⚠️ No se pudo autorizar Google Sheets','#b91c1c');
     return;
   }
   sheetsAccessToken = resp.access_token;
-  sheetsTokenVence = Date.now() + (parseInt(resp.expires_in,10)||3600)*1000;
   sheetsCfg.conectado = true;
   sheetsUltimoError = null;
   guardarConfigSheets();
-  programarRenovacionTokenSheets();
-  // Sincroniza enseguida (sube, baja o avisa conflicto según corresponda).
-  sincronizarSheets().finally(()=>{
-    if(manual){
-      if(currentUser) navigate('configuracion');
-      showToast('✅ Conectado a Google Sheets','#166534');
-    }else if(currentUser && currentSection==='configuracion' && !_usuarioEditandoAlgo()){
-      navigate('configuracion');
-    }
-  });
-  actualizarIndicadorSheets();
-}
-
-function _gisErrorCallback(err){
-  // Popup bloqueado o cerrado por el usuario: se reintenta en la próxima interacción.
-  sheetsPidiendoToken = false;
-  sheetsPedidoManual = false;
-  console.warn('Google Sheets: no se pudo obtener el token', err);
-  actualizarIndicadorSheets();
-}
-
-// Pide un token nuevo. "prompt:''" no muestra la pantalla de consentimiento si
-// ya se otorgó antes; sólo abre un popup que se cierra solo.
-function pedirTokenSheets(opts={}){
-  if(!sheetsConfigurado()) return false;
-  if(sheetsPidiendoToken && !opts.manual) return false;
-  const tc = initSheetsTokenClient();
-  if(!tc) return false;
-  sheetsPidiendoToken = true;
-  sheetsUltimoIntentoToken = Date.now();
-  sheetsPedidoManual = !!opts.manual;
-  try{
-    tc.requestAccessToken({ prompt: opts.consent ? 'consent' : '' });
-    return true;
-  }catch(e){
-    sheetsPidiendoToken = false;
-    console.warn('No se pudo pedir el token de Google Sheets:', e);
-    return false;
-  }
-}
-
-// Los tokens de Google duran ~1 hora: se renuevan solos 5 minutos antes.
-function programarRenovacionTokenSheets(){
-  if(sheetsTimerRenovacion) clearTimeout(sheetsTimerRenovacion);
-  const ms = Math.max(30*1000, sheetsTokenVence - Date.now() - 5*60*1000);
-  sheetsTimerRenovacion = setTimeout(()=>{ pedirTokenSheets(); }, ms);
-}
-
-function _usuarioEditandoAlgo(){
-  const ae = document.activeElement;
-  if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return true;
-  if(document.querySelector('.modal-overlay')) return true;
-  return false;
+  // Tomamos la versión actual de la planilla como línea base, así el primer
+  // guardado de esta sesión también puede detectar si alguien más escribió
+  // mientras el sistema estaba cerrado en este navegador.
+  leerMetaSheets().then(m=>{ sheetsVersionConocida = m.version; }).catch(()=>{});
+  navigate('configuracion');
+  showToast('✅ Conectado a Google Sheets','#166534');
 }
 
 function initSheetsTokenClient(){
@@ -1457,14 +1363,13 @@ function initSheetsTokenClient(){
     client_id: sheetsCfg.clientId,
     scope: 'https://www.googleapis.com/auth/spreadsheets',
     callback: _gisTokenCallback,
-    error_callback: _gisErrorCallback,
   });
   return sheetsTokenClient;
 }
 
 function conectarGoogleSheets(){
   const clientId = (document.getElementById('sheets-client-id')?.value||'').trim();
-  const spreadsheetId = (document.getElementById('sheets-spreadsheet-id')?.value||'').trim();
+  const spreadsheetId = extraerIdPlanilla(document.getElementById('sheets-spreadsheet-id')?.value);
   if(!clientId || !spreadsheetId){
     showToast('⚠️ Completá el Client ID y el ID de la planilla','#b91c1c');
     return;
@@ -1473,12 +1378,12 @@ function conectarGoogleSheets(){
   sheetsCfg.spreadsheetId = spreadsheetId;
   guardarConfigSheets();
   sheetsTokenClient = null; // recrear con el client_id nuevo
-  sheetsPidiendoToken = false;
-  if(!initSheetsTokenClient()){
+  const tc = initSheetsTokenClient();
+  if(!tc){
     showToast('⚠️ Todavía no cargó Google Identity Services. Esperá un instante e intentá de nuevo.','#b91c1c');
     return;
   }
-  pedirTokenSheets({ manual:true, consent: !sheetsAccessToken });
+  tc.requestAccessToken({ prompt:'consent' });
 }
 
 function desconectarGoogleSheets(){
@@ -1589,7 +1494,6 @@ async function guardarEstadoEnSheets(){
       return false;
     }
 
-    const hashSubido = _hashEstadoSheets(); // huella de lo que se sube (por si cambia durante la subida)
     const todasHojas = [...HOJAS_GLOBALES, ...ENTIDADES_INST];
     await _sheetsFetch('/values:batchClear', {
       method:'POST',
@@ -1620,7 +1524,7 @@ async function guardarEstadoEnSheets(){
     }
     const nuevaVersion = metaActual.version + 1;
     await escribirMetaSheets(nuevaVersion);
-    _marcarSincronizadoSheets(nuevaVersion, hashSubido);
+    sheetsVersionConocida = nuevaVersion;
     sheetsConflicto = null;
     sheetsUltimoSync = new Date().toISOString();
     sheetsUltimoError = null;
@@ -1629,7 +1533,7 @@ async function guardarEstadoEnSheets(){
   }catch(e){
     console.error('Error al sincronizar con Google Sheets:', e);
     sheetsUltimoError = String(e.message||e);
-    if(sheetsUltimoError.includes('401')){ sheetsAccessToken = null; sheetsTokenVence = 0; } // token vencido
+    if(sheetsUltimoError.includes('401')) sheetsAccessToken = null; // token vencido
     return false;
   }finally{
     sheetsSyncing = false;
@@ -1638,11 +1542,10 @@ async function guardarEstadoEnSheets(){
 }
 
 // Baja TODO el estado desde la planilla, reemplazando lo que hay en memoria y en localStorage.
-async function cargarEstadoDesdeSheets(opts={}){
-  const silencioso = !!opts.silencioso;
-  if(!sheetsListoParaUsar()){ if(!silencioso) showToast('⚠️ Conectate a Google Sheets primero','#b91c1c'); return false; }
+async function cargarEstadoDesdeSheets(){
+  if(!sheetsListoParaUsar()){ showToast('⚠️ Conectate a Google Sheets primero','#b91c1c'); return false; }
   try{
-    if(!silencioso) showToast('⏳ Cargando datos desde Google Sheets...','#0f766e');
+    showToast('⏳ Cargando datos desde Google Sheets...','#0f766e');
     const todasHojas = [...HOJAS_GLOBALES, ...ENTIDADES_INST];
     const qs = todasHojas.map(h=>`ranges=${encodeURIComponent(h+'!A2:D200000')}`).join('&');
     const resp = await _sheetsFetch(`/values:batchGet?${qs}`);
@@ -1654,7 +1557,7 @@ async function cargarEstadoDesdeSheets(opts={}){
     const nuevasInst = (porHoja['INSTITUCIONES']||[]).map(parseJSONcol).filter(Boolean);
 
     if(!nuevosUsuarios.length && !nuevasInst.length){
-      if(!silencioso) showToast('⚠️ La planilla todavía está vacía. Usá "Subir estado actual" primero.','#854d0e');
+      showToast('⚠️ La planilla todavía está vacía. Usá "Subir estado actual" primero.','#854d0e');
       return false;
     }
 
@@ -1678,73 +1581,24 @@ async function cargarEstadoDesdeSheets(opts={}){
 
     guardarEstado(); // refleja lo bajado también en localStorage
     const metaActual = await leerMetaSheets();
-    _marcarSincronizadoSheets(metaActual.version);
+    sheetsVersionConocida = metaActual.version;
     sheetsConflicto = null;
     sheetsUltimoError = null;
-    sheetsUltimoSync = new Date().toISOString();
-    try{ localStorage.setItem('sge_sheets_ultimo_sync', sheetsUltimoSync); }catch(e){}
-    if(silencioso){
-      showToast('🔄 Se actualizaron los datos con cambios de otro equipo','#0f766e');
-      if(currentUser){ if(currentSection) navigate(currentSection); else renderApp(); }
-    }else{
-      showToast('✅ Datos cargados desde Google Sheets','#166534');
-      if(typeof renderApp === 'function' && currentUser) renderApp();
-    }
+    showToast('✅ Datos cargados desde Google Sheets','#166534');
+    if(typeof renderApp === 'function' && currentUser) renderApp();
     return true;
   }catch(e){
     console.error('Error al cargar desde Google Sheets:', e);
     sheetsUltimoError = String(e.message||e);
-    if(sheetsUltimoError.includes('401')){ sheetsAccessToken = null; sheetsTokenVence = 0; }
-    if(!silencioso) showToast('⚠️ No se pudo cargar desde Google Sheets','#b91c1c');
+    showToast('⚠️ No se pudo cargar desde Google Sheets','#b91c1c');
     return false;
   }
 }
 
-// Sincronización bidireccional automática:
-//  - planilla sin cambios ajenos + cambios locales  → sube
-//  - planilla con cambios ajenos + sin cambios locales → baja (se actualiza sola)
-//  - cambios en los dos lados → NO pisa nada: muestra el aviso de conflicto
-//  - este navegador nunca sincronizó y la planilla ya tiene datos → baja
-let _sheetsSincronizando = false;
-async function sincronizarSheets(){
-  if(!sheetsConfigurado()) return false;
-  if(!_sheetsTokenValido()){ actualizarIndicadorSheets(); return false; }
-  if(_sheetsSincronizando || sheetsSyncing) return false;
-  _sheetsSincronizando = true;
-  actualizarIndicadorSheets('sync');
-  try{
-    const meta = await leerMetaSheets();
-    const cambiosLocales = _hayCambiosLocalesSheets();
-    if(sheetsVersionConocida === null){
-      // Primera vez en este navegador
-      if(meta.version > 0) return await cargarEstadoDesdeSheets({ silencioso:true });
-      return await guardarEstadoEnSheets();
-    }
-    if(meta.version === sheetsVersionConocida){
-      if(cambiosLocales) return await guardarEstadoEnSheets();
-      sheetsUltimoError = null;
-      return true;
-    }
-    // La planilla tiene una versión distinta (alguien más guardó)
-    if(!cambiosLocales){
-      if(_usuarioEditandoAlgo()) return false; // se reintenta en el próximo ciclo
-      return await cargarEstadoDesdeSheets({ silencioso:true });
-    }
-    sheetsConflicto = { porUsuario: meta.ultimoUsuario, enFecha: meta.ultimaFecha };
-    return false;
-  }catch(e){
-    console.error('Error en la sincronización automática:', e);
-    return false;
-  }finally{
-    _sheetsSincronizando = false;
-    actualizarIndicadorSheets();
-  }
-}
-
-// Guarda ahora mismo en localStorage y también sincroniza con Sheets, sin esperar el ciclo de autoguardado.
+// Guarda ahora mismo en localStorage y (si está conectado) también en Sheets, sin esperar el ciclo de autoguardado.
 function guardarEstadoInmediato(){
   guardarEstado();
-  if(_sheetsTokenValido()) sincronizarSheets();
+  if(sheetsCfg.conectado && sheetsAccessToken) guardarEstadoEnSheets();
 }
 
 // Se llama cada 5s desde el autoguardado. Guarda local siempre; sincroniza con
@@ -1752,61 +1606,23 @@ function guardarEstadoInmediato(){
 function autoguardadoTick(){
   guardarEstado();
   _sheetsAutoSyncCounter++;
-  if(_sheetsAutoSyncCounter % 6 === 0){
-    if(_sheetsTokenValido()) sincronizarSheets();
-    else if(sheetsAccessToken && !sheetsPidiendoToken) pedirTokenSheets(); // vencido: renovar
+  if(sheetsCfg.conectado && sheetsAccessToken && (_sheetsAutoSyncCounter % 6 === 0)){
+    guardarEstadoEnSheets();
   }
-  actualizarIndicadorSheets();
 }
 
-// Al cargar la página intenta obtener el token enseguida. Los navegadores suelen
-// bloquear popups que no vienen de un clic, así que además se reintenta solo en
-// el primer clic del usuario (y cada vez que el token haga falta de nuevo).
+// Al cargar la página, si ya estuvo conectado antes en este navegador, intenta
+// reobtener el token sin mostrar el popup de consentimiento (silencioso).
+// Si Google no puede renovarlo sin interacción, el usuario deberá reconectar
+// manualmente desde Configuración — no rompe nada, sólo no auto-sincroniza.
 function intentarReconexionSilenciosaSheets(){
-  if(!sheetsConfigurado()) return;
-  const intentar = (n)=>{
-    if(!initSheetsTokenClient()){ if(n<20) setTimeout(()=>intentar(n+1), 500); return; }
-    if(currentUser && !_sheetsTokenValido()) pedirTokenSheets();
-  };
-  setTimeout(()=>intentar(0), 1000);
-  document.addEventListener('click', ()=>{
-    if(!currentUser || !sheetsConfigurado() || _sheetsTokenValido() || sheetsPidiendoToken) return;
-    // Si el usuario cerró el popup, no insistir en cada clic: esperar 2 minutos.
-    if(Date.now() - sheetsUltimoIntentoToken < 2*60*1000 && sheetsUltimoIntentoToken) return;
-    pedirTokenSheets();
-  }, true);
-}
-
-// Indicador fijo (abajo a la derecha) con el estado de la sincronización.
-function actualizarIndicadorSheets(estado){
-  let el = document.getElementById('sheets-sync-indicador');
-  if(!currentUser || !sheetsConfigurado()){ if(el) el.style.display='none'; return; }
-  if(!el){
-    el = document.createElement('div');
-    el.id = 'sheets-sync-indicador';
-    el.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:900;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer;font-family:inherit;user-select:none';
-    el.addEventListener('click', ()=>{
-      if(!_sheetsTokenValido()) pedirTokenSheets({ manual:true });
-      else if(currentUser) navigate('configuracion');
-    });
-    document.body.appendChild(el);
-  }
-  el.style.display = '';
-  let txt, bg, fg, title;
-  if(estado==='sync' || _sheetsSincronizando || sheetsSyncing){
-    txt='☁️ Sincronizando…'; bg='#e0f2fe'; fg='#075985'; title='Sincronizando con Google Sheets';
-  }else if(!_sheetsTokenValido()){
-    txt = sheetsPidiendoToken ? '☁️ Conectando…' : '⚠️ Sheets: tocá para reconectar';
-    bg='#fef3c7'; fg='#854d0e'; title='Hace falta autorizar Google Sheets para seguir sincronizando';
-  }else if(sheetsConflicto){
-    txt='⚠️ Sheets: conflicto'; bg='#fee2e2'; fg='#991b1b'; title='Otra persona guardó cambios. Abrí Configuración para resolverlo.';
-  }else if(sheetsUltimoError){
-    txt='⚠️ Sheets: error'; bg='#fee2e2'; fg='#991b1b'; title=sheetsUltimoError;
-  }else{
-    const h = sheetsUltimoSync ? new Date(sheetsUltimoSync).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : '';
-    txt='☁️ Sincronizado'+(h?' '+h:''); bg='#dcfce7'; fg='#166534'; title='Sincronización automática con Google Sheets activa';
-  }
-  el.textContent = txt; el.style.background = bg; el.style.color = fg; el.title = title;
+  if(!(sheetsCfg.conectado && sheetsCfg.clientId && sheetsCfg.spreadsheetId)) return;
+  setTimeout(()=>{
+    const tc = initSheetsTokenClient();
+    if(!tc) return;
+    try{ tc.requestAccessToken({ prompt:'' }); }
+    catch(e){ console.warn('No se pudo reconectar en silencio a Google Sheets:', e); }
+  }, 1000);
 }
 
 function initUsers(){
@@ -1945,12 +1761,6 @@ function _bootApp(){
   renderTopbar();
   renderApp();
   setTimeout(()=>checkAutomatismos(), 500);
-  // Sincronización con Google Sheets siempre activa: al entrar se conecta sola.
-  try{
-    if(_sheetsTokenValido()) sincronizarSheets();
-    else pedirTokenSheets();
-    actualizarIndicadorSheets();
-  }catch(e){ console.warn('Sheets:', e); }
 }
 function doLogout(){
   guardarEstadoInmediato();
@@ -1959,7 +1769,6 @@ function doLogout(){
   docAcademicoInstId=null;
   academicoBannerHTML='';
   DB = INST_DATA[1]; // reset to default
-  try{ actualizarIndicadorSheets(); }catch(e){}
   document.getElementById('login-screen').style.display='flex';
   document.getElementById('app-screen').style.display='none';
   document.getElementById('inp-user').value='';
@@ -2916,12 +2725,12 @@ function renderConfiguracion(){
         </div>
         <div class="form-group" style="margin:0">
           <label class="form-label">ID de la planilla (Spreadsheet ID)</label>
-          <input id="sheets-spreadsheet-id" type="text" class="form-input" placeholder="1AbCDeFGhiJKlmNoPQRstuVWxyz..." value="${sheetsCfg.spreadsheetId||''}">
+          <input id="sheets-spreadsheet-id" type="text" class="form-input" placeholder="Pegá el ID o la URL de la planilla" value="${sheetsCfg.spreadsheetId||''}">
         </div>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
         <div style="font-size:13px;color:#334155">
-          <strong>Estado:</strong> ${sheetsCfg.conectado && _sheetsTokenValido()
+          <strong>Estado:</strong> ${sheetsCfg.conectado && sheetsAccessToken
             ? '<span style="color:#166534">✅ Conectado</span>'
             : (sheetsCfg.conectado ? '<span style="color:#854d0e">⚠️ Conectado antes, pero hace falta reautorizar</span>' : '<span style="color:#94a3b8">○ No conectado</span>')}
         </div>
@@ -2942,7 +2751,7 @@ function renderConfiguracion(){
         <button class="btn btn-primary btn-sm" onclick="conectarGoogleSheets()">🔗 ${sheetsCfg.conectado?'Reconectar':'Conectar'} con Google</button>
         <button class="btn btn-success btn-sm" onclick="${sheetsConflicto?`if(confirm('Hay cambios de '+${JSON.stringify(sheetsConflicto.porUsuario||'otra persona')}+' sin cargar todavía. Si subís ahora, se van a perder. ¿Forzar de todos modos?')){sheetsVersionConocida=null;}else{return;}`:''}guardarEstadoEnSheets().then(ok=>{navigate('configuracion');showToast(ok?'✅ Estado subido a Google Sheets':(sheetsConflicto?'⚠️ Conflicto: alguien más guardó primero':'⚠️ No se pudo subir a Sheets'), ok?'#166534':'#b91c1c')})">⬆️ Subir estado actual</button>
         <button class="btn btn-warning btn-sm" onclick="if(confirm('Esto reemplaza TODO lo que ves ahora mismo en pantalla por lo que esté guardado en la planilla de Google Sheets. ¿Continuar?')){cargarEstadoDesdeSheets().then(()=>navigate('configuracion'))}">⬇️ Cargar desde Sheets</button>
-        <span style="font-size:12px;color:#166534;align-self:center">🔒 Sincronización automática siempre activa</span>
+        ${sheetsCfg.conectado?'<button class="btn btn-danger btn-sm" onclick="desconectarGoogleSheets()">🔌 Desconectar</button>':''}
       </div>
     </div>
 
@@ -4847,6 +4656,8 @@ function renderLicencias(){
     ):((r.docenteId||r.preceptorId)&&getPlazaIds(r).length)?`<button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar plazas</button>`
         :(r.docenteId||r.preceptorId)?`<button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Asociar plaza</button>`:''},
   ];
+  { const c=cols.find(x=>x.key==='acc'), orig=c.render;
+    c.render=r=>`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${r.estado==='anulada'?'<span style="font-size:11px;color:#94a3b8">Trámite anulado</span>':orig(r)}${botonesGestionLic(r)}</div>`; }
   // Licencias sin plaza asociada pendientes (sólo aplica a docentes, que pueden tener varias plazas)
   const sinPlaza=DB.licencias.filter(l=>l.estado==='aprobada'&&l.docenteId&&!getPlazaIds(l).length).length;
   const alertaPlaza=sinPlaza?`<div class="alert-warning" style="margin-bottom:14px">
@@ -4864,6 +4675,125 @@ function renderLicencias(){
 }
 
 // Vista de detalle de una licencia (se abre con doble clic sobre la fila)
+// ── Modificar / anular una licencia (Admin, Director/a y Secretario/a) ──
+// Toda modificación o anulación exige un MOTIVO, que queda en el "Registro de trabajo sobre el trámite".
+function puedeModificarLic(lic){ return puedeGestionarPersonal() && lic && ['pendiente','aprobada','finalizada'].includes(lic.estado); }
+function botonesGestionLic(lic, desdeDetalle){
+  if(!puedeModificarLic(lic)) return '';
+  const cierra = desdeDetalle?'closeModal();':'';
+  return `<button class="btn btn-ghost btn-sm" onclick="${cierra}modificarLic(${lic.id})" style="border:1px solid #0e7490;color:#0e7490">✏️ Modificar</button>
+    <button class="btn btn-danger btn-sm" onclick="${cierra}anularLic(${lic.id})">🚫 Anular</button>`;
+}
+function _licSujetoLiq(lic){
+  if(lic.docenteId) return [{tipo:'docente',id:lic.docenteId}];
+  const prec=(DB.preceptores||[]).find(p=>p.id===lic.preceptorId);
+  return prec ? [{tipo:'preceptor',id:prec.id}, ...(prec.docenteId?[{tipo:'docente',id:prec.docenteId}]:[])] : [];
+}
+// Las liquidaciones en borrador del agente se recalculan con los nuevos días de licencia
+function _recalcularLiqPorLicencia(lic){
+  let n=0;
+  _licSujetoLiq(lic).forEach(su=>{
+    liqLista().filter(l=>l.sujetoTipo===su.tipo && l.sujetoId===su.id && l.estado==='Borrador').forEach(l=>{ try{ liqRecalcular(l); n++; }catch(e){} });
+  });
+  return n;
+}
+function modificarLic(id){
+  const lic=DB.licencias.find(l=>l.id===id);
+  if(!puedeModificarLic(lic)){ alert('No tenés permisos para modificar esta licencia, o ya no se puede modificar.'); return; }
+  const s=solicitanteLicencia(lic);
+  const enCat=OPCIONES_TIPO_LICENCIA_HTML.includes(`value="${lic.tipo}"`);
+  const opts=enCat?OPCIONES_TIPO_LICENCIA_HTML.replace(`value="${lic.tipo}"`,`value="${lic.tipo}" selected`):`<option value="${lic.tipo}" selected>${lic.tipo}</option>`+OPCIONES_TIPO_LICENCIA_HTML;
+  showModal('Modificar Licencia',`
+    <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:#1e40af">
+      <strong>${s?s.nombre:'—'}</strong> ${lic.nroExp?`· <span style="font-size:11px;color:#6d28d9">${lic.nroExp}</span>`:''} · ${badge(lic.estado)}
+    </div>
+    ${formGroup('Tipo de licencia',`<select id="f-ml-tipo" class="form-input">${opts}</select>`,true)}
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:150px">${formGroup('Desde',inputH('f-ml-desde','date',lic.desde||''),true)}</div>
+      <div style="flex:1;min-width:150px">${formGroup('Hasta',inputH('f-ml-hasta','date',lic.hasta||''))}</div>
+    </div>
+    ${formGroup('Observaciones del trámite',inputH('f-ml-obs','text',lic.motivo||''))}
+    ${formGroup('N° Certificado Médico',inputH('f-ml-cert','text',lic.nroCertificadoMedico||''))}
+    ${formGroup('Motivo de la modificación',`<textarea id="f-ml-motivo" class="form-input" style="min-height:70px" placeholder="Por qué se modifica esta licencia (queda en el Registro de trabajo del trámite)..."></textarea>`,true)}
+    ${['aprobada','finalizada'].includes(lic.estado)?'<div class="alert-info" style="font-size:12px">Las liquidaciones en borrador del agente se recalculan con las nuevas fechas.</div>':''}
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-success" onclick="guardarModificacionLic(${id})">💾 Guardar modificación</button>
+    </div>`);
+}
+function guardarModificacionLic(id){
+  const lic=DB.licencias.find(l=>l.id===id); if(!lic) return;
+  const g=x=>(document.getElementById(x)?.value||'').trim();
+  const nuevo={tipo:g('f-ml-tipo'), desde:g('f-ml-desde'), hasta:g('f-ml-hasta'), motivo:g('f-ml-obs'), nroCertificadoMedico:g('f-ml-cert')};
+  const motivo=g('f-ml-motivo');
+  if(!nuevo.tipo||!nuevo.desde){ alert('Completá el tipo y la fecha desde.'); return; }
+  if(nuevo.hasta && nuevo.hasta<nuevo.desde){ alert('La fecha "Hasta" no puede ser anterior a "Desde".'); return; }
+  if(!motivo){ alert('Indicá el motivo de la modificación: queda registrado en el trámite.'); return; }
+  const etiquetas={tipo:'Tipo',desde:'Desde',hasta:'Hasta',motivo:'Observaciones',nroCertificadoMedico:'N° Cert. médico'};
+  const fmt=(k,v)=>(k==='desde'||k==='hasta')?(v?fmtDate(v):'—'):(v||'—');
+  const cambios=Object.keys(nuevo).filter(k=>(nuevo[k]||'')!==(lic[k]||'')).map(k=>`${etiquetas[k]}: ${fmt(k,lic[k])} → ${fmt(k,nuevo[k])}`);
+  if(!cambios.length){ alert('No hay cambios para guardar.'); return; }
+  Object.assign(lic,nuevo);
+  if(nuevo.tipo) lic.normaLegal=NORMA_LEGAL_POR_TIPO[nuevo.tipo]||lic.normaLegal||'';
+  registrarHistorial(lic,'MODIFICADO',`Motivo: ${motivo}. Cambios — ${cambios.join('; ')}`);
+  const nLiq=['aprobada','finalizada'].includes(lic.estado)?_recalcularLiqPorLicencia(lic):0;
+  if(lic.docenteId) crearNotificacion(lic.docenteId,'lic_aprobada','Tu licencia fue modificada ✏️',`Tu licencia "${lic.tipo}" fue modificada por la dirección. Motivo: ${motivo}.`);
+  closeModal(); guardarEstado();
+  showToast(`✏️ Licencia modificada${nLiq?` · ${nLiq} liquidación(es) en borrador recalculada(s)`:''}`,'#0e7490');
+  navigate(currentSection||'licencias');
+}
+function anularLic(id){
+  const lic=DB.licencias.find(l=>l.id===id);
+  if(!puedeModificarLic(lic)){ alert('No tenés permisos para anular esta licencia, o ya no se puede anular.'); return; }
+  const s=solicitanteLicencia(lic);
+  const sup=(lic.docenteId&&['aprobada','finalizada'].includes(lic.estado))?DB.designaciones.find(d=>d.docenteTitularId===lic.docenteId&&d.desde===lic.desde&&(d.hasta||'')===(lic.hasta||'')&&d.estado==='activa'):null;
+  const supDoc=sup?DB.docentes.find(x=>x.id===sup.docenteId):null;
+  showModal('Anular Licencia',`
+    <div class="alert-warning" style="margin-bottom:14px">⚠️ La licencia de <strong>${s?s.nombre:'—'}</strong> (${lic.tipo}, ${fmtDate(lic.desde)} → ${lic.hasta?fmtDate(lic.hasta):'—'}) quedará <strong>ANULADA</strong>: deja de descontarse en las liquidaciones y el agente vuelve a su cargo. El trámite no se borra.</div>
+    ${formGroup('Motivo de la anulación',`<textarea id="f-al-motivo" class="form-input" style="min-height:80px" placeholder="Por qué se anula esta licencia (queda en el Registro de trabajo del trámite)..."></textarea>`,true)}
+    ${sup?`<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:6px 0 12px"><input type="checkbox" id="f-al-sup" checked> Dar de baja también la suplencia vinculada${supDoc?` (${supDoc.nombre}, ${sup.caracter})`:''}</label>`:''}
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmarAnulacionLic(${id})">🚫 Confirmar anulación</button>
+    </div>`);
+}
+function confirmarAnulacionLic(id){
+  const lic=DB.licencias.find(l=>l.id===id); if(!lic) return;
+  const motivo=(document.getElementById('f-al-motivo')?.value||'').trim();
+  if(!motivo){ alert('Indicá el motivo de la anulación: es obligatorio y queda registrado en el trámite.'); return; }
+  const bajaSup=document.getElementById('f-al-sup')?.checked;
+  const eraAprobada=['aprobada','finalizada'].includes(lic.estado);
+  const hoy=new Date().toISOString().split('T')[0];
+  const supDes=(lic.docenteId&&eraAprobada)?DB.designaciones.find(d=>d.docenteTitularId===lic.docenteId&&d.desde===lic.desde&&(d.hasta||'')===(lic.hasta||'')&&d.estado==='activa'):null;
+  lic.estado='anulada';
+  lic.anulacion={motivo, fecha:fechaHoraStr(), por:currentUser?currentUser.nombre:'Sistema'};
+  registrarHistorial(lic,'ANULADO',`Motivo de anulación: ${motivo}`);
+  if(eraAprobada){
+    if(lic.docenteId){
+      const doc=DB.docentes.find(d=>d.id===lic.docenteId);
+      const plazas=getPlazaIds(lic).map(pid=>resolverPlaza(pid)).filter(Boolean).map(p=>p.nroPlaza);
+      // Las designaciones vuelven a "activa" salvo que otra licencia aprobada siga cubriendo esa plaza
+      DB.designaciones.filter(d=>d.docenteId===lic.docenteId && d.estado==='licencia' && plazas.includes(d.nroPlaza)).forEach(d=>{
+        const otra=DB.licencias.some(l=>l.id!==lic.id && l.estado==='aprobada' && l.docenteId===lic.docenteId && getPlazaIds(l).map(x=>resolverPlaza(x)).filter(Boolean).some(p=>p.nroPlaza===d.nroPlaza) && l.desde<=hoy && (!l.hasta||l.hasta>=hoy));
+        if(!otra) d.estado='activa';
+      });
+      if(doc) recalcularEstadoDocentePorLicencias(doc.id);
+    } else if(lic.preceptorId){
+      const prec=DB.preceptores.find(p=>p.id===lic.preceptorId);
+      const otra=DB.licencias.some(l=>l.id!==lic.id && l.estado==='aprobada' && l.preceptorId===lic.preceptorId && l.desde<=hoy && (!l.hasta||l.hasta>=hoy));
+      if(prec && prec.estado==='licencia' && !otra) prec.estado='activo';
+    }
+    if(bajaSup && supDes){
+      supDes.estado='inactiva'; supDes.hasta=hoy;
+      registrarHistorial(supDes,'BAJA','Suplencia dada de baja por anulación de la licencia '+(lic.nroExp||''));
+    }
+  }
+  const nLiq=_recalcularLiqPorLicencia(lic);
+  if(lic.docenteId) crearNotificacion(lic.docenteId,'lic_rechazada','Tu licencia fue anulada 🚫',`Tu licencia "${lic.tipo}" (del ${fmtDate(lic.desde)} al ${lic.hasta?fmtDate(lic.hasta):'—'}) fue anulada por la dirección. Motivo: ${motivo}.`);
+  closeModal(); guardarEstado();
+  showToast(`🚫 Licencia anulada${nLiq?` · ${nLiq} liquidación(es) en borrador recalculada(s)`:''}`,'#991b1b');
+  navigate(currentSection||'licencias');
+}
 function verDetalleLic(licId){
   const lic=DB.licencias.find(l=>l.id===licId);
   if(!lic) return;
@@ -4912,6 +4842,7 @@ function verDetalleLic(licId){
     {label:'N° Certificado Médico', value: lic.nroCertificadoMedico||'—'},
     {label:'Motivo', value: lic.motivo||'—'},
     {label:'Agente que cubre (suplencia)', value: agenteReemplazo},
+    ...(lic.estado==='anulada'&&lic.anulacion?[{label:'Motivo de anulación', value:`${lic.anulacion.motivo} (${lic.anulacion.por}, ${lic.anulacion.fecha})`}]:[]),
   ];
 
   const bodyHTML = modalDetalleTramite({
@@ -4932,6 +4863,7 @@ function verDetalleLic(licId){
            <span style="font-size:11px;color:#94a3b8;align-self:center">Asociá una plaza para poder aprobar/rechazar</span>`
     ):puedeGestionarPersonal()&&(lic.docenteId||lic.preceptorId)?`
       <button class="btn btn-primary" onclick="closeModal();asociarPlaza(${lic.id})">🔗 ${ids.length?'Editar':'Asociar'} plaza</button>`:''}
+    ${botonesGestionLic(lic,true)}
   </div>`;
 
   showModal(`Detalle de Licencia`, bodyHTML+acciones);
@@ -5565,6 +5497,8 @@ function renderDesignaciones(filtroCaracter=''){
       </button>`},
     {key:'acc',label:'',render:r=>{
       const vencidoPendiente=r.estado==='activa'&&['STF','Interino'].includes(r.caracter)&&r.hasta&&r.hasta<hoy;
+      if(r.estado==='anulada') return `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center"><span style="font-size:11px;color:#94a3b8">Trámite anulado</span>
+        <button class="btn btn-ghost btn-sm" onclick="verDetalleDesig(${r.id})">🔍 Ver</button></div>`;
       if(r.estado==='pendiente'){
         return `<div style="display:flex;gap:5px;flex-wrap:wrap">
           <button class="btn btn-success btn-sm" onclick="cambiarDesigPendiente(${r.id},'aprobada')">✅ Aprobar</button>
@@ -5578,6 +5512,7 @@ function renderDesignaciones(filtroCaracter=''){
         </button>`:''}
         <button class="btn btn-ghost btn-sm" onclick="verHistorialPlaza('${r.nroPlaza}')" style="border:1px solid #c4b5fd;color:#6d28d9;background:#ede9fe">🕓 Historial</button>
         <button class="btn btn-ghost btn-sm" onclick="openEditDesig(${r.id})">✏️</button>
+        ${botonAnularDesig(r)}
         ${r.estado==='activa'&&!vencidoPendiente?`<button class="btn btn-danger btn-sm" onclick="inactivarDesig(${r.id})">Inactivar</button>`:''}
       </div>`;
     }},
@@ -5694,6 +5629,7 @@ function verDetalleDesig(desigId){
     {label:'Modalidad', value: d.modalidad||'—'},
     {label:'Cargo', value: d.cargo||'—'},
     {label:'Agente Reemplazado', value: titular?`${titular.nombre}${titular.dni?` (${titular.dni})`:''}`:'—'},
+    ...(d.estado==='anulada'&&d.anulacion?[{label:'Motivo de anulación', value:`${d.anulacion.motivo} (${d.anulacion.por}, ${d.anulacion.fecha})`}]:[]),
   ];
 
   const bodyHTML = modalDetalleTramite({
@@ -5709,13 +5645,67 @@ function verDetalleDesig(desigId){
     <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
     <button class="btn btn-ghost" onclick="closeModal();generarNotifDesignacion(${d.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Notificación</button>
     <button class="btn btn-ghost" onclick="closeModal();verHistorialPlaza('${d.nroPlaza}')" style="border:1px solid #c4b5fd;color:#6d28d9">🕓 Historial de la plaza</button>
-    ${puedeGestionarPersonal()?`<button class="btn btn-ghost" onclick="closeModal();openEditDesig(${d.id})">✏️ Editar</button>`:''}
+    ${puedeGestionarPersonal()&&d.estado!=='anulada'?`<button class="btn btn-ghost" onclick="closeModal();openEditDesig(${d.id})">✏️ Modificar</button>`:''}
+    ${botonAnularDesig(d,true)}
     ${puedeGestionarPersonal()&&d.estado==='activa'?`<button class="btn btn-danger" onclick="closeModal();inactivarDesig(${d.id})">Inactivar</button>`:''}
   </div>`;
 
   showModal(`Detalle de Designación`, bodyHTML+acciones);
 }
 
+// ── Anular una designación (Admin, Director/a y Secretario/a): el motivo es obligatorio ──
+function puedeAnularDesig(d){ return puedeGestionarPersonal() && d && ['pendiente','activa','licencia'].includes(d.estado); }
+function botonAnularDesig(d, desdeDetalle){
+  if(!puedeAnularDesig(d)) return '';
+  return `<button class="btn btn-danger btn-sm" onclick="${desdeDetalle?'closeModal();':''}anularDesig(${d.id})">🚫 Anular</button>`;
+}
+// Las liquidaciones en borrador del agente se recalculan con los servicios vigentes
+function _recalcularLiqPorDesig(d){
+  let n=0;
+  liqLista().filter(l=>l.sujetoTipo==='docente' && l.sujetoId===d.docenteId && l.estado==='Borrador').forEach(l=>{ try{ liqRecalcular(l); n++; }catch(e){} });
+  return n;
+}
+function anularDesig(id){
+  const d=DB.designaciones.find(x=>x.id===id);
+  if(!puedeAnularDesig(d)){ alert('No tenés permisos para anular esta designación, o ya no se puede anular.'); return; }
+  const doc=DB.docentes.find(x=>x.id===d.docenteId);
+  const reemplazo=(d.desigTitularId&&DB.designaciones.find(x=>x.id===d.desigTitularId&&x.estado==='licencia'))||null;
+  showModal('Anular Designación',`
+    <div class="alert-warning" style="margin-bottom:14px">⚠️ La designación de <strong>${doc?doc.nombre:'—'}</strong> (${d.cargo||'—'}${d.materia?' · '+d.materia:''}, Plaza ${d.nroPlaza||'—'}, ${d.nroExp||''}) quedará <strong>ANULADA</strong>: la plaza se libera, deja de liquidarse y el agente no la cuenta en su carga horaria. El trámite no se borra.</div>
+    ${formGroup('Motivo de la anulación',`<textarea id="f-ad-motivo" class="form-input" style="min-height:80px" placeholder="Por qué se anula esta designación (queda en el Registro de trabajo del trámite)..."></textarea>`,true)}
+    ${reemplazo?'<div class="alert-info" style="font-size:12px">Esta designación reemplazaba a un titular en licencia: el cargo del titular vuelve a quedar activo.</div>':''}
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmarAnulacionDesig(${id})">🚫 Confirmar anulación</button>
+    </div>`);
+}
+function confirmarAnulacionDesig(id){
+  const d=DB.designaciones.find(x=>x.id===id); if(!d) return;
+  const motivo=(document.getElementById('f-ad-motivo')?.value||'').trim();
+  if(!motivo){ alert('Indicá el motivo de la anulación: es obligatorio y queda registrado en el trámite.'); return; }
+  const estabaVigente=['activa','licencia'].includes(d.estado);
+  d.estado='anulada';
+  d.anulacion={motivo, fecha:fechaHoraStr(), por:currentUser?currentUser.nombre:'Sistema'};
+  registrarHistorial(d,'ANULADO',`Motivo de anulación: ${motivo}`);
+  // Si reemplazaba a un titular, el titular recupera su cargo (salvo que otra suplencia siga vigente)
+  if(estabaVigente){
+    if(d.desigTitularId){
+      const dt=DB.designaciones.find(x=>x.id===d.desigTitularId);
+      const otra=DB.designaciones.some(x=>x.id!==d.id && x.desigTitularId===d.desigTitularId && x.estado==='activa');
+      if(dt && dt.estado==='licencia' && !otra) dt.estado='activa';
+    }
+    if(d.docenteTitularId){
+      const otraDoc=DB.designaciones.some(x=>x.id!==d.id && x.docenteTitularId===d.docenteTitularId && x.estado==='activa');
+      if(!otraDoc) recalcularEstadoDocentePorLicencias(d.docenteTitularId);
+    }
+    recalcularEstadoDocentePorLicencias(d.docenteId);
+  }
+  crearNotificacion(d.docenteId,'inact_desig','Designación anulada 🚫',`Tu designación en ${d.materia||d.cargo||'—'} (Plaza ${d.nroPlaza||'—'}, ${d.caracter||'—'}) fue anulada por la dirección. Motivo: ${motivo}.`);
+  const nLiq=_recalcularLiqPorDesig(d);
+  closeModal(); guardarEstado();
+  showToast(`🚫 Designación anulada${nLiq?` · ${nLiq} liquidación(es) en borrador recalculada(s)`:''}`,'#991b1b');
+  navigate(currentSection||'designaciones');
+}
 function inactivarDesig(id){
   if(!puedeGestionarPersonal()) return;
   const desig=DB.designaciones.find(d=>d.id===id);
@@ -6382,7 +6372,7 @@ function openEditDesig(id){
       <div>${formGroup('N° de Plaza',inputH('f-plaza','text',d.nroPlaza))}</div>
       <div>${formGroup('Situación de Revista',selectH('f-caracter',carOpts))}</div>
     </div>
-    ${formGroup('Modalidad de la designación',selectH('f-modalidad',MODALIDADES_DESIG.map(m=>`<option value="${m}"${m===d.modalidad?' selected':''}>${m}</option>`).join('')))}
+    ${formGroup('Modalidad de la designación',selectH('f-modalidad',(MODALIDADES_DESIG.includes(d.modalidad)||!d.modalidad?MODALIDADES_DESIG:[d.modalidad,...MODALIDADES_DESIG]).map(m=>`<option value="${m}"${m===d.modalidad?' selected':''}>${m}</option>`).join('')))}
     ${formGroup('Docente',selectH('f-doc',docOpts))}
     ${formGroup('Cargo',`<select id="f-cargo" class="form-input" onchange="actualizarCursoSegunCargo()">${['Profesor/a Titular','Profesor/a Adjunto','Profesor/a Suplente','Preceptor/a','Director/a','Vice Director/a','Secretario/a'].map(v=>`<option value="${v}"${v===d.cargo?' selected':''}>${v}</option>`).join('')}</select>`)}
     <div class="form-grid-2">
@@ -6395,6 +6385,7 @@ function openEditDesig(id){
       <div>${formGroup('Hasta',inputH('f-hasta','date',d.hasta||''))}</div>
     </div>
     ${formGroup('Documentación adosada al trámite (Rubro 8)',`<textarea id="f-docs-adjuntos" class="form-input" style="min-height:60px">${d.docsAdjuntos||''}</textarea>`)}
+    ${formGroup('Motivo de la modificación',`<textarea id="f-md-motivo" class="form-input" style="min-height:70px" placeholder="Por qué se modifica esta designación (queda en el Registro de trabajo del trámite)..."></textarea>`,true)}
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveEditDesig(${id})">Guardar Cambios</button>
@@ -6472,6 +6463,8 @@ function saveEditDesig(id){
   if(!puedeGestionarPersonal()){alert('No tenés permisos para editar designaciones.');return;}
   const idx=DB.designaciones.findIndex(x=>x.id===id);
   const antes=DB.designaciones[idx];
+  const motivoMod=(document.getElementById('f-md-motivo')?.value||'').trim();
+  if(!motivoMod){ alert('Indicá el motivo de la modificación: queda registrado en el trámite.'); return; }
   if(antes.estado==='activa'||antes.estado==='licencia'||antes.estado==='pendiente'){
     if(!confirmarCargaAgente(parseInt(v('f-doc')),{cargo:v('f-cargo'),horas:v('f-horas'),excludeDesigId:antes.id})) return;
   }
@@ -6503,7 +6496,13 @@ function saveEditDesig(id){
       `Se registró una modificación en tu designación en ${nueva.materia} — ${nueva.curso} (Plaza ${nueva.nroPlaza}). Revisá los detalles en tu portal.`
     );
   }
-  registrarHistorial(nueva,'MODIFICACIÓN',`Horas: ${horasAntes}→${nueva.horas}. Cargo: ${cargoAntes}→${nueva.cargo}.`);
+  const nomDoc=id=>(DB.docentes.find(x=>x.id===id)||{}).nombre||'—';
+  const campos=[['nroPlaza','Plaza',x=>x],['docenteId','Docente',nomDoc],['caracter','Situación de revista',x=>x],['modalidad','Modalidad',x=>x],['cargo','Cargo',x=>x],['materia','Materia',x=>x],['curso','Curso',x=>x],['horas','Horas',x=>x],['desde','Desde',x=>x?fmtDate(x):'—'],['hasta','Hasta',x=>x?fmtDate(x):'—']];
+  const cambios=campos.filter(([k])=>String(antes[k]??'')!==String(nueva[k]??'')).map(([k,l,f])=>`${l}: ${f(antes[k])||'—'} → ${f(nueva[k])||'—'}`);
+  registrarHistorial(nueva,'MODIFICACIÓN',`Motivo: ${motivoMod}.${cambios.length?' Cambios — '+cambios.join('; '):' Sin cambios en los datos.'}`);
+  const nLiq=_recalcularLiqPorDesig(nueva);
+  guardarEstado();
+  if(nLiq) showToast(`✏️ Designación modificada · ${nLiq} liquidación(es) en borrador recalculada(s)`,'#0e7490');
   closeModal();navigate(currentSection||'designaciones');
 }
 
@@ -11678,7 +11677,7 @@ function liqServicios(suj, r, modalidad){
   const servicios=[];
   if(suj.tipo==='docente'){
     (DB.designaciones||[]).filter(d=>d.docenteId===suj.id).forEach(d=>{
-      if(d.estado==='pendiente'||d.estado==='rechazada') return;
+      if(d.estado==='pendiente'||d.estado==='rechazada'||d.estado==='anulada') return;
       const vigente = d.estado==='activa'||d.estado==='licencia';
       if(!vigente && !d.hasta) return;
       const dias=liqDiasSolape(d.desde, d.hasta, r);
@@ -11703,7 +11702,7 @@ function liqModalidadesSujeto(suj, r){
 function liqLicenciasSujeto(suj, modalidad){
   const pr = suj.tipo==='docente' ? liqPreceptorAsociado(suj.id) : null;
   // Licencia del docente: afecta cargo y horas. Licencia de preceptoría: sólo el cargo.
-  return (DB.licencias||[]).filter(l=>l.estado==='aprobada' && (
+  return (DB.licencias||[]).filter(l=>['aprobada','finalizada'].includes(l.estado) && (
     (suj.tipo==='docente' && l.docenteId===suj.id) ||
     (suj.tipo==='preceptor' && l.preceptorId===suj.id && modalidad!=='horas') ||
     (pr && l.preceptorId===pr.id && modalidad!=='horas')));
