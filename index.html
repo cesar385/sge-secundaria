@@ -4316,7 +4316,7 @@ function openVerPlaza(id){
   const hoy=new Date().toISOString().split('T')[0];
   const desigActiva=DB.designaciones.find(d=>d.nroPlaza===p.nroPlaza&&d.estado==='activa');
   const desigHist=DB.designaciones.filter(d=>d.nroPlaza===p.nroPlaza&&d.estado!=='activa').sort((a,b)=>b.desde.localeCompare(a.desde));
-  const licencias=DB.licencias.filter(l=>getPlazaIds(l).includes(p.id)).sort((a,b)=>b.desde.localeCompare(a.desde));
+  const licencias=DB.licencias.filter(l=>l.estado!=='anulada'&&getPlazaIds(l).includes(p.id)).sort((a,b)=>b.desde.localeCompare(a.desde));
 
   const docActual=desigActiva?DB.docentes.find(d=>d.id===desigActiva.docenteId):null;
   const precActual=!desigActiva?DB.preceptores.find(pr=>pr.nroPlaza===p.nroPlaza&&pr.estado==='activo'):null;
@@ -5974,7 +5974,7 @@ function verHistorialPlaza(nroPlaza, institucionId){
   let ultimaModif = '';
   hist.forEach((des, idx) => {
     const doc = data.docentes.find(d => d.id === des.docenteId) || {};
-    const lics = data.licencias.filter(l => l.docenteId === des.docenteId
+    const lics = data.licencias.filter(l => l.estado!=='anulada' && l.docenteId === des.docenteId
       && l.desde >= des.desde
       && (!des.hasta || l.hasta <= des.hasta || l.desde <= des.hasta));
     const esActual = des.estado === 'activa';
