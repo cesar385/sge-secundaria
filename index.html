@@ -1351,7 +1351,8 @@ const ENTIDADES_INST = ['docentes','alumnos','cursos','notas','asistencias','lic
   'designaciones','plazas','solicitudesPlaza','preceptores','notificaciones','reintegros',
   'conceptosPeriodo','justificaciones','comunicados',
   'traslados','permutas','bajasTramite','certificacionesMedicas','antecedentesAgente',
-  'liquidaciones','liqExcluidas'];
+  'liquidaciones','liqExcluidas','asistenciasMateria',
+  'preinscripciones','movimientosAlumnos','pases','materiasAdeudadas','diasClase','cierreNotas','serviciosAlumno','configBoletin'];
 const HOJAS_GLOBALES = ['USUARIOS','INSTITUCIONES'];
 const HOJA_META = 'META';
 const SHEETS_ID_PREDETERMINADO = '15Iz1QYDvUkb86oPXFVDswAl5uvZ_QMrWouZfEhDtVGw';   // planilla de sincronización del sistema
@@ -1926,6 +1927,7 @@ function _bootApp(){
   setTimeout(actualizarBannerSheets, 1500);
 }
 function doLogout(){
+  ptFamUid=null; try{ const b=document.getElementById('topbar-familia'); if(b) b.remove(); }catch(e){}
   guardarEstadoInmediato();
   olvidarSesion();
   currentUser=null;
@@ -1968,6 +1970,7 @@ function renderTopbar(){
   }
 
   // Campana solo para docentes
+  try{ ptBotonFamilia(); }catch(e){}
   const bell=document.getElementById('topbar-bell');
   if(currentUser.rol==='docente'){ bell.style.display='block'; actualizarBadgeNotif(); }
   else { bell.style.display='none'; }
@@ -2524,13 +2527,14 @@ function guardarMiLegajoPendiente(tab){
 function renderApp(){
   const r=currentUser.rol;
   if(usuarioSinInstitucion()){ renderSinInstitucion(); return; }
+  if(r!=='padre'&&ptFamUid===currentUser.id){ renderPadre('resumen'); return; }
   if(r==='admin'){
     currentInstitucionId = null;
     renderAdmin('instituciones');
   }
   else if(r==='institucion') renderAdmin('dashboard'); // va directo al dashboard de su institución
   else if(r==='docente')    renderDocente('inicio');
-  else if(r==='alumno')     renderAlumno('libreta');
+  else if(r==='alumno')     renderAlumno('inicio');
   else if(r==='padre')      renderPadre('resumen');
   else if(r==='preceptor')  renderPreceptor('inicio');
   else if(r==='director')   renderDirector('dashboard');
@@ -2542,6 +2546,7 @@ function navigate(sec){
   const r=currentUser.rol;
   if(r!=='docente') academicoBannerHTML='';
   if(usuarioSinInstitucion()){ renderSinInstitucion(); return; }
+  if(r!=='padre'&&ptFamUid===currentUser.id){ renderPadre(sec); return; }
   if(r==='admin'||r==='institucion') renderAdmin(sec);
   else if(r==='docente')    renderDocente(sec);
   else if(r==='alumno')     renderAlumno(sec);
@@ -2633,6 +2638,7 @@ function renderAdmin(sec){
     {id:'cert-medicas', icon:'🩺', label:'Certificaciones Médicas', grupo:'docentes'},
     {id:'liquidaciones',icon:'💰', label:'Liquidaciones',   grupo:'docentes'},
     {id:'alumnos',      icon:'🎓', label:'Alumnos',         grupo:'alumnos'},
+    {id:'lua',          icon:'🧑‍🎓',label:'Operaciones con Alumnos', grupo:'alumnos'},
     {id:'cursos',       icon:'📚', label:'Cursos',          grupo:'alumnos'},
     {id:'asistencias',  icon:'✅', label:'Asistencias',     grupo:'alumnos'},
     {id:'notas',        icon:'📝', label:'Notas',           grupo:'alumnos'},
@@ -2677,6 +2683,7 @@ function renderAdmin(sec){
   else if(sec==='cert-medicas')   content=renderCertificacionesMedicas();
   else if(sec==='liquidaciones')  content=renderLiquidaciones();
   else if(sec==='alumnos')        content=renderAlumnos();
+  else if(sec==='lua')            content=renderLUA();
   else if(sec==='cursos')         content=renderCursos();
   else if(sec==='asistencias')    content=renderAsistencias();
   else if(sec==='notas')          content=renderNotas();
@@ -2705,6 +2712,7 @@ function renderDirector(sec){
     {id:'preceptores',  icon:'🗂️',label:'Preceptores',     grupo:'docentes'},
     {id:'cert-medicas', icon:'🩺',label:'Certificaciones Médicas', grupo:'docentes'},
     {id:'alumnos',      icon:'🎓',label:'Alumnos',         grupo:'alumnos'},
+    {id:'lua',          icon:'🧑‍🎓',label:'Operaciones con Alumnos', grupo:'alumnos'},
     {id:'cursos',       icon:'📚',label:'Cursos',          grupo:'alumnos'},
     {id:'asistencias',  icon:'✅',label:'Asistencias',     grupo:'alumnos'},
     {id:'notas',        icon:'📝',label:'Notas',           grupo:'alumnos'},
@@ -2730,6 +2738,7 @@ function renderDirector(sec){
   else if(sec==='preceptores')   content=renderPreceptoresAdmin();
   else if(sec==='cert-medicas')  content=renderCertificacionesMedicas();
   else if(sec==='alumnos')       content=renderAlumnos();
+  else if(sec==='lua')           content=renderLUA();
   else if(sec==='cursos')        content=renderCursos();
   else if(sec==='asistencias')   content=renderAsistencias();
   else if(sec==='notas')         content=renderNotas();
@@ -2758,6 +2767,7 @@ function renderSecretario(sec){
     {id:'preceptores',  icon:'🗂️',label:'Preceptores',     grupo:'docentes'},
     {id:'cert-medicas', icon:'🩺',label:'Certificaciones Médicas', grupo:'docentes'},
     {id:'alumnos',      icon:'🎓',label:'Alumnos',         grupo:'alumnos'},
+    {id:'lua',          icon:'🧑‍🎓',label:'Operaciones con Alumnos', grupo:'alumnos'},
     {id:'cursos',       icon:'📚',label:'Cursos',          grupo:'alumnos'},
     {id:'asistencias',  icon:'✅',label:'Asistencias',     grupo:'alumnos'},
     {id:'notas',        icon:'📝',label:'Notas',           grupo:'alumnos'},
@@ -2783,6 +2793,7 @@ function renderSecretario(sec){
   else if(sec==='preceptores')   content=renderPreceptoresAdmin();
   else if(sec==='cert-medicas')  content=renderCertificacionesMedicas();
   else if(sec==='alumnos')       content=renderAlumnos();
+  else if(sec==='lua')           content=renderLUA();
   else if(sec==='cursos')        content=renderCursos();
   else if(sec==='asistencias')   content=renderAsistencias();
   else if(sec==='notas')         content=renderNotas();
@@ -7287,36 +7298,121 @@ function saveAltaAlumno(){
 // ─── CURSOS ───
 function renderCursos(){
   const cards=DB.cursos.map(c=>{
-    const jefe=DB.docentes.find(d=>d.id===c.docenteJefeId);
     const alus=DB.alumnos.filter(a=>a.curso===c.nombre);
     const tags=alus.map(a=>`<span class="badge badge-purple" style="margin:2px">${a.nombre}</span>`).join('') || '<span style="color:#94a3b8;font-size:12px">Sin alumnos</span>';
-    return `<div class="curso-card">
-      <div style="font-size:22px;font-weight:800;color:#3a1a5c">${c.nombre}</div>
+    const baja=c.estado==='baja';
+    return `<div class="curso-card" style="${baja?'opacity:.7;border:1.5px dashed #cbd5e1':''}">
+      <div style="font-size:22px;font-weight:800;color:#3a1a5c">${c.nombre}${baja?' <span class="badge badge-red" style="font-size:10px;vertical-align:middle">BAJA</span>':''}</div>
       <div style="font-size:13px;color:#64748b;margin-bottom:12px">Turno ${c.turno}</div>
-      <div style="font-size:13px;color:#334155;margin-bottom:4px">👩‍🏫 <strong>Doc. Jefe:</strong> ${jefe?.nombre||'Sin asignar'}</div>
       <div style="font-size:13px;color:#334155;margin-bottom:10px">🎓 <strong>Alumnos:</strong> ${alus.length}</div>
       <div>${tags}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0">
+        <button class="btn btn-ghost btn-sm" onclick="modificarCurso(${c.id})">✏️ Modificar</button>
+        <button class="btn btn-ghost btn-sm" onclick="bajaCurso(${c.id})">${baja?'↩️ Reactivar':'⏸️ Dar de baja'}</button>
+        <button class="btn btn-danger btn-sm" onclick="eliminarCurso(${c.id})">🗑️ Eliminar</button>
+      </div>
     </div>`;
   }).join('');
   return `${sectionHeader('Armado de Cursos',`<button class="btn btn-success" onclick="openNuevoCurso()">+ Nuevo Curso</button>`)}
     <div class="curso-grid">${cards}</div>`;
 }
+// El nombre del curso se arma solo: «3°A - Mañana» (año, división y turno)
+function nombreCursoAuto(año,division,turno,adultos){ return `${adultos?'A - ':''}${año}°${division}${turno?' - '+turno:''}`; }
+function actualizarNombreCurso(){
+  const el=document.getElementById('f-nombre-prev');
+  if(el) el.textContent=nombreCursoAuto(v('f-año'),v('f-div'),v('f-turno'),(document.getElementById('f-adultos')||{}).checked);
+}
 function openNuevoCurso(){
-  const docOpts=DB.docentes.filter(d=>d.estado==='activo').map(d=>`<option value="${d.id}">${d.nombre}</option>`).join('');
   showModal('Nuevo Curso',`
-    ${formGroup('Nombre (ej: 3°A)',inputH('f-nombre','text',''),true)}
-    ${formGroup('Año',selectH('f-año',[1,2,3,4,5,6].map(n=>`<option value="${n}">${n}° año</option>`).join('')),true)}
-    ${formGroup('División',selectH('f-div',['A','B','C','D'].map(d=>`<option value="${d}">${d}</option>`).join('')),true)}
-    ${formGroup('Turno',selectH('f-turno',['Mañana','Tarde','Noche'].map(t=>`<option value="${t}">${t}</option>`).join('')))}
-    ${formGroup('Docente Jefe',selectH('f-jefe',docOpts))}
+    <div class="form-grid-3">
+    ${formGroup('Año',`<select class="form-input" id="f-año" onchange="actualizarNombreCurso()">${[1,2,3,4,5,6].map(n=>`<option value="${n}">${n}° año</option>`).join('')}</select>`,true)}
+    ${formGroup('División',`<select class="form-input" id="f-div" onchange="actualizarNombreCurso()">${['A','B','C','D','E','F'].map(d=>`<option value="${d}">${d}</option>`).join('')}</select>`,true)}
+    ${formGroup('Turno',`<select class="form-input" id="f-turno" onchange="actualizarNombreCurso()">${['Mañana','Tarde','Noche'].map(t=>`<option value="${t}">${t}</option>`).join('')}</select>`,true)}
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin:4px 0 10px;font-size:13.5px;cursor:pointer"><input type="checkbox" id="f-adultos" onchange="actualizarNombreCurso()" style="width:17px;height:17px"> Curso de adultos (agrega el prefijo «A - » al nombre)</label>
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 14px;margin:6px 0 4px;font-size:13px;color:#075985">
+      Nombre del curso (se arma automáticamente): <strong id="f-nombre-prev" style="font-size:15px">${nombreCursoAuto(1,'A','Mañana')}</strong>
+    </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-success" onclick="saveNuevoCurso()">Crear Curso</button>
     </div>`);
 }
+function modificarCurso(id){
+  const c=DB.cursos.find(x=>x.id===id); if(!c) return;
+  const ad=!!c.adultos, o=(l,sel)=>l.map(x=>`<option value="${x}"${String(x)===String(sel)?' selected':''}>${x}</option>`).join('');
+  showModal('Modificar curso',`
+    <div class="form-grid-3">
+    ${formGroup('Año',`<select class="form-input" id="f-año" onchange="actualizarNombreCurso()">${[1,2,3,4,5,6].map(n=>`<option value="${n}"${n===c.año?' selected':''}>${n}° año</option>`).join('')}</select>`,true)}
+    ${formGroup('División',`<select class="form-input" id="f-div" onchange="actualizarNombreCurso()">${o(['A','B','C','D','E','F'],c.division)}</select>`,true)}
+    ${formGroup('Turno',`<select class="form-input" id="f-turno" onchange="actualizarNombreCurso()">${o(['Mañana','Tarde','Noche'],c.turno)}</select>`,true)}
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin:4px 0 10px;font-size:13.5px;cursor:pointer"><input type="checkbox" id="f-adultos" ${ad?'checked':''} onchange="actualizarNombreCurso()" style="width:17px;height:17px"> Curso de adultos (agrega el prefijo «A - » al nombre)</label>
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 14px;margin:6px 0 4px;font-size:13px;color:#075985">
+      Nombre del curso (se arma automáticamente): <strong id="f-nombre-prev" style="font-size:15px">${nombreCursoAuto(c.año,c.division,c.turno,ad)}</strong>
+    </div>
+    <div style="font-size:12px;color:#64748b;margin:8px 0">Actual: <strong>${c.nombre}</strong>. Si cambia el nombre, se actualiza también en los alumnos, designaciones y movimientos del curso.</div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-success" onclick="guardarModificacionCurso(${id})">Guardar cambios</button>
+    </div>`);
+}
+function guardarModificacionCurso(id){
+  const c=DB.cursos.find(x=>x.id===id); if(!c) return;
+  const año=parseInt(v('f-año')), division=v('f-div'), turno=v('f-turno'), adultos=!!(document.getElementById('f-adultos')||{}).checked;
+  const nombre=nombreCursoAuto(año,division,turno,adultos);
+  if(DB.cursos.some(x=>x.id!==id&&x.nombre===nombre)){ showToast('Ya existe el curso '+nombre+'.','#991b1b'); return; }
+  const viejo=c.nombre;
+  if(nombre!==viejo){
+    DB.alumnos.forEach(a=>{ if(a.curso===viejo) a.curso=nombre; });
+    (DB.designaciones||[]).forEach(d=>{ if(d.curso===viejo) d.curso=nombre; });
+    (DB.plazas||[]).forEach(p=>{ if(p.curso===viejo) p.curso=nombre; });
+    (DB.movimientosAlumnos||[]).forEach(m=>{ if(m.curso===viejo) m.curso=nombre; });
+    (DB.cierreNotas||[]).forEach(m=>{ if(m.curso===viejo) m.curso=nombre; });
+    (DB.materiasAdeudadas||[]).forEach(m=>{ if(m.curso===viejo) m.curso=nombre; });
+  }
+  Object.assign(c,{nombre,año,division,turno,adultos});
+  guardarEstado(); closeModal(); navigate('cursos'); showToast('✅ Curso modificado');
+}
+// Confirmaciones dentro de la propia pantalla (no dependen de confirm()/alert() del navegador)
+function bajaCurso(id){
+  const c=DB.cursos.find(x=>x.id===id); if(!c) return;
+  if(c.estado==='baja'){ c.estado='activo'; delete c.fechaBaja; guardarEstado(); navigate('cursos'); showToast('Curso reactivado'); return; }
+  const n=DB.alumnos.filter(a=>a.curso===c.nombre&&a.estado==='activo').length;
+  showModal('Dar de baja el curso',`
+    <div style="font-size:14px;color:#334155;margin-bottom:12px">¿Confirmás la baja del curso <strong>${c.nombre}</strong>?</div>
+    ${n?`<div class="alert-warning" style="margin-bottom:14px">Tiene ${n} alumno(s) activo(s): no se modifican, pero el curso deja de ofrecerse en las operaciones nuevas.</div>`:''}
+    <div class="form-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-danger" onclick="confirmarBajaCurso(${id})">Dar de baja</button></div>`);
+}
+function confirmarBajaCurso(id){
+  const c=DB.cursos.find(x=>x.id===id); if(!c) return;
+  c.estado='baja'; c.fechaBaja=new Date().toISOString().split('T')[0];
+  guardarEstado(); closeModal(); navigate('cursos'); showToast('Curso dado de baja');
+}
+function eliminarCurso(id){
+  const c=DB.cursos.find(x=>x.id===id); if(!c) return;
+  const n=DB.alumnos.filter(a=>a.curso===c.nombre).length;
+  if(n){
+    showModal('No se puede eliminar',`<div class="alert-warning" style="margin-bottom:14px">El curso <strong>${c.nombre}</strong> tiene ${n} alumno(s) asignado(s). Pasalos a otro curso (Operaciones con Alumnos → Cambio de división) o dá de baja el curso.</div>
+      <div class="form-actions"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button><button class="btn btn-primary" onclick="closeModal();bajaCurso(${id})">Dar de baja el curso</button></div>`);
+    return;
+  }
+  showModal('Eliminar curso',`<div style="font-size:14px;color:#334155;margin-bottom:14px">¿Eliminar definitivamente el curso <strong>${c.nombre}</strong>? No se puede deshacer.</div>
+    <div class="form-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-danger" onclick="confirmarEliminarCurso(${id})">Eliminar</button></div>`);
+}
+function confirmarEliminarCurso(id){
+  DB.cursos=DB.cursos.filter(x=>x.id!==id);
+  guardarEstado(); closeModal(); navigate('cursos'); showToast('Curso eliminado');
+}
 function saveNuevoCurso(){
-  if(!v('f-nombre')){alert('Complete el nombre del curso');return;}
-  DB.cursos.push({id:uid(),nombre:v('f-nombre'),año:parseInt(v('f-año')),division:v('f-div'),turno:v('f-turno'),docenteJefeId:parseInt(v('f-jefe'))||null});
+  const año=parseInt(v('f-año')), division=v('f-div'), turno=v('f-turno');
+  if(!año||!division||!turno){alert('Completá año, división y turno.');return;}
+  const adultos=!!(document.getElementById('f-adultos')||{}).checked;
+  const nombre=nombreCursoAuto(año,division,turno,adultos);
+  if(DB.cursos.some(c=>c.nombre===nombre)){showToast('Ya existe el curso '+nombre+'.','#991b1b');return;}
+  DB.cursos.push({id:uid(),nombre,año,division,turno,adultos});
+  guardarEstado();
   closeModal();navigate('cursos');
 }
 
@@ -7536,14 +7632,14 @@ function renderDocente(sec){
       const puedeGestionarLocal=DB.designaciones.some(d=>d.docenteId===docLocal?.id&&d.estado==='activa');
       academicoBannerHTML=renderSelectorInstAcademico(misInsts,vinculo.institucionId,sec);
       if(sec==='asistencia'){
-        content = academicoBannerHTML + (puedeGestionarLocal ? renderAsistencias(null,null) : renderSinDesignacion('asistencia'));
+        content = academicoBannerHTML + (puedeGestionarLocal ? renderDocAsistencia() : renderSinDesignacion('asistencia'));
       } else {
-        content = academicoBannerHTML + (puedeGestionarLocal ? renderNotas(null) : renderSinDesignacion('notas'));
+        content = academicoBannerHTML + (puedeGestionarLocal ? renderDocNotas() : renderSinDesignacion('notas'));
       }
     } else {
       DB=homeDB;
-      if(sec==='asistencia') content = puedeGestionarSB ? renderAsistencias(null,null) : renderSinDesignacion('asistencia');
-      else                   content = puedeGestionarSB ? renderNotas(null)            : renderSinDesignacion('notas');
+      if(sec==='asistencia') content = puedeGestionarSB ? renderDocAsistencia() : renderSinDesignacion('asistencia');
+      else                   content = puedeGestionarSB ? renderDocNotas()            : renderSinDesignacion('notas');
     }
   } else {
     DB=homeDB;
@@ -9917,30 +10013,6 @@ function saveSolLic(){
 // ═══════════════════════════════════════════════════════════════
 // PORTAL ALUMNO
 // ═══════════════════════════════════════════════════════════════
-function renderAlumno(sec){
-  currentSection=sec;
-  const al=DB.alumnos.find(a=>a.id===currentUser.alumnoId);
-  if(!al){document.getElementById('app-body').innerHTML='<div style="padding:40px;text-align:center;color:#ef4444">Alumno no encontrado</div>';return;}
-  const items=[
-    {id:'libreta',    icon:'📒',label:'Mi Libreta',    grupo:'academico'},
-    {id:'mis-notas',  icon:'📝',label:'Mis Notas',     grupo:'academico'},
-    {id:'mi-asist',   icon:'✅',label:'Mi Asistencia', grupo:'academico'},
-    {id:'mis-datos',  icon:'👤',label:'Mis Datos',     grupo:'personal'},
-    {id:'mi-legajo',  icon:'📋',label:'Mi Legajo',     grupo:'personal'},
-  ];
-  const top=`<div class="sidebar-label">Portal Alumno</div>
-    <div class="sidebar-title">${al.nombre}</div>
-    <div class="sidebar-sub">Curso: ${al.curso}</div>
-    ${instChip(getInstUser())}`;
-  const sidebar=buildSidebar('#3a1a5c',top,items,sec);
-  let content='';
-  if(sec==='libreta')   content=renderLibreta(al);
-  else if(sec==='mis-notas') content=renderMisNotas(al);
-  else if(sec==='mi-asist')  content=renderMiAsist(al);
-  else if(sec==='mis-datos') content=renderMisDatos(al);
-  else if(sec==='mi-legajo') { content=''; setTimeout(()=>abrirLegajo(al.id,'personal'),30); }
-  buildLayout(sidebar,content);
-}
 function renderLibreta(al){
   const notasAl=DB.notas.filter(n=>n.alumnoId===al.id);
   const asistAl=DB.asistencias.filter(a=>a.alumnoId===al.id);
@@ -10048,35 +10120,6 @@ function renderMisDatos(al){
 // PORTAL PADRE
 // ═══════════════════════════════════════════════════════════════
 let padreHijoSel=null;
-function renderPadre(sec){
-  currentSection=sec;
-  const hijos=DB.alumnos.filter(a=>currentUser.hijoIds?.includes(a.id));
-  if(!hijos.length){document.getElementById('app-body').innerHTML='<div style="padding:40px;text-align:center;color:#ef4444">No se encontraron hijos asociados.</div>';return;}
-  if(!padreHijoSel) padreHijoSel=hijos[0].id;
-  const al=hijos.find(a=>a.id===padreHijoSel)||hijos[0];
-  const items=[
-    {id:'resumen',   icon:'📊',label:'Resumen',   grupo:'personal'},
-    {id:'libreta',   icon:'📒',label:'Libreta',    grupo:'academico'},
-    {id:'notas',     icon:'📝',label:'Notas',      grupo:'academico'},
-    {id:'asistencia',icon:'✅',label:'Asistencia', grupo:'academico'},
-    {id:'mi-legajo', icon:'📋',label:'Mi Legajo',  grupo:'personal'},
-  ];
-  const hijoSel=hijos.length>1?`<select onchange="padreHijoSel=parseInt(this.value);navigate('${sec}')"
-    style="margin-top:8px;width:100%;padding:4px 8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:6px;font-size:12px;font-family:inherit">
-    ${hijos.map(h=>`<option value="${h.id}"${h.id===padreHijoSel?' selected':''}>${h.nombre}</option>`).join('')}
-    </select>`:`<div style="font-size:12px;color:rgba(255,255,255,0.7);margin-top:4px">👤 ${al.nombre}</div>`;
-  const top=`<div class="sidebar-label">Portal Familia</div>
-    <div class="sidebar-title">${currentUser.nombre}</div>${hijoSel}
-    ${instChip(getInstUser())}`;
-  const sidebar=buildSidebar('#5c3a1a',top,items,sec);
-  let content='';
-  if(sec==='resumen')    content=renderPadreResumen(al);
-  else if(sec==='libreta')    content=renderLibreta(al);
-  else if(sec==='notas')      content=renderPadreNotas(al);
-  else if(sec==='asistencia') content=renderPadreAsist(al);
-  else if(sec==='mi-legajo')  { content=''; setTimeout(()=>abrirMiLegajoPendiente('personal'),0); }
-  buildLayout(sidebar,content);
-}
 function renderPadreResumen(al){
   const inst = getInstUser();
   const instBanner = inst ? `
@@ -12741,6 +12784,7 @@ function renderPreceptor(sec){
     {id:'mi-legajo',    icon:'📋', label:'Mi Legajo',        grupo:'personal'},
     {id:'mis-desig',    icon:'📌', label:'Mis Designaciones',grupo:'personal'},
     {id:'mis-licencias',icon:'📋', label:'Mis Licencias',    grupo:'personal'},
+    {id:'confirmar-asist', icon:'☑️', label:'Confirmar Asistencia'+(acPendientesPrec(prec)?' <span style="background:#dc2626;color:#fff;border-radius:10px;padding:0 6px;font-size:11px">'+acPendientesPrec(prec)+'</span>':''), grupo:'alumnos'},
     {id:'asistencias',  icon:'✅', label:'Tomar Asistencia', grupo:'alumnos'},
     {id:'alertas',      icon:'🚨', label:'Alertas de Faltas', grupo:'alumnos'},
     {id:'justificaciones',icon:'📄',label:'Justificaciones',  grupo:'alumnos'},
@@ -12757,6 +12801,7 @@ function renderPreceptor(sec){
   else if(sec==='mi-legajo')       content=renderPrecMiLegajo(prec);
   else if(sec==='mis-desig')       content=renderPrecMisDesig(prec);
   else if(sec==='mis-licencias')   content=renderPrecMisLicencias(prec);
+  else if(sec==='confirmar-asist') content=renderPrecConfirmar(prec);
   else if(sec==='asistencias')     content=renderPrecAsistencias(prec);
   else if(sec==='alertas')         content=renderPrecAlertas(prec);
   else if(sec==='justificaciones') content=renderPrecJustificaciones(prec);
@@ -13460,6 +13505,1282 @@ window.addEventListener('focus', ()=>{ if(sheetsListoParaUsar()) sincronizarShee
 if(_seCargoEstadoPrevio){
   console.log('%c📦 SGE Secundaria: se restauró el estado guardado del navegador.','color:#166534;font-weight:bold');
 }
+</script>
+<script>
+// ═════════════════════════════════════════════════════════════════════
+// L.U.A. — OPERACIONES CON ALUMNOS (según el instructivo SAGE, págs. 84-113)
+// Pre-inscripciones · Armado de cursos · Cambio de división · Finalización de
+// cursado · Pases · Egresados · Historial · Herramientas correctivas ·
+// Boletines · Inasistencias · Servicios escolares · Consultas · Certificados
+// ═════════════════════════════════════════════════════════════════════
+const LUA_MOTIVOS=['Abandono','Aprobacion de año','Baja por fallecimiento','Cursando - Libre','Desaprobacion de año','Egreso','En suspenso (adeuda mas de 2 materias)','En suspenso, en espera de pedido de pase','Libre por inasistencias','Pase a otra jurisdicción'];
+const LUA_TABS=[
+  ['preinsc','Pre-inscripciones'],['armado','Armado de cursos'],['division','Cambio de división'],
+  ['final','Finalización de cursado'],['pases','Pases'],['egresados','Egresados'],
+  ['historial','Historial del alumnado'],['correctivas','Herramientas correctivas'],
+  ['boletines','Boletines'],['inasist','Inasistencias'],['servicios','Servicios escolares'],
+  ['consultas','Consultas'],['certificados','Certificados']];
+let luaTab='preinsc';
+let luaSub={pases:'solicitud',boletines:'notas',inasist:'carga',consultas:'activos',certificados:'constancia'};
+let luaF={};          // estado de los formularios de varios pasos
+let _luaSeq=0;
+function luaId(){ return Date.now()*1000+(++_luaSeq%1000); }
+function luaAnio(){ return new Date().getFullYear(); }
+function luaHoy(){ return new Date().toISOString().split('T')[0]; }
+function luaEsc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+function luaNorm(v){ return String(v||'').replace(/\D/g,''); }
+function luaAnioCurso(nombre){ const m=String(nombre||'').match(/\d+/); return m?parseInt(m[0]):0; }
+
+function luaEnsure(data){
+  data=data||DB;
+  ['preinscripciones','movimientosAlumnos','pases','materiasAdeudadas','diasClase','cierreNotas','serviciosAlumno','configBoletin']
+    .forEach(k=>{ if(!Array.isArray(data[k])) data[k]=[]; });
+  if(!data.configBoletin.length) data.configBoletin.push({id:1,conceptos:false,observaciones:false,extras:[]});
+  (data.alumnos||[]).forEach(a=>{
+    if(!data.movimientosAlumnos.some(m=>m.alumnoId===a.id)){
+      const eg=a.estado==='egresado', tr=a.estado==='trasladado', ina=a.estado==='inactivo';
+      data.movimientosAlumnos.push({id:luaId(),alumnoId:a.id,anio:luaAnio(),fecha:luaHoy(),curso:a.curso||'',
+        estado:(eg||tr||ina)?'En transición':'Cursando',
+        motivo:eg?'Egreso':tr?'Pase a otra jurisdicción':ina?'Abandono':''});
+    }
+  });
+  return data;
+}
+function luaMovs(a,data){ return (data||DB).movimientosAlumnos.filter(m=>m.alumnoId===a.id).sort((x,y)=>(x.anio-y.anio)||(x.fecha||'').localeCompare(y.fecha||'')||(x.id-y.id)); }
+function luaMovActual(a,data){ const m=luaMovs(a,data); return m[m.length-1]||null; }
+function luaCursando(a){ const m=luaMovActual(a); return a.estado==='activo' && m && m.estado==='Cursando'; }
+function luaEnTransicion(a){ const m=luaMovActual(a); return a.estado==='activo' && m && m.estado==='En transición'; }
+function luaCursoOpts(sel,placeholder){
+  return `<option value="">${placeholder||'— Seleccioná —'}</option>`+DB.cursos.filter(c=>c.estado!=='baja'||c.nombre===sel).map(c=>`<option value="${luaEsc(c.nombre)}"${c.nombre===sel?' selected':''}>${luaEsc(c.nombre)}${c.turno&&!c.nombre.includes(c.turno)?' ('+luaEsc(c.turno)+')':''}</option>`).join('');
+}
+function luaSel(id,opts,sel,onch){ return `<select class="form-input" id="${id}" ${onch?`onchange="${onch}"`:''}>${opts}</select>`; }
+function luaOpts(list,sel,ph){ return (ph!==undefined?`<option value="">${ph}</option>`:'')+list.map(o=>`<option value="${luaEsc(o)}"${o===sel?' selected':''}>${luaEsc(o)}</option>`).join(''); }
+function luaGet(id){ const e=document.getElementById(id); return e?e.value:''; }
+function luaChecked(cls){ return [...document.querySelectorAll('.'+cls+':checked')].map(e=>e.value); }
+function luaSet(k,v){ luaF[k]=v; luaRefresh(); }
+function luaRefresh(){ const mc=document.querySelector('.main-content'); if(mc){ const y=mc.scrollTop; mc.innerHTML=renderLUA(); mc.scrollTop=y; } }
+function luaGo(tab){ luaTab=tab; luaF={}; luaRefresh(); }
+function luaSubGo(tab,sub){ luaSub[tab]=sub; luaF={}; luaRefresh(); }
+function luaSubTabs(tab,items){
+  const rc=ROL_COLOR[currentUser&&currentUser.rol]||'#1a3a5c';
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">${items.map(([id,l])=>`<button onclick="luaSubGo('${tab}','${id}')" style="border:1px solid ${luaSub[tab]===id?rc:'#cbd5e1'};background:${luaSub[tab]===id?rc:'#f8fafc'};color:${luaSub[tab]===id?'#fff':'#475569'};border-radius:18px;padding:6px 14px;font-size:12.5px;font-weight:700;cursor:pointer">${l}</button>`).join('')}</div>`;
+}
+function luaGuardar(msg){ guardarEstado(); if(msg) showToast(msg); luaRefresh(); }
+function luaNota(txt,tipo){ const c=tipo==='warn'?['#fffbeb','#92400e','#fde68a']:tipo==='err'?['#fef2f2','#991b1b','#fecaca']:['#eff6ff','#1e40af','#bfdbfe']; return `<div style="background:${c[0]};color:${c[1]};border:1px solid ${c[2]};border-radius:8px;padding:10px 14px;font-size:12.5px;margin-bottom:14px">${txt}</div>`; }
+function luaCard(title,body){ return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px;margin-bottom:16px">${title?`<div style="font-weight:800;color:#1a3a5c;font-size:14px;margin-bottom:12px">${title}</div>`:''}${body}</div>`; }
+// Documento HTML independiente (se imprime solo al abrirlo)
+const LUA_DOC_BASE_CSS='body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;padding:18px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #555;padding:4px 7px;font-size:12px;text-align:center}td:first-child,th:first-child{text-align:left}h2,h3{margin:6px 0}.bar{background:#1a3a5c;color:#fff;padding:10px 16px;margin:-18px -18px 16px;display:flex;gap:10px;align-items:center;font-size:13px}.bar button{padding:7px 14px;font-weight:700;cursor:pointer;border:0;border-radius:6px}@media print{.bar{display:none}}';
+let _luaDocActual=null;
+function luaDocStandalone(){
+  const d=_luaDocActual; if(!d) return '';
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${luaEsc(d.titulo)}</title><style>${LUA_DOC_BASE_CSS}${d.opts.css||''}@page{size:A4 ${d.opts.orient||'portrait'};margin:${d.opts.orient?'10mm':'14mm'}}</style></head><body><div class="bar"><button onclick="window.print()">🖨️ Imprimir</button><span>Si no se abre el cuadro de impresión, usá Ctrl + P.</span></div>${d.html}<script>window.addEventListener('load',function(){setTimeout(function(){try{window.print()}catch(e){}},500)})<\/script></body></html>`;
+}
+function luaAbrirParaImprimir(){
+  const blob=new Blob([luaDocStandalone()],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+function luaDescargarDoc(){
+  const blob=new Blob([luaDocStandalone()],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=((_luaDocActual&&_luaDocActual.titulo)||'documento').replace(/[^\wáéíóúñÁÉÍÓÚÑ ()-]+/g,'').trim().replace(/\s+/g,'_')+'.html';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
+  showToast('Archivo descargado: abrilo y se imprime automáticamente (o usá Ctrl + P).');
+}
+function luaPrintDirecto(){
+  try{ window.print(); }catch(e){ showToast('Tu navegador bloqueó la impresión directa: usá «Abrir para imprimir» o «Descargar».','#991b1b'); return; }
+  const h=document.getElementById('lua-print-hint'); if(h) h.style.display='block';
+}
+function luaImprimir(titulo,html,opts){
+  opts=opts||{};
+  _luaDocActual={titulo,html,opts};
+  // Vista previa dentro del sistema + impresión de esa sola hoja
+  showModal(titulo,`
+    <style>
+      .lua-doc table{border-collapse:collapse;width:100%}
+      .lua-doc td,.lua-doc th{border:1px solid #555;padding:4px 7px;font-size:12px;text-align:center}
+      .lua-doc td:first-child,.lua-doc th:first-child{text-align:left}
+      ${opts.css||''}
+      @media print{
+        ${opts.orient?`@page{size:A4 ${opts.orient};margin:10mm}`:'@page{size:A4;margin:14mm}'}
+        body *{visibility:hidden!important}
+        #lua-print-area,#lua-print-area *{visibility:visible!important}
+        #lua-print-area{position:absolute;left:0;top:0;width:100%;padding:0!important;box-shadow:none!important;border:none!important}
+        .lua-nopr{display:none!important}
+      }
+    </style>
+    <div class="lua-nopr" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-primary" onclick="luaPrintDirecto()">🖨️ Imprimir</button>
+      <button class="btn btn-success" onclick="luaAbrirParaImprimir()">↗️ Abrir para imprimir</button>
+      <button class="btn btn-ghost" onclick="luaDescargarDoc()">⬇️ Descargar</button>
+      <button class="btn btn-ghost" onclick="closeModal()">← Volver</button>
+    </div>
+    <div class="lua-nopr" id="lua-print-hint" style="display:none;font-size:12px;color:#64748b;margin-bottom:10px">Si no apareció el cuadro de impresión, tu navegador lo bloqueó dentro de esta pantalla: usá <strong>«Abrir para imprimir»</strong> (se abre el documento en otra pestaña listo para imprimir) o <strong>«Descargar»</strong> y abrí el archivo.${opts.orient?' Formato: A4 '+(opts.orient==='landscape'?'horizontal':'vertical')+'.':''}</div>
+    <div id="lua-print-area" class="lua-doc" style="border:1px solid #e2e8f0;border-radius:8px;padding:22px;background:#fff;color:#111;overflow-x:auto">${html}</div>`);
+}
+function luaInstNombre(){ const i=(typeof instActual==='function'&&instActual())||INSTITUCIONES.find(x=>String(x.id)===String(luaInstId()))||null; return i?{nombre:i.nombre,cue:i.cue,localidad:i.localidad||'Federal'}:{nombre:'Establecimiento',cue:'',localidad:'Federal'}; }
+
+// ─────────────────────────────────────────────────────────────────────
+function renderLUA(){
+  luaEnsure(DB);
+  const rc=ROL_COLOR[currentUser&&currentUser.rol]||'#1a3a5c';
+  const tabs=`<div style="background:${rc};padding:6px 8px 0;display:flex;gap:3px;flex-wrap:wrap">${LUA_TABS.map(([id,l])=>`<button onclick="luaGo('${id}')" style="background:${luaTab===id?'#fff':'transparent'};color:${luaTab===id?rc:'rgba(255,255,255,.78)'};border:none;border-radius:6px 6px 0 0;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">${l}</button>`).join('')}</div>`;
+  const fn={preinsc:luaPreinsc,armado:luaArmado,division:luaDivision,final:luaFinal,pases:luaPases,egresados:luaEgresados,historial:luaHistorial,correctivas:luaCorrectivas,boletines:luaBoletines,inasist:luaInasist,servicios:luaServicios,consultas:luaConsultas,certificados:luaCertificados}[luaTab];
+  const pend=DB.pases.filter(p=>p.rol==='origen'&&p.estado==='Pendiente origen').length;
+  const aviso=pend?luaNota(`🔔 <strong>Pases de Alumnos:</strong> Ud. tiene ${pend} pedido${pend>1?'s':''} de pase de alumno pendiente${pend>1?'s':''} de aprobación. <a href="#" onclick="luaGo('pases');luaSubGo('pases','autorizacion');return false">Click aquí para verlos</a>`,'warn'):'';
+  const _in=(typeof luaInstNombre==='function'?luaInstNombre():null)||{}; const ins=(typeof _in==='string'?_in:_in.nombre)||'';
+  const act=DB.alumnos.filter(a=>a.estado==='activo').length;
+  const topInfo=`<div style="display:flex;align-items:center;gap:14px;padding:16px 20px;flex-wrap:wrap">
+      <div style="width:46px;height:46px;border-radius:12px;background:${rc};display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;flex-shrink:0">🎓</div>
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:17px;font-weight:900;color:${rc}">${luaEsc(ins)||'Establecimiento'} - OPERACIONES CON ALUMNOS</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><span class="badge badge-blue">L.U.A.</span><span class="badge badge-green">${act} alumnos activos</span><span class="badge badge-gray">Ciclo ${luaAnio()}</span></div>
+      </div>
+      <span style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:5px 12px;font-size:11px;color:#166534;font-weight:700;white-space:nowrap">✅ Legajo Único de Alumnos</span>
+    </div>`;
+  return `<div style="width:100%"><h2 style="font-size:19px;color:${rc};font-weight:800;margin:0 0 14px">🎓 Operaciones con Alumnos</h2>
+    <div style="background:#fff;border-radius:14px 14px 0 0;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,0.07)">${topInfo}${tabs}</div>
+    <div style="background:#fff;border-radius:0 0 12px 12px;padding:24px;box-shadow:0 1px 6px rgba(0,0,0,0.07);border-top:1px solid #e2e8f0">${aviso}${fn()}</div></div>`;
+}
+
+// ── 1. PRE-INSCRIPCIONES ─────────────────────────────────────────────
+function luaPreinsc(){
+  const col={'En espera':'#92400e','Aceptado':'#166534','Cancelado':'#991b1b'};
+  const rows=DB.preinscripciones.map(p=>`<tr>
+    <td><input type="checkbox" class="lua-pi" value="${p.id}"></td><td>${p.id%100000}</td><td>${luaEsc(p.dni)}</td><td>${luaEsc(luaApeNom(p).ape)}</td><td>${luaEsc(luaApeNom(p).nom)}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td>
+    <td style="font-weight:700;color:${col[p.estado]||'#334155'}">${p.estado}</td></tr>`).join('');
+  return luaNota('Sólo se deben pre-inscribir los alumnos que ingresan por primera vez al sistema. Una vez aceptada la pre-inscripción, asignalo a su curso desde <strong>Armado de cursos</strong>.')
+   +luaCard('Alumnos con pre-inscripción en el establecimiento',
+     (DB.preinscripciones.length?`<div style="overflow-x:auto"><table><thead><tr><th></th><th>Id</th><th>Documento</th><th>Apellido</th><th>Nombre</th><th>Curso</th><th>Año</th><th>Estado actual</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty-msg">Sin pre-inscripciones</div>')
+     +`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+        <button class="btn btn-success btn-sm" onclick="luaPiNueva()">➕ Nueva Pre-Inscripción</button>
+        <select class="form-input" id="lua-pi-estado" style="max-width:170px">${luaOpts(['En espera','Aceptado','Cancelado'],'','Cambia estado a…')}</select>
+        <button class="btn btn-primary btn-sm" onclick="luaPiEstado()">Grabar estado</button>
+        <button class="btn btn-danger btn-sm" onclick="luaPiEliminar()">Eliminar Pre-Inscripción</button></div>`);
+}
+function luaApeNom(a){
+  if(a.apellido||a.nombres) return {ape:a.apellido||'',nom:a.nombres||''};
+  const n=String(a.nombre||''); if(n.includes(',')){ const p=n.split(','); return {ape:p[0].trim(),nom:p.slice(1).join(',').trim()}; }
+  const p=n.trim().split(/\s+/); return {ape:p.length>1?p[p.length-1]:n,nom:p.length>1?p.slice(0,-1).join(' '):''};
+}
+function luaPiNueva(){
+  const body=`<div class="form-grid-2">
+    ${formGroup('Documento del alumno a pre-inscribir',`<input class="form-input" id="lua-pi-dni" onchange="luaPiBuscar()">`,true)}
+    ${formGroup('Apellido del alumno',`<input class="form-input" id="lua-pi-ape">`,true)}
+    ${formGroup('Nombre del alumno',`<input class="form-input" id="lua-pi-nom">`,true)}
+    ${formGroup('Curso para la pre-inscripción',`<select class="form-input" id="lua-pi-curso">${luaCursoOpts('')}</select>`,true)}
+    ${formGroup('Año de la pre-inscripción',`<input class="form-input" type="number" id="lua-pi-anio" value="${luaAnio()}">`,true)}</div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-success" onclick="luaPiGuardar()">Grabar</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`;
+  showModal('Nueva pre-inscripción',body);
+}
+function luaPiBuscar(){
+  const d=luaNorm(luaGet('lua-pi-dni')); if(!d) return;
+  for(const k of Object.keys(INST_DATA)){ const a=(INST_DATA[k].alumnos||[]).find(x=>luaNorm(x.dni)===d); if(a){ const x=luaApeNom(a); document.getElementById('lua-pi-ape').value=x.ape; document.getElementById('lua-pi-nom').value=x.nom; return; } }
+}
+function luaPiGuardar(){
+  const dni=luaGet('lua-pi-dni').trim(), ape=luaGet('lua-pi-ape').trim(), nom=luaGet('lua-pi-nom').trim(), curso=luaGet('lua-pi-curso'), anio=parseInt(luaGet('lua-pi-anio'));
+  if(!dni||!ape||!nom||!curso||!anio){ alert('Completá todos los datos requeridos.'); return; }
+  if(DB.preinscripciones.some(p=>luaNorm(p.dni)===luaNorm(dni)&&p.anio===anio&&p.estado!=='Cancelado')){ alert('Ya existe una pre-inscripción de ese documento para ese año.'); return; }
+  DB.preinscripciones.push({id:luaId(),dni,apellido:ape,nombres:nom,nombre:ape+', '+nom,curso,anio,estado:'En espera',alumnoId:null});
+  guardarEstado(); showToast('Pre-Inscripción realizada correctamente.'); closeModal(); luaTab='preinsc'; navigate('lua');
+}
+function luaPiEstado(){
+  const ids=luaChecked('lua-pi').map(Number), est=luaGet('lua-pi-estado');
+  if(!ids.length||!est){ alert('Tildá al menos una pre-inscripción y elegí el nuevo estado.'); return; }
+  DB.preinscripciones.filter(p=>ids.includes(p.id)).forEach(p=>{ if(!p.alumnoId) p.estado=est; });
+  luaGuardar('Estado actualizado.');
+}
+function luaPiEliminar(){
+  const ids=luaChecked('lua-pi').map(Number); if(!ids.length){ alert('Tildá al menos una pre-inscripción.'); return; }
+  if(!confirm('¿Eliminar las pre-inscripciones seleccionadas?')) return;
+  DB.preinscripciones=DB.preinscripciones.filter(p=>!ids.includes(p.id)||p.alumnoId);
+  luaGuardar('Pre-inscripciones eliminadas.');
+}
+
+// ── 2. ARMADO DE NUEVOS CURSOS ──────────────────────────────────────
+function luaArmado(){
+  const curso=luaF.armCurso||'';
+  let html=luaNota('Seleccioná el curso a preparar. Se listan los alumnos habilitados: pre-inscripciones aceptadas y alumnos que finalizaron el cursado anterior (en transición).');
+  html+=luaCard('Armado de nuevos cursos',formGroup('Indique el curso a preparar',luaSel('lua-arm-curso',luaCursoOpts(curso),curso,"luaSet('armCurso',this.value)")));
+  if(!curso) return html;
+  const anterior=DB.alumnos.filter(a=>a.curso===curso&&luaCursando(a)&&(luaMovActual(a).anio<luaAnio()));
+  if(anterior.length) html+=luaNota(`⚠️ <strong>TIENE ALUMNOS CURSANDO UN CICLO LECTIVO ANTERIOR</strong> (${anterior.length}). No se realizó la finalización de cursado de todos los alumnos: revisalo desde el Historial del alumnado.`,'err');
+  const pre=DB.preinscripciones.filter(p=>p.estado==='Aceptado'&&!p.alumnoId);
+  const trans=DB.alumnos.filter(a=>luaEnTransicion(a)&&['Aprobacion de año','Desaprobacion de año','En suspenso (adeuda mas de 2 materias)','En suspenso, en espera de pedido de pase'].includes(luaMovActual(a).motivo));
+  const filas=[...pre.map(p=>`<tr><td><input type="checkbox" class="lua-arm" value="P${p.id}"></td><td>${luaEsc(p.dni)}</td><td>${luaEsc(p.nombre)}</td><td>Pre-inscripción ${p.anio} (curso ${luaEsc(p.curso)})</td></tr>`),
+    ...trans.map(a=>`<tr><td><input type="checkbox" class="lua-arm" value="A${a.id}"></td><td>${luaEsc(a.dni)}</td><td>${luaEsc(a.nombre)}</td><td>${luaEsc(luaMovActual(a).motivo)} (${luaEsc(a.curso||'—')})</td></tr>`)];
+  html+=luaCard(`Alumnos habilitados para ${luaEsc(curso)}`,filas.length?`<div style="overflow-x:auto"><table><thead><tr><th></th><th>Documento</th><th>Alumno</th><th>Procedencia</th></tr></thead><tbody>${filas.join('')}</tbody></table></div><button class="btn btn-success" style="margin-top:12px" onclick="luaArmadoGrabar()">Grabar</button>`:'<div class="empty-msg">No hay alumnos habilitados para armar el curso.</div>');
+  return html;
+}
+function luaArmadoGrabar(){
+  const curso=luaF.armCurso, sel=luaChecked('lua-arm'); if(!sel.length){ alert('Tildá los alumnos.'); return; }
+  const names=[];
+  sel.forEach(v=>{
+    let a;
+    if(v[0]==='P'){
+      const p=DB.preinscripciones.find(x=>x.id===Number(v.slice(1))); if(!p) return;
+      a=DB.alumnos.find(x=>luaNorm(x.dni)===luaNorm(p.dni));
+      if(!a){ a={id:luaId(),nombre:luaApeNom(p).ape+', '+luaApeNom(p).nom,apellido:luaApeNom(p).ape,nombres:luaApeNom(p).nom,dni:p.dni,curso:curso,estado:'activo'}; DB.alumnos.push(a); }
+      p.alumnoId=a.id;
+    } else a=DB.alumnos.find(x=>x.id===Number(v.slice(1)));
+    if(!a) return;
+    a.curso=curso; a.estado='activo';
+    DB.movimientosAlumnos.push({id:luaId(),alumnoId:a.id,anio:luaAnio(),fecha:luaHoy(),curso,estado:'Cursando',motivo:''});
+    names.push(a.nombre);
+  });
+  luaF={}; guardarEstado(); luaRefresh(); alert('Solicitud generada correctamente. Informe de creación de curso:\n'+names.join('\n'));
+}
+
+// ── 3. CAMBIO DE DIVISIÓN ───────────────────────────────────────────
+function luaDivision(){
+  const o=luaF.divO||'', d=luaF.divD||'';
+  let html=luaCard('Cambio de división (en caso de haber ingresado al alumno de manera incorrecta)',
+    `<div class="form-grid-2">${formGroup('Curso donde se encuentra el estudiante',luaSel('lua-div-o',luaCursoOpts(o),o,"luaSet('divO',this.value)"))}
+      ${formGroup('Indique el curso destino',luaSel('lua-div-d',luaCursoOpts(d),d,"luaSet('divD',this.value)"))}</div>`);
+  if(o&&d&&o===d) return html+luaNota('El curso destino debe ser distinto al de origen.','err');
+  if(o&&d){
+    const al=DB.alumnos.filter(a=>a.curso===o&&luaCursando(a));
+    html+=luaCard(`Alumnos de ${luaEsc(o)}`,al.length?`<table><thead><tr><th></th><th>Documento</th><th>Alumno</th></tr></thead><tbody>${al.map(a=>`<tr><td><input type="checkbox" class="lua-div" value="${a.id}"></td><td>${luaEsc(a.dni)}</td><td>${luaEsc(a.nombre)}</td></tr>`).join('')}</tbody></table><button class="btn btn-success" style="margin-top:12px" onclick="luaDivisionGrabar()">Grabar</button>`:'<div class="empty-msg">No hay alumnos cursando en ese curso.</div>');
+  }
+  return html;
+}
+function luaDivisionGrabar(){
+  const ids=luaChecked('lua-div').map(Number); if(!ids.length){ alert('Tildá los alumnos.'); return; }
+  ids.forEach(id=>{ const a=DB.alumnos.find(x=>x.id===id); if(!a) return; const m=luaMovActual(a);
+    a.curso=luaF.divD; if(m){ m.curso=luaF.divD; (m.cambios=m.cambios||[]).push({fecha:luaHoy(),de:luaF.divO,a:luaF.divD}); } });
+  luaF={}; luaGuardar('Cambio de división realizado correctamente.');
+}
+
+// ── 4. FINALIZACIÓN DE CURSADO ──────────────────────────────────────
+function luaAplicarMotivo(a,motivo){
+  const m=luaMovActual(a); if(!m) return;
+  if(motivo==='Cursando - Libre'){ m.estado='Cursando'; m.motivo=motivo; return; }
+  m.estado='En transición'; m.motivo=motivo;
+  if(motivo==='Egreso') a.estado='egresado';
+  else if(motivo==='Pase a otra jurisdicción') a.estado='trasladado';
+  else if(['Abandono','Baja por fallecimiento','Libre por inasistencias'].includes(motivo)) a.estado='inactivo';
+  else a.estado='activo';
+}
+function luaFinal(){
+  const c=luaF.finC||'', mo=luaF.finM||'';
+  let html=luaCard('Finalización de cursado — actualizá el estado de los estudiantes al finalizar el ciclo escolar',
+    `<div class="form-grid-2">${formGroup('Curso / división',luaSel('lua-fin-c',luaCursoOpts(c),c,"luaSet('finC',this.value)"))}
+     ${formGroup('Indique cómo ha concluido el cursado',luaSel('lua-fin-m',luaOpts(LUA_MOTIVOS,mo,'— Seleccioná —'),mo,"luaSet('finM',this.value)"))}</div>`);
+  if(c&&mo){
+    const al=DB.alumnos.filter(a=>a.curso===c&&luaCursando(a));
+    html+=luaCard(`Estudiantes cursando en ${luaEsc(c)} → «${luaEsc(mo)}»`,al.length?`<table><thead><tr><th></th><th>Documento</th><th>Alumno</th></tr></thead><tbody>${al.map(a=>`<tr><td><input type="checkbox" class="lua-fin" value="${a.id}"></td><td>${luaEsc(a.dni)}</td><td>${luaEsc(a.nombre)}</td></tr>`).join('')}</tbody></table><button class="btn btn-success" style="margin-top:12px" onclick="luaFinalGrabar()">Grabar</button>`:'<div class="empty-msg">No hay alumnos cursando en esa división.</div>');
+  }
+  return html;
+}
+function luaFinalGrabar(){
+  const ids=luaChecked('lua-fin').map(Number); if(!ids.length){ alert('Tildá los alumnos.'); return; }
+  ids.forEach(id=>{ const a=DB.alumnos.find(x=>x.id===id); if(a) luaAplicarMotivo(a,luaF.finM); });
+  luaF={}; luaGuardar('Finalización de cursado registrada.');
+}
+
+// ── 5. PASES ────────────────────────────────────────────────────────
+function luaBuscarAlumnoGlobal(dni){
+  const d=luaNorm(dni), res=[];
+  Object.keys(INST_DATA).forEach(k=>{ const data=INST_DATA[k]; (data.alumnos||[]).forEach(a=>{
+    if(luaNorm(a.dni)===d && a.estado==='activo' && data!==DB){ const inst=INSTITUCIONES.find(i=>String(i.id)===String(k)); res.push({instId:isNaN(Number(k))?k:Number(k),instNombre:inst?inst.nombre:('Institución '+k),alumno:a}); } }); });
+  return res;
+}
+function luaInstId(){ return (typeof _instIdActual==='function'&&_instIdActual()!=null)?_instIdActual():currentInstitucionId; }
+function luaPases(){
+  const sub=luaSub.pases;
+  const tabs=luaSubTabs('pases',[['solicitud','Solicitud de Pases'],['autorizacion','Autorización de Pases'],['otorgados','Pases Otorgados'],['rechazados','Pases rechazados']]);
+  const instN=id=>{ const i=INSTITUCIONES.find(x=>String(x.id)===String(id)); return i?i.nombre:'—'; };
+  if(sub==='solicitud'){
+    const mis=DB.pases.filter(p=>p.rol==='destino').sort((a,b)=>b.fecha.localeCompare(a.fecha));
+    return tabs+luaCard('Solicitudes de pase de este establecimiento',
+      (mis.length?`<table><thead><tr><th>Fecha</th><th>Documento</th><th>Alumno</th><th>Curso</th><th>Año lectivo</th><th>Sub-organización origen</th><th>Estado del pase</th></tr></thead><tbody>${mis.map(p=>`<tr><td>${p.fecha}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${luaEsc(instN(p.origenInstId))}</td><td style="font-weight:700">${p.estado.replace('Pendiente origen','Pendiente origen').replace('Rechazado','Rechazado destino')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin registros que mostrar</div>')
+      +`<button class="btn btn-success btn-sm" style="margin-top:12px" onclick="luaPaseNuevo()">Nuevo Pedido de Pase</button>`);
+  }
+  if(sub==='autorizacion'){
+    const pend=DB.pases.filter(p=>p.rol==='origen'&&p.estado==='Pendiente origen');
+    return tabs+luaCard('Pedidos de pase hacia otros establecimientos (pendientes de su autorización)',
+      pend.length?`<table><thead><tr><th></th><th>Pedido</th><th>Documento</th><th>Alumno</th><th>Fecha de solicitud</th><th>Curso</th><th>Año</th><th>Destino</th><th>Estado</th></tr></thead><tbody>${pend.map(p=>`<tr><td><input type="checkbox" class="lua-pase" value="${p.pedidoId}"></td><td>${p.pedidoId%100000}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${p.fecha}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${luaEsc(instN(p.destinoInstId))}</td><td>${p.estado}</td></tr>`).join('')}</tbody></table>
+        <div class="form-grid-2" style="margin-top:14px">${formGroup('Indique la acción que desea realizar',`<select class="form-input" id="lua-pase-acc">${luaOpts(['Autorizar Pases','Rechazar Pases'],'')}</select>`)}
+        ${formGroup('En caso de RECHAZO, indique el motivo',`<input class="form-input" id="lua-pase-mot">`)}</div>
+        <button class="btn btn-success" onclick="luaPaseResolver()">Grabar</button>`:'<div class="empty-msg">No hay pedidos de pase pendientes.</div>');
+  }
+  if(sub==='otorgados'){
+    const l=DB.pases.filter(p=>p.rol==='origen'&&p.estado==='Autorizado');
+    return tabs+luaCard('Detalle de pases otorgados',l.length?`<table><thead><tr><th>Pedido</th><th>Documento</th><th>Alumno</th><th>Fecha de solicitud</th><th>Curso</th><th>Año</th><th>Establecimiento destino</th><th>Estado</th></tr></thead><tbody>${l.map(p=>`<tr><td>${p.pedidoId%100000}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${p.fecha}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${luaEsc(instN(p.destinoInstId))}</td><td>${p.estado}</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin pases otorgados.</div>');
+  }
+  const l=DB.pases.filter(p=>p.estado==='Rechazado');
+  return tabs+luaCard('Detalle de pases rechazados',l.length?`<table><thead><tr><th>Documento</th><th>Alumno</th><th>Fecha</th><th>Curso</th><th>Año</th><th>Origen</th><th>Destino</th><th>Motivo del rechazo</th></tr></thead><tbody>${l.map(p=>`<tr><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${p.fecha}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${luaEsc(instN(p.origenInstId))}</td><td>${luaEsc(instN(p.destinoInstId))}</td><td>${luaEsc(p.motivoRechazo||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin pases rechazados.</div>');
+}
+function luaPaseNuevo(){
+  showModal('Nueva solicitud de pase',`<div class="form-grid-2">
+    ${formGroup('Documento del alumno',`<input class="form-input" id="lua-ps-dni" onchange="luaPaseBuscar()">`,true)}
+    ${formGroup('Apellido del alumno',`<input class="form-input" id="lua-ps-ape" readonly style="background:#f1f5f9">`)}
+    ${formGroup('Nombre del alumno',`<input class="form-input" id="lua-ps-nom" readonly style="background:#f1f5f9">`)}
+    ${formGroup('Sub-organización desde donde proviene',`<select class="form-input" id="lua-ps-org"><option value="">Seleccione</option></select>`,true)}
+    ${formGroup('Indique el curso para el pase',`<select class="form-input" id="lua-ps-curso">${luaCursoOpts('')}</select>`,true)}
+    ${formGroup('Indique el año para el pase',`<input class="form-input" type="number" id="lua-ps-anio" value="${luaAnio()}">`)}
+    ${formGroup('Indique el motivo del pase',`<input class="form-input" id="lua-ps-mot">`)}</div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-success" onclick="luaPaseGuardar()">Grabar</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`);
+}
+function luaPaseBuscar(){
+  const res=luaBuscarAlumnoGlobal(luaGet('lua-ps-dni')); window._luaPaseRes=res;
+  const sel=document.getElementById('lua-ps-org');
+  sel.innerHTML='<option value="">Seleccione</option>'+res.map((r,i)=>`<option value="${i}">${luaEsc(r.instNombre)}</option>`).join('');
+  { const x=res.length?luaApeNom(res[0].alumno):null; document.getElementById('lua-ps-ape').value=x?x.ape:'(no se encontró un alumno activo con ese documento en otra institución)'; document.getElementById('lua-ps-nom').value=x?x.nom:''; }
+  if(res.length===1) sel.value='0';
+}
+function luaPaseGuardar(){
+  const res=window._luaPaseRes||[], i=luaGet('lua-ps-org'), curso=luaGet('lua-ps-curso'), anio=parseInt(luaGet('lua-ps-anio'));
+  if(i===''||!res[i]||!curso){ alert('Completá documento, sub-organización de origen y curso.'); return; }
+  const r=res[i], al=r.alumno, miId=luaInstId();
+  const ao=luaAnioCurso(al.curso), ad=luaAnioCurso(curso);
+  if(ao&&ad&&(ad<ao||ad>ao+1)&&!confirm(`El curso solicitado (${curso}) no es correlativo al que cursa el alumno (${al.curso}). ¿Solicitar el pase igualmente?`)) return;
+  const base={pedidoId:luaId(),fecha:luaHoy(),alumnoDni:al.dni,alumnoNombre:al.nombre,alumnoId:al.id,origenInstId:r.instId,destinoInstId:miId,curso,anio,motivo:luaGet('lua-ps-mot'),estado:'Pendiente origen',motivoRechazo:''};
+  luaEnsure(INST_DATA[r.instId]);
+  DB.pases.push({...base,id:luaId(),rol:'destino'});
+  INST_DATA[r.instId].pases.push({...base,id:luaId(),rol:'origen'});
+  guardarEstado(); showToast('Solicitud de pase realizada correctamente.'); closeModal(); luaTab='pases'; luaSub.pases='solicitud'; navigate('lua');
+}
+function luaPaseResolver(){
+  const ids=luaChecked('lua-pase').map(Number), acc=luaGet('lua-pase-acc'), mot=luaGet('lua-pase-mot').trim();
+  if(!ids.length||!acc){ alert('Tildá los pedidos y elegí la acción.'); return; }
+  if(acc==='Rechazar Pases'&&!mot){ alert('Indicá el motivo del rechazo.'); return; }
+  ids.forEach(pid=>{
+    const po=DB.pases.find(p=>p.pedidoId===pid&&p.rol==='origen'); if(!po) return;
+    const dData=luaEnsure(INST_DATA[po.destinoInstId]); const pd=dData.pases.find(p=>p.pedidoId===pid&&p.rol==='destino');
+    if(acc==='Rechazar Pases'){ po.estado='Rechazado'; po.motivoRechazo=mot; if(pd){ pd.estado='Rechazado'; pd.motivoRechazo=mot; } return; }
+    po.estado='Autorizado'; if(pd) pd.estado='Autorizado';
+    const a=DB.alumnos.find(x=>x.id===po.alumnoId);
+    if(a){
+      const m=luaMovActual(a); if(m){ m.estado='En transición'; m.motivo='Pase a otro establecimiento'; }
+      a.estado='trasladado';
+      const copia={...a,id:luaId(),curso:po.curso,estado:'activo'};
+      dData.alumnos.push(copia);
+      dData.movimientosAlumnos.push({id:luaId(),alumnoId:copia.id,anio:po.anio||luaAnio(),fecha:luaHoy(),curso:po.curso,estado:'Cursando',motivo:'Pase desde otro establecimiento'});
+    }
+  });
+  guardarEstado(); showToast(acc==='Autorizar Pases'?'Pases autorizados.':'Pases rechazados.'); luaRefresh();
+}
+
+// ── 6. EGRESADOS ────────────────────────────────────────────────────
+function luaEgresados(){
+  const l=DB.alumnos.filter(a=>a.estado==='egresado');
+  return luaCard('Estudiantes egresados de la institución',l.length?`<table><thead><tr><th>Documento</th><th>Alumno</th><th>Último curso</th><th>Año de egreso</th><th></th></tr></thead><tbody>${l.map(a=>{const m=luaMovActual(a);return `<tr><td>${luaEsc(a.dni)}</td><td>${luaEsc(a.nombre)}</td><td>${luaEsc(a.curso||'')}</td><td>${m?m.anio:''}</td><td><button class="btn btn-ghost btn-sm" onclick="luaCertificado(${a.id},'egreso')">📄 Certificado</button></td></tr>`;}).join('')}</tbody></table>`:'<div class="empty-msg">No hay estudiantes egresados.</div>');
+}
+
+// ── 7. HISTORIAL DEL ALUMNADO ───────────────────────────────────────
+function luaHistorial(){
+  const q=(luaF.hq||'').toLowerCase();
+  const l=DB.alumnos.filter(a=>!q||a.nombre.toLowerCase().includes(q)||luaNorm(a.dni).includes(luaNorm(q))&&luaNorm(q));
+  return luaCard('Historial del alumnado — estado y movimientos escolares',
+    `<input class="search-input" placeholder="🔍 Buscar por nombre o documento..." value="${luaEsc(luaF.hq||'')}" onchange="luaSet('hq',this.value)" style="margin-bottom:12px">`
+    +(l.length?l.map(a=>{const m=luaMovActual(a);const movs=luaMovs(a);
+      return `<details style="border-bottom:1px solid #f1f5f9;padding:8px 0"><summary style="cursor:pointer;font-size:13px"><strong>${luaEsc(a.nombre)}</strong> · ${luaEsc(a.dni||'')} · ${luaEsc(a.curso||'—')} · <span style="font-weight:700">${m?m.estado:'—'}</span>${m&&m.motivo?' ('+luaEsc(m.motivo)+')':''}</summary>
+        <table style="margin:8px 0 4px"><thead><tr><th>Año lectivo</th><th>Fecha</th><th>Curso</th><th>Estado</th><th>Motivo de transición</th></tr></thead><tbody>${movs.map(x=>`<tr><td>${x.anio}</td><td>${fmtDate(x.fecha)}</td><td>${luaEsc(x.curso)}</td><td>${x.estado}</td><td>${luaEsc(x.motivo||'---')}</td></tr>`).join('')}</tbody></table></details>`;}).join(''):'<div class="empty-msg">Sin alumnos.</div>'));
+}
+
+// ── 8. HERRAMIENTAS CORRECTIVAS ─────────────────────────────────────
+function luaCorrectivas(){
+  const trans=DB.alumnos.filter(a=>luaMovActual(a)&&luaMovActual(a).estado==='En transición'&&a.estado==='activo'||['egresado','inactivo','trasladado'].includes(a.estado));
+  const alOpts=l=>'<option value="">— Seleccioná alumno —</option>'+l.map(a=>`<option value="${a.id}">${luaEsc(a.nombre)} — ${luaEsc(a.curso||'')}</option>`).join('');
+  return luaNota('Estas herramientas corrigen movimientos cargados por error. Quedan registradas en el historial del alumno.','warn')
+   +luaCard('Cambio de motivo de transición',`<div class="form-grid-2">${formGroup('Alumno en transición',`<select class="form-input" id="lua-ct-al">${alOpts(trans)}</select>`)}
+     ${formGroup('Nuevo motivo de transición',`<select class="form-input" id="lua-ct-mo">${luaOpts(LUA_MOTIVOS,'','— Seleccioná —')}</select>`)}</div><button class="btn btn-success btn-sm" onclick="luaCorrMotivo()">Grabar</button>`)
+   +luaCard('En transición por error / Reasignación por error',`<div style="font-size:12.5px;color:#64748b;margin-bottom:10px">Ubica al estudiante en el curso que cursa en el presente ciclo lectivo (incluso si no es correlativo al anterior).</div>
+     <div class="form-grid-2">${formGroup('Alumno',`<select class="form-input" id="lua-cr-al">${alOpts(DB.alumnos)}</select>`)}
+     ${formGroup('Curso al cual va a reasignar',`<select class="form-input" id="lua-cr-cu">${luaCursoOpts('')}</select>`)}</div><button class="btn btn-success btn-sm" onclick="luaCorrReasignar()">Grabar</button>`)
+   +luaCard('Elimina último movimiento',`<div style="font-size:12.5px;color:#64748b;margin-bottom:10px">Elimina el último movimiento escolar del alumno (sólo si tiene más de uno).</div>
+     <div class="form-grid-2">${formGroup('Alumno',`<select class="form-input" id="lua-ce-al">${alOpts(DB.alumnos.filter(a=>luaMovs(a).length>1))}</select>`)}</div><button class="btn btn-danger btn-sm" onclick="luaCorrEliminar()">Eliminar último movimiento</button>`);
+}
+function luaCorrMotivo(){
+  const a=DB.alumnos.find(x=>x.id===Number(luaGet('lua-ct-al'))), mo=luaGet('lua-ct-mo'); if(!a||!mo){ alert('Elegí alumno y motivo.'); return; }
+  if(a.estado!=='activo') a.estado='activo';
+  luaAplicarMotivo(a,mo); luaGuardar('Motivo de transición actualizado.');
+}
+function luaCorrReasignar(){
+  const a=DB.alumnos.find(x=>x.id===Number(luaGet('lua-cr-al'))), c=luaGet('lua-cr-cu'); if(!a||!c){ alert('Elegí alumno y curso.'); return; }
+  a.curso=c; a.estado='activo';
+  DB.movimientosAlumnos.push({id:luaId(),alumnoId:a.id,anio:luaAnio(),fecha:luaHoy(),curso:c,estado:'Cursando',motivo:'Reasignación por error'});
+  luaGuardar('Alumno reasignado: '+a.nombre+' → '+c);
+}
+function luaCorrEliminar(){
+  const a=DB.alumnos.find(x=>x.id===Number(luaGet('lua-ce-al'))); if(!a){ alert('Elegí un alumno.'); return; }
+  if(!confirm('¿Eliminar el último movimiento de '+a.nombre+'?')) return;
+  const ms=luaMovs(a); const ult=ms[ms.length-1]; const prev=ms[ms.length-2];
+  DB.movimientosAlumnos=DB.movimientosAlumnos.filter(m=>m.id!==ult.id);
+  if(prev){ a.curso=prev.curso; a.estado=prev.estado==='Cursando'?'activo':a.estado; }
+  luaGuardar('Último movimiento eliminado.');
+}
+
+// ── 9. BOLETINES ────────────────────────────────────────────────────
+function luaCerrada(curso,periodo,anio){ return DB.cierreNotas.some(c=>c.curso===curso&&c.periodo===periodo&&c.anio===anio&&c.cerrada); }
+function luaMateriasCurso(){
+  const s=new Set(DB.notas.map(n=>n.materia)); ['Matemática','Lengua','Historia','Geografía','Biología','Física','Química','Inglés','Educación Física'].forEach(m=>s.add(m));
+  DB.configBoletin[0].extras.forEach(e=>s.add(e.materia)); return [...s].sort();
+}
+function luaBoletines(){
+  const sub=luaSub.boletines;
+  const tabs=luaSubTabs('boletines',[['notas','Carga de notas finales'],['cierre','Cierre de notas por división'],['libreta','Libreta de calificaciones'],['consulta','Consulta de notas'],['adeudadas','Materias adeudadas'],['herr','Herramientas']]);
+  return tabs+({notas:luaBolNotas,cierre:luaBolCierre,libreta:luaBolLibreta,consulta:luaBolConsulta,adeudadas:luaBolAdeudadas,herr:luaBolHerr}[sub])();
+}
+function luaBolNotas(){
+  const c=luaF.bnC||'', m=luaF.bnM||'', p=luaF.bnP||'', y=luaAnio();
+  let html=luaCard('Carga de notas finales',`<div class="form-grid-2">
+    ${formGroup('División',luaSel('lua-bn-c',luaCursoOpts(c),c,"luaSet('bnC',this.value)"),true)}
+    ${formGroup('Asignatura',luaSel('lua-bn-m',luaOpts(luaMateriasCurso(),m,'Seleccione'),m,"luaSet('bnM',this.value)"),true)}
+    ${formGroup('Período evaluatorio',luaSel('lua-bn-p','<option value="">Seleccione</option>'+LUA_PERIODOS.map(([n,l])=>`<option value="${n}"${n===p?' selected':''}>${l}</option>`).join(''),p,"luaSet('bnP',this.value)"),true)}
+    ${formGroup('Año lectivo',`<input class="form-input" value="${y}" readonly>`)}</div>`);
+  if(!(c&&m&&p)) return html;
+  if(luaCerrada(c,p,y)) return html+luaNota('🔒 Las notas de esta división y período están <strong>cerradas</strong>. Los docentes no pueden modificarlas; reabrilas desde «Cierre de notas por división».','warn');
+  const al=DB.alumnos.filter(a=>a.curso===c&&luaCursando(a));
+  const filas=al.map(a=>{ const n=DB.notas.find(x=>x.alumnoId===a.id&&x.materia===m&&String(x.bimestre)===p);
+    return `<tr><td>${a.id%100000}</td><td>${luaEsc(a.dni)}</td><td>${luaEsc(a.nombre)}</td>
+    <td><select class="form-input lua-bn-n" data-al="${a.id}" style="width:90px">${'<option value=""></option>'+[1,2,3,4,5,6,7,8,9,10].map(v=>`<option value="${v}"${n&&n.nota===v?' selected':''}>${v}</option>`).join('')+'<option value="X">ELIMINAR</option>'}</select></td>
+    <td style="text-align:center"><input type="checkbox" class="lua-bn-a" data-al="${a.id}"${n&&n.ausente?' checked':''}></td>
+    <td><select class="form-input lua-bn-o" data-al="${a.id}" style="width:130px">${luaOpts(['','PPI','N/C','EX'],(n&&n.obs)||'')}</select></td></tr>`; }).join('');
+  return html+luaCard(`Carga de notas finales. ${luaEsc(c)} — ${(LUA_PERIODOS.find(x=>x[0]===p)||[0,p])[1]} — ${luaEsc(m)} — ${y}`,al.length?`<div style="overflow-x:auto"><table><thead><tr><th>Id</th><th>Documento</th><th>Nombre</th><th>Carga de nota</th><th>Ausente</th><th>Observación</th></tr></thead><tbody>${filas}</tbody></table></div><button class="btn btn-success" style="margin-top:12px" onclick="luaBolNotasGrabar()">Grabar</button>`:'<div class="empty-msg">No hay alumnos cursando en la división.</div>');
+}
+function luaBolNotasGrabar(){
+  const c=luaF.bnC, m=luaF.bnM, p=parseInt(luaF.bnP), y=luaAnio(); if(luaCerrada(c,String(p),y)){ alert('Notas cerradas.'); return; }
+  document.querySelectorAll('.lua-bn-n').forEach(sel=>{
+    const id=Number(sel.dataset.al), v=sel.value, aus=document.querySelector(`.lua-bn-a[data-al="${id}"]`).checked, obs=document.querySelector(`.lua-bn-o[data-al="${id}"]`).value;
+    const ex=DB.notas.find(x=>x.alumnoId===id&&x.materia===m&&x.bimestre===p);
+    if(v==='X'){ if(ex) DB.notas=DB.notas.filter(x=>x!==ex); return; }
+    if(v===''&&!aus&&!obs){ return; }
+    if(ex){ if(v!=='') ex.nota=parseInt(v); ex.ausente=aus; ex.obs=obs; ex.anio=y; }
+    else DB.notas.push({id:luaId(),alumnoId:id,materia:m,bimestre:p,nota:v===''?0:parseInt(v),ausente:aus,obs,anio:y});
+  });
+  luaGuardar('Notas grabadas correctamente.');
+}
+function luaBolCierre(){
+  const y=luaAnio();
+  const rows=DB.cursos.flatMap(c=>[1,2,3].map(p=>{ const cerr=luaCerrada(c.nombre,String(p),y); const n=DB.alumnos.filter(a=>a.curso===c.nombre&&luaCursando(a)).length;
+    return `<tr><td>${luaEsc(c.nombre)}</td><td>${p}° Trimestre</td><td>${n}</td><td style="font-weight:700;color:${cerr?'#166534':'#991b1b'}">${cerr?'Sí':'No'}</td><td><button class="btn btn-ghost btn-sm" onclick="luaCerrarNotas('${luaEsc(c.nombre)}','${p}')">${cerr?'🔓 Abrir':'🔒 Cerrar'} notas de la división</button></td></tr>`; }));
+  return luaNota('Una vez cerradas las notas, los docentes no podrán modificar las ya cargadas y los tutores podrán visualizarlas.')
+   +luaCard(`Cierre de notas por divisiones correspondiente al año ${y}`,`<table><thead><tr><th>División</th><th>Período</th><th>Cant. alumnos</th><th>Están cerradas las notas?</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
+}
+function luaCerrarNotas(curso,p){
+  const y=luaAnio(); let r=DB.cierreNotas.find(c=>c.curso===curso&&c.periodo===p&&c.anio===y);
+  if(!r){ r={id:luaId(),curso,periodo:p,anio:y,cerrada:false}; DB.cierreNotas.push(r); }
+  r.cerrada=!r.cerrada; luaGuardar(r.cerrada?'Notas cerradas correctamente.':'Notas reabiertas.');
+}
+// Períodos evaluatorios: 1-3 = trimestres, 11 = Diciembre, 12 = Marzo (recuperatorios)
+const LUA_PERIODOS=[['1','1° Trimestre'],['2','2° Trimestre'],['3','3° Trimestre'],['11','Diciembre'],['12','Marzo']];
+function luaPromedio(a,materia){
+  const get=p=>DB.notas.find(n=>n.alumnoId===a.id&&n.materia===materia&&n.bimestre===p);
+  const ns=[1,2,3].map(get), dic=get(11), mar=get(12);
+  const v=ns.filter(n=>n&&n.nota).map(n=>n.nota);
+  const finalN=v.length?v.reduce((x,y)=>x+y,0)/v.length:null;
+  const completo=v.length===3;
+  let defin=null;
+  if(completo){
+    if(finalN>=6) defin=finalN;
+    else if(dic&&dic.nota>=6) defin=dic.nota;
+    else if(mar&&mar.nota>=6) defin=mar.nota;
+  }
+  return {ns,dic,mar,final:finalN==null?'':finalN.toFixed(2),finalN,completo,defin,definTxt:defin==null?'':(Number.isInteger(defin)?String(defin):defin.toFixed(2))};
+}
+function luaTrimestreDeFecha(f){ const m=parseInt(String(f).slice(5,7)); return m>=9?3:m>=6?2:1; }
+function luaLibretaHTML(a){
+  const inst=luaInstNombre(), cfg=DB.configBoletin[0], y=luaAnio();
+  const c=DB.cursos.find(x=>x.nombre===a.curso)||{};
+  const ap=luaApeNom(a);
+  const mats=[...new Set(DB.notas.filter(n=>n.alumnoId===a.id&&!n.cicloAnterior).map(n=>n.materia))].sort((p,q)=>p.localeCompare(q));
+  const col=n=>n!=null&&n!==''&&Number(n)<6?'color:#b91c1c;font-weight:700':'font-weight:600';
+  const cel=n=>n?(n.nota?`<span style="${col(n.nota)}">${n.nota}</span>`:(n.ausente?'Aus.':'')):'';
+  const obs=n=>n&&n.obs?luaEsc(n.obs):'';
+  let aprob=0, desap=0, incompl=0;
+  const filas=mats.map(m=>{ const r=luaPromedio(a,m);
+    if(!r.completo) incompl++; else if(r.defin!=null) aprob++; else desap++;
+    return `<tr><td class="l">${luaEsc(m)}</td>${r.ns.map(n=>`<td>${cel(n)}</td><td class="o">${obs(n)}</td>`).join('')}
+      <td style="${col(r.final)}">${r.final}</td><td>${cel(r.dic)}</td><td>${cel(r.mar)}</td>
+      <td class="d" style="${col(r.definTxt||r.final)}">${r.definTxt}</td></tr>`; }).join('');
+  const dias=DB.diasClase.find(d=>d.anio===y)||{};
+  const faltas=[0,0,0,0]; DB.asistencias.filter(x=>x.alumnoId===a.id&&x.estado==='ausente'&&x.estadoInasistencia!=='Anulada'&&String(x.fecha).startsWith(String(y))).forEach(x=>{ const q=x.cantidad==null?1:x.cantidad; faltas[luaTrimestreDeFecha(x.fecha)-1]+=q; });
+  const adeu=DB.materiasAdeudadas.filter(x=>x.alumnoId===a.id&&!x.aprobada);
+  const extras=cfg.extras.filter(e=>e.curso===a.curso);
+  const condicion=!mats.length?'Sin calificaciones cargadas':incompl?'En curso (faltan calificaciones)':desap?`Con ${desap} asignatura${desap>1?'s':''} a recuperar`:'Aprobó todas las asignaturas';
+  const condColor=!mats.length||incompl?'#475569':desap?'#b91c1c':'#166534';
+  const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']; const hoy=new Date();
+  return `<div class="lib">
+   <div class="lib-head">
+     <div class="lib-escudo">ER</div>
+     <div style="flex:1;text-align:center"><div style="font-size:11px;letter-spacing:1px">PROVINCIA DE ENTRE RÍOS</div><div style="font-size:11px">CONSEJO GENERAL DE EDUCACIÓN</div><div style="font-size:19px;font-weight:800;margin-top:4px;letter-spacing:.5px">LIBRETA DE CALIFICACIONES</div><div style="font-size:11px">Nivel Secundario · Ciclo lectivo ${y}</div></div>
+     <div style="width:60px"></div>
+   </div>
+   <table class="lib-datos"><tr>
+     <td><span>Establecimiento</span><strong>${luaEsc(inst.nombre)}</strong></td><td><span>CUE</span><strong>${luaEsc(inst.cue||'—')}</strong></td><td><span>Localidad</span><strong>${luaEsc(inst.localidad||'')}</strong></td></tr><tr>
+     <td><span>Apellido y nombre</span><strong>${luaEsc(ap.ape)}${ap.nom?', '+luaEsc(ap.nom):''}</strong></td><td><span>Documento</span><strong>${luaEsc(a.dni||'—')}</strong></td><td><span>Curso / turno</span><strong>${luaEsc(a.curso||'—')}${c.turno&&!(a.curso||'').includes(c.turno)?' · '+luaEsc(c.turno):''}</strong></td></tr></table>
+   <table class="lib-notas"><thead>
+     <tr><th rowspan="2" class="l">Asignatura</th><th colspan="2">1er. Trimestre</th><th colspan="2">2do. Trimestre</th><th colspan="2">3er. Trimestre</th><th rowspan="2">Calif.<br>final</th><th colspan="2">Evaluación</th><th rowspan="2">Calif.<br>definitiva</th></tr>
+     <tr><th>Nota</th><th>Obs.</th><th>Nota</th><th>Obs.</th><th>Nota</th><th>Obs.</th><th>Diciembre</th><th>Marzo</th></tr></thead>
+     <tbody>${filas||'<tr><td colspan="11" style="padding:18px;color:#64748b">Sin calificaciones cargadas</td></tr>'}</tbody></table>
+   ${extras.length?`<div class="lib-nota">Espacios extracurriculares: ${extras.map(e=>luaEsc(e.materia)).join(', ')}</div>`:''}
+   <div class="lib-pie">
+     <table class="lib-asis"><thead><tr><th class="l">Asistencia</th><th>1er. Trim.</th><th>2do. Trim.</th><th>3er. Trim.</th><th>Total</th></tr></thead><tbody>
+       <tr><td class="l">Días de clase</td><td>${dias.p1||'—'}</td><td>${dias.p2||'—'}</td><td>${dias.p3||'—'}</td><td>${(dias.p1||0)+(dias.p2||0)+(dias.p3||0)||'—'}</td></tr>
+       <tr><td class="l">Inasistencias</td><td>${faltas[0]}</td><td>${faltas[1]}</td><td>${faltas[2]}</td><td>${faltas[0]+faltas[1]+faltas[2]}</td></tr></tbody></table>
+     <div class="lib-cond"><div><span>Condición</span><strong style="color:${condColor}">${condicion}</strong></div>
+       ${adeu.length?`<div><span>Materias adeudadas</span><strong>${adeu.map(x=>luaEsc(x.materia)+' ('+x.anio+')').join(', ')}</strong></div>`:''}
+       ${cfg.conceptos?`<div><span>Concepto</span><strong>______________________________</strong></div>`:''}</div>
+   </div>
+   ${cfg.observaciones?`<div class="lib-obs"><span>Observaciones</span><div></div><div></div></div>`:''}
+   <div class="lib-firmas"><div>Director/a</div><div>Docente a cargo</div><div>Padre / madre / tutor</div></div>
+   <div class="lib-fecha">${luaEsc(inst.localidad||'')}, ${hoy.getDate()} de ${meses[hoy.getMonth()]} de ${hoy.getFullYear()}</div>
+  </div>`;
+}
+const LUA_LIB_CSS=`
+.lib{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:900px;margin:0 auto 24px;padding:6px 4px;page-break-after:always;break-after:page}
+.lib:last-child{page-break-after:auto;break-after:auto}
+.lib-head{display:flex;align-items:center;gap:12px;border-bottom:3px double #1a3a5c;padding-bottom:10px;margin-bottom:12px}
+.lib-escudo{width:56px;height:56px;border-radius:50%;background:#111;color:#fff;font-weight:900;font-size:20px;display:flex;align-items:center;justify-content:center}
+.lib table{border-collapse:collapse;width:100%}
+.lib th,.lib td{border:1px solid #6b7280;padding:5px 6px;font-size:12px;text-align:center}
+.lib th{background:#e8eef5;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.lib .l{text-align:left}
+.lib td.o{font-size:10px;color:#475569;min-width:34px}
+.lib td.d{background:#f1f5f9;font-weight:800;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.lib-datos{margin-bottom:12px}
+.lib-datos td{text-align:left;background:#f8fafc;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.lib-datos span{display:block;font-size:9.5px;color:#64748b;text-transform:uppercase;letter-spacing:.4px}
+.lib-datos strong{font-size:13px}
+.lib-nota{font-size:11px;color:#475569;margin:6px 0 0}
+.lib-pie{display:flex;gap:14px;margin-top:14px;align-items:flex-start}
+.lib-asis{width:52%!important}
+.lib-cond{flex:1;border:1px solid #6b7280;padding:8px 10px;font-size:12px}
+.lib-cond div{margin-bottom:6px}.lib-cond span{display:block;font-size:9.5px;color:#64748b;text-transform:uppercase}
+.lib-obs{margin-top:12px;border:1px solid #6b7280;padding:6px 10px;font-size:10px;color:#64748b;text-transform:uppercase}
+.lib-obs div{border-bottom:1px solid #cbd5e1;height:22px}
+.lib-firmas{display:flex;justify-content:space-around;margin-top:52px}
+.lib-firmas div{border-top:1px solid #111;padding-top:5px;width:28%;text-align:center;font-size:11px}
+.lib-fecha{text-align:right;font-size:11px;color:#475569;margin-top:16px}
+`;
+function luaBolLibreta(){
+  const c=luaF.lbC||'';
+  let html=luaCard('Libreta de calificaciones',formGroup('División',luaSel('lua-lb-c',luaCursoOpts(c),c,"luaSet('lbC',this.value)")));
+  if(!c) return html;
+  const al=DB.alumnos.filter(a=>a.curso===c&&luaCursando(a));
+  return html+luaCard(`Boletines — ${luaEsc(c)} — ${luaAnio()}`,al.length?`<table><thead><tr><th><input type="checkbox" title="Seleccionar todos" onchange="document.querySelectorAll('.lua-lb').forEach(x=>x.checked=this.checked)"></th><th>Id</th><th>Documento</th><th>Alumno</th><th></th></tr></thead><tbody>${al.map(a=>`<tr><td><input type="checkbox" class="lua-lb" value="${a.id}"></td><td>${a.id%100000}</td><td>${luaEsc(a.dni)}</td><td>${luaEsc(a.nombre)}</td><td><button class="btn btn-ghost btn-sm" onclick="luaLibretaVer([${a.id}])">👁️ Ver / imprimir</button></td></tr>`).join('')}</tbody></table><button class="btn btn-primary" style="margin-top:12px" onclick="luaImprimeBoletines()">🖨️ Imprimir seleccionados</button>`:'<div class="empty-msg">Sin alumnos.</div>');
+}
+function luaLibretaVer(ids){
+  const html=ids.map(id=>luaLibretaHTML(DB.alumnos.find(a=>a.id===id))).join('');
+  luaImprimir('Libreta de calificaciones'+(ids.length>1?' ('+ids.length+' alumnos)':''),html,{css:LUA_LIB_CSS,orient:'landscape'});
+}
+function luaImprimeBoletines(){
+  const ids=luaChecked('lua-lb').map(Number); if(!ids.length){ alert('Tildá al menos un alumno (o usá «Ver / imprimir» en la fila).'); return; }
+  luaLibretaVer(ids);
+}
+function luaBolConsulta(){
+  const fc=luaF.qc||'', fd=luaF.qd||'', fa=(luaF.qa||'').toLowerCase();
+  const filas=[];
+  DB.alumnos.forEach(a=>{ if(fc&&a.curso!==fc) return; if(fd&&!luaNorm(a.dni).includes(luaNorm(fd))) return; if(fa&&!a.nombre.toLowerCase().includes(fa)) return;
+    [...new Set(DB.notas.filter(n=>n.alumnoId===a.id).map(n=>n.materia))].forEach(m=>{ const r=luaPromedio(a,m);
+      filas.push(`<tr><td>${luaEsc(a.curso||'')}</td><td>${luaEsc(a.dni||'')}</td><td>${luaEsc(a.nombre)}</td><td>${luaAnio()}</td><td>${luaEsc(m)}</td>${r.ns.map(n=>`<td>${n?(n.nota||(n.ausente?'Aus.':'')):''}</td>`).join('')}</tr>`); }); });
+  return luaCard('Consulta de notas',`<div class="form-grid-3" style="margin-bottom:12px">
+    ${luaSel('lua-qc',luaCursoOpts(fc,'Todos los cursos'),fc,"luaSet('qc',this.value)")}
+    <input class="form-input" placeholder="DNI" value="${luaEsc(luaF.qd||'')}" onchange="luaSet('qd',this.value)">
+    <input class="form-input" placeholder="Alumno" value="${luaEsc(luaF.qa||'')}" onchange="luaSet('qa',this.value)"></div>`
+    +(filas.length?`<div style="overflow-x:auto"><table><thead><tr><th>Curso</th><th>Documento</th><th>Alumno</th><th>Año</th><th>Asignatura</th><th>Nota 1er Trim.</th><th>2do Trim.</th><th>3er Trim.</th></tr></thead><tbody>${filas.join('')}</tbody></table></div>`:'<div class="empty-msg">Sin notas para mostrar.</div>'));
+}
+function luaBolAdeudadas(){
+  const sub=luaF.adSub||'nueva';
+  const tabs=`<div class="tabs" style="margin-bottom:14px">${[['nueva','Nuevas Materias Adeudadas'],['act','Actualización de Materias Adeudadas'],['cons','Consulta de Materias Adeudadas']].map(([i,l])=>`<button class="tab-btn${sub===i?' active':''}" onclick="luaSet('adSub','${i}')">${l}</button>`).join('')}</div>`;
+  if(sub==='nueva'){
+    const c=luaF.adC||'', m=luaF.adM||'';
+    let h=luaCard('Carga de materias adeudadas',`<div class="form-grid-3">${formGroup('División',luaSel('lua-ad-c',luaCursoOpts(c),c,"luaSet('adC',this.value)"))}${formGroup('Asignatura',luaSel('lua-ad-m',luaOpts(luaMateriasCurso(),m,'Seleccione'),m,"luaSet('adM',this.value)"))}${formGroup('Año lectivo',`<input class="form-input" value="${luaAnio()-1}" id="lua-ad-y">`)}</div>`);
+    if(c&&m){ const al=DB.alumnos.filter(a=>a.curso===c); h+=luaCard(`Marque los alumnos que ADEUDAN: ${luaEsc(m)} de ${luaEsc(c)}`,al.length?`<table><thead><tr><th></th><th>Id</th><th>Documento</th><th>Nombre</th></tr></thead><tbody>${al.map(a=>`<tr><td><input type="checkbox" class="lua-ad" value="${a.id}"${DB.materiasAdeudadas.some(x=>x.alumnoId===a.id&&x.materia===m&&!x.aprobada)?' checked disabled':''}></td><td>${a.id%100000}</td><td>${luaEsc(a.dni)}</td><td>${luaEsc(a.nombre)}</td></tr>`).join('')}</tbody></table><button class="btn btn-success" style="margin-top:12px" onclick="luaAdGrabar()">Grabar</button>`:'<div class="empty-msg">Sin alumnos.</div>'); }
+    return tabs+h;
+  }
+  if(sub==='act'){
+    const l=DB.materiasAdeudadas;
+    return tabs+luaCard('Actualización de materias adeudadas (cuando el estudiante aprueba la materia)',l.length?`<table><thead><tr><th>Alumno</th><th>Curso</th><th>Año</th><th>Asignatura</th><th>Fecha de aprobación</th><th>Nota</th><th></th></tr></thead><tbody>${l.map(x=>{const a=DB.alumnos.find(y=>y.id===x.alumnoId)||{nombre:'—'};return `<tr><td>${luaEsc(a.nombre)}</td><td>${luaEsc(x.curso)}</td><td>${x.anio}</td><td>${luaEsc(x.materia)}</td><td><input type="date" class="form-input" id="lua-ad-f-${x.id}" value="${x.fechaAprob||''}"></td><td><input type="number" min="1" max="10" class="form-input" style="width:80px" id="lua-ad-n-${x.id}" value="${x.nota||''}"></td><td style="white-space:nowrap"><button class="btn btn-success btn-sm" onclick="luaAdActualizar(${x.id})">Grabar</button> <button class="btn btn-danger btn-sm" onclick="luaAdEliminar(${x.id})">Eliminar</button></td></tr>`;}).join('')}</tbody></table>`:'<div class="empty-msg">No hay materias adeudadas cargadas.</div>');
+  }
+  const l=DB.materiasAdeudadas;
+  return tabs+luaCard('Consulta de materias adeudadas',l.length?`<table><thead><tr><th>Alumno</th><th>Curso</th><th>Asignatura</th><th>Año</th><th>Estado</th></tr></thead><tbody>${l.map(x=>{const a=DB.alumnos.find(y=>y.id===x.alumnoId)||{nombre:'—'};return `<tr><td>${luaEsc(a.nombre)}</td><td>${luaEsc(x.curso)}</td><td>${luaEsc(x.materia)}</td><td>${x.anio}</td><td style="font-weight:700;color:${x.aprobada?'#166534':'#991b1b'}">${x.aprobada?'Aprobada '+fmtDate(x.fechaAprob)+(x.nota?' ('+x.nota+')':''):'Adeuda'}</td></tr>`;}).join('')}</tbody></table>`:'<div class="empty-msg">Sin materias adeudadas.</div>');
+}
+function luaAdGrabar(){
+  const ids=luaChecked('lua-ad').map(Number); if(!ids.length){ alert('Tildá los alumnos.'); return; }
+  const y=parseInt(luaGet('lua-ad-y'))||luaAnio()-1;
+  ids.forEach(id=>DB.materiasAdeudadas.push({id:luaId(),alumnoId:id,curso:luaF.adC,materia:luaF.adM,anio:y,aprobada:false,fechaAprob:'',nota:''}));
+  luaGuardar('Materias adeudadas registradas. Quedarán visibles en la libreta.');
+}
+function luaAdActualizar(id){
+  const x=DB.materiasAdeudadas.find(m=>m.id===id), f=luaGet('lua-ad-f-'+id), n=luaGet('lua-ad-n-'+id);
+  if(!f||!n){ alert('Indicá la fecha en que aprobó la asignatura y la nota.'); return; }
+  x.aprobada=true; x.fechaAprob=f; x.nota=parseInt(n); luaGuardar('Materia adeudada actualizada.');
+}
+function luaAdEliminar(id){ if(!confirm('¿Eliminar este registro?')) return; DB.materiasAdeudadas=DB.materiasAdeudadas.filter(m=>m.id!==id); luaGuardar('Registro eliminado.'); }
+
+function luaBolHerr(){
+  const cfg=DB.configBoletin[0], y=luaAnio();
+  const dc=DB.diasClase.find(d=>d.anio===y)||{p1:'',p2:'',p3:''};
+  return luaCard('Asignaturas extracurriculares (fuera del plan de estudio)',`<div class="form-grid-3">${formGroup('Curso / división',`<select class="form-input" id="lua-ex-c">${luaCursoOpts('')}</select>`)}${formGroup('Asignatura',`<input class="form-input" id="lua-ex-m">`)}<div style="align-self:end"><button class="btn btn-success btn-sm" onclick="luaExtraAdd()">➕ Agregar</button></div></div>`
+      +(cfg.extras.length?`<table style="margin-top:10px"><thead><tr><th>Curso</th><th>Asignatura</th><th>Vigente</th><th></th></tr></thead><tbody>${cfg.extras.map((e,i)=>`<tr><td>${luaEsc(e.curso)}</td><td>${luaEsc(e.materia)}</td><td>S</td><td><button class="btn btn-danger btn-sm" onclick="luaExtraDel(${i})">Quitar</button></td></tr>`).join('')}</tbody></table>`:''))
+   +luaCard('Definiciones generales (impresión del boletín)',`<label style="display:block;margin-bottom:8px"><input type="checkbox" id="lua-df-o"${cfg.observaciones?' checked':''}> Incluir observaciones al final del boletín</label><label style="display:block;margin-bottom:10px"><input type="checkbox" id="lua-df-c"${cfg.conceptos?' checked':''}> Incluir conceptos en el boletín</label><button class="btn btn-success btn-sm" onclick="luaDefGuardar()">Guardar</button>`)
+   +luaCard('Días de clase por cada año lectivo',`<div class="form-grid-3">${formGroup('Año lectivo',`<input class="form-input" id="lua-dc-y" value="${y}">`)}${formGroup('Días de clase (período 1)',`<input class="form-input" type="number" id="lua-dc-1" value="${dc.p1}">`)}${formGroup('Días de clase (período 2)',`<input class="form-input" type="number" id="lua-dc-2" value="${dc.p2}">`)}${formGroup('Días de clase (período 3)',`<input class="form-input" type="number" id="lua-dc-3" value="${dc.p3}">`)}</div><button class="btn btn-success btn-sm" onclick="luaDiasGuardar()">Guardar</button>`)
+   +luaCard('Autorización a docentes para boletines (carga de notas finales)',DB.docentes.length?`<table><thead><tr><th>Agente</th><th>Autorizado</th><th></th></tr></thead><tbody>${DB.docentes.map(d=>`<tr><td>${luaEsc(d.nombre)}</td><td style="font-weight:700;color:${d.autorizaBoletin!==false?'#166534':'#991b1b'}">${d.autorizaBoletin!==false?'SÍ':'NO'}</td><td><button class="btn btn-ghost btn-sm" onclick="luaAutorizar(${d.id})">${d.autorizaBoletin!==false?'Quitar autorización':'Autorizar'}</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin docentes.</div>')
+   +luaCard('Carga de notas del ciclo anterior (años anteriores no ingresados en tiempo y forma)',`<div class="form-grid-3">${formGroup('Nro. de documento del alumno',`<input class="form-input" id="lua-ca-d">`)}${formGroup('División',`<input class="form-input" id="lua-ca-c" placeholder="ej. 2°A">`)}${formGroup('Asignatura',`<input class="form-input" id="lua-ca-m">`)}${formGroup('Período evaluatorio',`<select class="form-input" id="lua-ca-p">${luaOpts(['1','2','3'],'')}</select>`)}${formGroup('Año lectivo',`<input class="form-input" type="number" id="lua-ca-y" value="${y-1}">`)}${formGroup('Nota',`<input class="form-input" type="number" min="1" max="10" id="lua-ca-n">`)}</div><button class="btn btn-success btn-sm" onclick="luaCicloAnterior()">Grabar</button>`);
+}
+function luaExtraAdd(){ const c=luaGet('lua-ex-c'), m=luaGet('lua-ex-m').trim(); if(!c||!m){ alert('Elegí curso e ingresá la asignatura.'); return; } DB.configBoletin[0].extras.push({curso:c,materia:m}); luaGuardar('Asignatura extracurricular agregada.'); }
+function luaExtraDel(i){ DB.configBoletin[0].extras.splice(i,1); luaGuardar(); }
+function luaDefGuardar(){ const c=DB.configBoletin[0]; c.observaciones=document.getElementById('lua-df-o').checked; c.conceptos=document.getElementById('lua-df-c').checked; luaGuardar('Definiciones guardadas.'); }
+function luaDiasGuardar(){ const y=parseInt(luaGet('lua-dc-y')); if(!y){ alert('Año lectivo requerido.'); return; } let r=DB.diasClase.find(d=>d.anio===y); if(!r){ r={id:luaId(),anio:y}; DB.diasClase.push(r); } r.p1=parseInt(luaGet('lua-dc-1'))||0; r.p2=parseInt(luaGet('lua-dc-2'))||0; r.p3=parseInt(luaGet('lua-dc-3'))||0; luaGuardar('Días de clase guardados.'); }
+function luaAutorizar(id){ const d=DB.docentes.find(x=>x.id===id); d.autorizaBoletin=(d.autorizaBoletin===false); luaGuardar(d.autorizaBoletin?'Se le AGREGÓ al AGENTE el permiso de cargar Notas en el Boletín':'Se le QUITÓ al AGENTE el permiso de cargar Notas en el Boletín'); }
+function luaCicloAnterior(){
+  const a=DB.alumnos.find(x=>luaNorm(x.dni)===luaNorm(luaGet('lua-ca-d'))), m=luaGet('lua-ca-m').trim(), p=parseInt(luaGet('lua-ca-p')), y=parseInt(luaGet('lua-ca-y')), n=parseInt(luaGet('lua-ca-n'));
+  if(!a){ alert('No se encontró un alumno con ese documento.'); return; } if(!m||!p||!y||!(n>=1&&n<=10)){ alert('Completá todos los datos (nota de 1 a 10).'); return; }
+  const ex=DB.notas.find(x=>x.alumnoId===a.id&&x.materia===m&&x.bimestre===p&&x.anio===y);
+  if(ex) ex.nota=n; else DB.notas.push({id:luaId(),alumnoId:a.id,materia:m,bimestre:p,nota:n,anio:y,cicloAnterior:true});
+  luaGuardar('Nota del ciclo anterior grabada para '+a.nombre+'.');
+}
+
+// ── 10. INASISTENCIAS ───────────────────────────────────────────────
+function luaFaltas(a){ return DB.asistencias.filter(x=>x.alumnoId===a.id&&x.estado==='ausente'&&x.estadoInasistencia!=='Anulada').reduce((s,x)=>s+(x.cantidad==null?1:x.cantidad),0); }
+function luaInasist(){
+  const sub=luaSub.inasist;
+  const tabs=luaSubTabs('inasist',[['carga','Carga de inasistencias'],['modif','Modificación de inasistencias'],['consulta','Consulta de inasistencias']]);
+  if(sub==='carga'){
+    const c=luaF.iaC||'', f=luaF.iaF||luaHoy();
+    let h=luaCard('Carga de inasistencias',`<div class="form-grid-3">${formGroup('División',luaSel('lua-ia-c',luaCursoOpts(c),c,"luaSet('iaC',this.value)"),true)}${formGroup('Fecha de la inasistencia',`<input type="date" class="form-input" id="lua-ia-f" value="${f}" onchange="luaSet('iaF',this.value)">`,true)}${formGroup('Año lectivo',`<input class="form-input" readonly value="${luaAnio()}">`)}</div>`);
+    if(!c) return tabs+h;
+    const al=DB.alumnos.filter(a=>a.curso===c&&luaCursando(a));
+    return tabs+h+luaCard(`Alumnos de ${luaEsc(c)} — ${fmtDate(f)}`,al.length?`<table><thead><tr><th>Alumno</th><th>Tipo de inasistencia</th><th>Cantidad de faltas</th></tr></thead><tbody>${al.map(a=>{const ya=DB.asistencias.find(x=>x.alumnoId===a.id&&x.fecha===f&&x.estado==='ausente');return `<tr><td>${luaEsc(a.nombre)}</td><td><select class="form-input lua-ia-t" data-al="${a.id}">${luaOpts(['','Falta','Llegada tarde','Retiro anticipado'],ya?(ya.tipo||'Falta'):'')}</select></td><td><select class="form-input lua-ia-q" data-al="${a.id}" style="width:90px">${[1,0.5,0.25,2].map(q=>`<option value="${q}"${ya&&ya.cantidad===q?' selected':''}>${q}</option>`).join('')}</select></td></tr>`;}).join('')}</tbody></table><button class="btn btn-success" style="margin-top:12px" onclick="luaIaGrabar()">Grabar</button>`:'<div class="empty-msg">Sin alumnos.</div>');
+  }
+  if(sub==='modif'){
+    const id=Number(luaF.imA)||0, a=DB.alumnos.find(x=>x.id===id);
+    let h=luaCard('Modificación de inasistencias',formGroup('Alumno',luaSel('lua-im-a',`<option value="">— Seleccioná —</option>`+DB.alumnos.map(x=>`<option value="${x.id}"${x.id===id?' selected':''}>${luaEsc(x.nombre)} — ${luaEsc(x.curso||'')}</option>`).join(''),'',"luaSet('imA',this.value)")));
+    if(!a) return tabs+h;
+    const l=DB.asistencias.filter(x=>x.alumnoId===id&&x.estado==='ausente').sort((x,y)=>y.fecha.localeCompare(x.fecha));
+    return tabs+h+luaCard(`Inasistencias de ${luaEsc(a.nombre)}`,l.length?l.map(x=>`<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:8px"><div class="form-grid-3">
+      ${formGroup('Fecha',`<input type="date" class="form-input" id="lua-im-f-${x.id}" value="${x.fecha}">`)}
+      ${formGroup('Tipo',`<select class="form-input" id="lua-im-t-${x.id}">${luaOpts(['Falta','Llegada tarde','Retiro anticipado'],x.tipo||'Falta')}</select>`)}
+      ${formGroup('Cantidad de falta',`<select class="form-input" id="lua-im-q-${x.id}">${[1,0.5,0.25,2].map(q=>`<option value="${q}"${(x.cantidad==null?1:x.cantidad)===q?' selected':''}>${q}</option>`).join('')}<option value="ELIMINAR">ELIMINAR la Falta</option></select>`)}
+      ${formGroup('Estado',`<select class="form-input" id="lua-im-e-${x.id}">${luaOpts(['Efectiva','Anulada'],x.estadoInasistencia||'Efectiva')}</select>`)}
+      ${formGroup('¿Está justificada?',`<select class="form-input" id="lua-im-j-${x.id}">${luaOpts(['NO','SI'],x.justificada?'SI':'NO')}</select>`)}
+      ${formGroup('Justificación',`<input class="form-input" id="lua-im-m-${x.id}" value="${luaEsc(x.justificacion||'')}">`)}</div>
+      <button class="btn btn-success btn-sm" onclick="luaImGrabar(${x.id})">Grabar</button></div>`).join(''):'<div class="empty-msg">El alumno no tiene inasistencias.</div>');
+  }
+  const l=DB.alumnos.map(a=>({a,n:luaFaltas(a)})).filter(x=>x.n>0).sort((x,y)=>y.n-x.n);
+  return tabs+luaCard('Consulta de inasistencias — cantidad de faltas por estudiante',l.length?l.map(({a,n})=>{const det=DB.asistencias.filter(x=>x.alumnoId===a.id&&x.estado==='ausente').sort((x,y)=>y.fecha.localeCompare(x.fecha));
+    return `<details style="border-bottom:1px solid #f1f5f9;padding:7px 0"><summary style="cursor:pointer;font-size:13px"><strong>${luaEsc(a.nombre)}</strong> · ${luaEsc(a.curso||'')} · <span style="font-weight:800;color:#991b1b">${n} falta${n!==1?'s':''}</span></summary><table style="margin-top:6px"><thead><tr><th>Fecha</th><th>Tipo</th><th>Cantidad</th><th>Justificada</th><th>Estado</th></tr></thead><tbody>${det.map(x=>`<tr><td>${fmtDate(x.fecha)}</td><td>${luaEsc(x.tipo||'Falta')}</td><td>${x.cantidad==null?1:x.cantidad}</td><td>${x.justificada?'SI':'NO'}</td><td>${luaEsc(x.estadoInasistencia||'Efectiva')}</td></tr>`).join('')}</tbody></table></details>`;}).join(''):'<div class="empty-msg">No hay inasistencias cargadas.</div>');
+}
+function luaIaGrabar(){
+  const f=luaF.iaF||luaHoy(); let n=0;
+  document.querySelectorAll('.lua-ia-t').forEach(s=>{ const id=Number(s.dataset.al), t=s.value; const q=parseFloat(document.querySelector(`.lua-ia-q[data-al="${id}"]`).value);
+    const ex=DB.asistencias.find(x=>x.alumnoId===id&&x.fecha===f);
+    if(!t){ if(ex&&ex.origen==='LUA'){ DB.asistencias=DB.asistencias.filter(x=>x!==ex); } return; }
+    if(ex){ ex.estado='ausente'; ex.tipo=t; ex.cantidad=q; ex.origen='LUA'; ex.estadoInasistencia=ex.estadoInasistencia||'Efectiva'; }
+    else DB.asistencias.push({id:luaId(),alumnoId:id,fecha:f,estado:'ausente',tipo:t,cantidad:q,justificada:false,justificacion:'',estadoInasistencia:'Efectiva',origen:'LUA'});
+    n++; });
+  luaGuardar(n+' inasistencia(s) grabadas.');
+}
+function luaImGrabar(id){
+  const x=DB.asistencias.find(a=>a.id===id); if(!x) return;
+  const q=luaGet('lua-im-q-'+id);
+  if(q==='ELIMINAR'){ if(!confirm('¿Eliminar la falta?')) return; DB.asistencias=DB.asistencias.filter(a=>a.id!==id); luaGuardar('Falta eliminada.'); return; }
+  x.fecha=luaGet('lua-im-f-'+id)||x.fecha; x.tipo=luaGet('lua-im-t-'+id); x.cantidad=parseFloat(q); x.estadoInasistencia=luaGet('lua-im-e-'+id); x.justificada=luaGet('lua-im-j-'+id)==='SI'; x.justificacion=luaGet('lua-im-m-'+id);
+  luaGuardar('Inasistencia modificada.');
+}
+
+// ── 11. SERVICIOS ESCOLARES ─────────────────────────────────────────
+function luaServicios(){
+  const id=Number(luaF.svA)||0, a=DB.alumnos.find(x=>x.id===id), cat=luaF.svC||'Servicio extraordinario';
+  let h=luaNota('Servicios extraordinarios (apoyo escolar, asistencia psicopedagógica, copa de leche), entrevistas con tutores, becas y préstamos, y transporte escolar.')
+   +luaCard('Servicios escolares del alumno',formGroup('Alumno',luaSel('lua-sv-a',`<option value="">— Seleccioná —</option>`+DB.alumnos.map(x=>`<option value="${x.id}"${x.id===id?' selected':''}>${luaEsc(x.nombre)} — ${luaEsc(x.curso||'')}</option>`).join(''),'',"luaSet('svA',this.value)")));
+  if(!a) return h;
+  const lst=DB.serviciosAlumno.filter(s=>s.alumnoId===id);
+  const lbl={ 'Servicio extraordinario':['Tipo de servicio','Sub-organización / lugar'], 'Entrevista':['Motivo de la entrevista','Con quién / resultado'], 'Beca / Préstamo':['Tipo de beca o préstamo','Monto y cuenta bancaria'], 'Transporte':['Tipo de transporte','Recorrido / empresa'] }[cat];
+  h+=luaCard(`Cargados para ${luaEsc(a.nombre)}`,lst.length?`<table><thead><tr><th>Categoría</th><th>Descripción</th><th>Detalle</th><th>Desde</th><th>Hasta</th><th>Observaciones</th><th></th></tr></thead><tbody>${lst.map(s=>`<tr><td>${luaEsc(s.categoria)}</td><td>${luaEsc(s.tipo)}</td><td>${luaEsc(s.detalle||'')}</td><td>${fmtDate(s.desde)}</td><td>${fmtDate(s.hasta)}</td><td>${luaEsc(s.obs||'')}</td><td><button class="btn btn-danger btn-sm" onclick="luaSvDel(${s.id})">Quitar</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin servicios cargados.</div>');
+  h+=luaCard('Agregar',`<div class="form-grid-2">${formGroup('Categoría',luaSel('lua-sv-cat',luaOpts(['Servicio extraordinario','Entrevista','Beca / Préstamo','Transporte'],cat),'',"luaSet('svC',this.value)"))}
+    ${formGroup(lbl[0],`<input class="form-input" id="lua-sv-t">`,true)}${formGroup(lbl[1],`<input class="form-input" id="lua-sv-d">`)}
+    ${formGroup('Desde',`<input type="date" class="form-input" id="lua-sv-f1">`)}${formGroup('Hasta',`<input type="date" class="form-input" id="lua-sv-f2">`)}
+    ${formGroup('Observaciones',`<input class="form-input" id="lua-sv-o">`)}</div><button class="btn btn-success btn-sm" onclick="luaSvAdd()">Guardar</button>`);
+  return h;
+}
+function luaSvAdd(){
+  const t=luaGet('lua-sv-t').trim(); if(!t){ alert('Completá el dato requerido.'); return; }
+  DB.serviciosAlumno.push({id:luaId(),alumnoId:Number(luaF.svA),categoria:luaF.svC||'Servicio extraordinario',tipo:t,detalle:luaGet('lua-sv-d'),desde:luaGet('lua-sv-f1'),hasta:luaGet('lua-sv-f2'),obs:luaGet('lua-sv-o')});
+  luaGuardar('Servicio escolar guardado.');
+}
+function luaSvDel(id){ if(!confirm('¿Quitar este registro?')) return; DB.serviciosAlumno=DB.serviciosAlumno.filter(s=>s.id!==id); luaGuardar(); }
+
+// ── 12. CONSULTAS ───────────────────────────────────────────────────
+function luaConsultas(){
+  const sub=luaSub.consultas;
+  const tabs=luaSubTabs('consultas',[['activos','Alumnos activos en el establecimiento'],['escuela','Alumnos por escuela'],['cursos','Cursos aprobados (histórico)'],['preinsc','Consulta de preinscripciones'],['estructura','Estructura organizacional']]);
+  const fila=a=>{const m=luaMovActual(a);const c=DB.cursos.find(x=>x.nombre===a.curso)||{};return `<tr><td>${luaEsc(luaInstNombre().cue)}</td><td>${luaEsc(a.nombre)}</td><td>${luaEsc(a.dni||'')}</td><td>Secundario</td><td>${luaEsc(a.curso||'')}</td><td>${luaEsc(c.turno||'')}</td><td>${luaEsc(c.division||'')}</td><td>${m?m.anio:''}</td><td>${m?m.estado:a.estado}</td></tr>`;};
+  const head='<thead><tr><th>CUE</th><th>Nombre</th><th>Documento</th><th>Nivel</th><th>Curso</th><th>Turno</th><th>División</th><th>Año</th><th>Estado actual</th></tr></thead>';
+  if(sub==='activos'){ const l=DB.alumnos.filter(luaCursando); return tabs+luaCard('Alumnos activos por establecimiento ('+l.length+')',l.length?`<div style="overflow-x:auto"><table>${head}<tbody>${l.map(fila).join('')}</tbody></table></div>`:'<div class="empty-msg">Sin alumnos cursando.</div>'); }
+  if(sub==='escuela'){ return tabs+luaCard('Todos los alumnos de la institución, incluyendo egresados ('+DB.alumnos.length+')',`<div style="overflow-x:auto"><table>${head}<tbody>${DB.alumnos.map(fila).join('')}</tbody></table></div>`); }
+  if(sub==='cursos'){ const l=[...new Set(DB.movimientosAlumnos.map(m=>m.anio+'|'+m.curso))].sort().reverse();
+    return tabs+luaCard('Cursos que tuvo la institución (actuales e históricos)',`<table><thead><tr><th>Año lectivo</th><th>Curso</th><th>Alumnos registrados</th></tr></thead><tbody>${l.map(k=>{const [y,c]=k.split('|');return `<tr><td>${y}</td><td>${luaEsc(c)}</td><td>${DB.movimientosAlumnos.filter(m=>String(m.anio)===y&&m.curso===c).length}</td></tr>`;}).join('')}</tbody></table>`); }
+  if(sub==='preinsc'){ const l=DB.preinscripciones.filter(p=>p.estado==='En espera'); return tabs+luaCard('Pre-inscripciones pendientes',l.length?`<table><thead><tr><th>Documento</th><th>Alumno</th><th>Curso</th><th>Año</th><th>Estado</th></tr></thead><tbody>${l.map(p=>`<tr><td>${luaEsc(p.dni)}</td><td>${luaEsc(p.nombre)}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${p.estado}</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">No hay pre-inscripciones pendientes.</div>'); }
+  const ag=c=>[...new Set(DB.designaciones.filter(d=>d.curso===c.nombre&&['activa','licencia'].includes(d.estado)).map(d=>{const dc=DB.docentes.find(x=>x.id===d.docenteId);return dc?dc.nombre+' ('+(d.materia||d.cargo||'')+')':null;}).filter(Boolean))];
+  return tabs+luaCard('Estructura organizacional — alumnos y agentes por curso',DB.cursos.map(c=>{const al=DB.alumnos.filter(a=>a.curso===c.nombre&&luaCursando(a));const agt=ag(c);
+    return `<details style="border-bottom:1px solid #f1f5f9;padding:8px 0"><summary style="cursor:pointer"><strong>${luaEsc(c.nombre)}</strong> · ${luaEsc(c.turno||'')} · ${al.length} alumno(s) · ${agt.length} agente(s)</summary><div style="margin:8px 0 0 14px;font-size:12.5px"><strong>Alumnos:</strong> ${al.map(a=>luaEsc(a.nombre)).join(', ')||'—'}<br><strong>Agentes:</strong> ${agt.map(luaEsc).join(', ')||'—'}</div></details>`;}).join(''));
+}
+
+// ── 13. CERTIFICADOS ────────────────────────────────────────────────
+function luaCertificados(){
+  const sub=luaSub.certificados;
+  const tabs=luaSubTabs('certificados',[['constancia','Constancia de Alumno Regular'],['egreso','Certificado de Egreso']]);
+  const l=sub==='constancia'?DB.alumnos.filter(luaCursando):DB.alumnos.filter(a=>a.estado==='egresado');
+  return tabs+luaNota(sub==='constancia'?'Alumnos regulares: CURSANDO el actual ciclo lectivo en el establecimiento.':'Alumnos en estado EGRESADO: certificado de finalización de cursado.')
+   +luaCard(sub==='constancia'?'Constancia de alumno regular':'Certificado de egreso',l.length?`<table><thead><tr><th>Documento</th><th>Alumno</th><th>Curso</th><th></th></tr></thead><tbody>${l.map(a=>`<tr><td>${luaEsc(a.dni||'')}</td><td>${luaEsc(a.nombre)}</td><td>${luaEsc(a.curso||'')}</td><td><button class="btn btn-primary btn-sm" onclick="luaCertificado(${a.id},'${sub==='constancia'?'constancia':'egreso'}')">🖨️ ${sub==='constancia'?'Constancia':'Certificado'}</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">No hay alumnos para este certificado.</div>');
+}
+function luaCertificado(id,tipo){
+  const a=DB.alumnos.find(x=>x.id===id); if(!a) return; const inst=luaInstNombre(), m=luaMovActual(a); const c=DB.cursos.find(x=>x.nombre===a.curso)||{};
+  const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']; const d=new Date();
+  const fecha=`${inst.localidad}, ${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}`;
+  const txt=tipo==='egreso'
+   ?`Se deja constancia que <strong>${luaEsc(a.nombre)}</strong>, DNI ${luaEsc(a.dni||'—')}, ha finalizado el cursado del nivel secundario en el establecimiento <strong>${luaEsc(inst.nombre)}</strong> (CUE ${luaEsc(inst.cue)}), en el ciclo lectivo ${m?m.anio:d.getFullYear()}, con estado de <strong>EGRESADO/A</strong>.`
+   :`Se deja constancia que <strong>${luaEsc(a.nombre)}</strong>, DNI ${luaEsc(a.dni||'—')}, es <strong>alumno/a regular</strong> de ${luaEsc(a.curso||'—')}${c.turno?', turno '+luaEsc(c.turno):''}, del establecimiento <strong>${luaEsc(inst.nombre)}</strong> (CUE ${luaEsc(inst.cue)}), en el ciclo lectivo ${d.getFullYear()}.`;
+  luaImprimir(tipo==='egreso'?'Certificado de egreso':'Constancia de alumno regular',`<div style="max-width:700px;margin:40px auto;font-size:15px;line-height:1.8"><div style="text-align:center"><h2>PROVINCIA DE ENTRE RÍOS</h2><h3>CONSEJO GENERAL DE EDUCACIÓN</h3><h2 style="margin-top:30px;text-decoration:underline">${tipo==='egreso'?'CERTIFICADO DE EGRESO':'CONSTANCIA DE ALUMNO REGULAR'}</h2></div><p style="margin-top:40px;text-align:justify">${txt}</p><p>Se extiende la presente a pedido del/la interesado/a, para ser presentada ante quien corresponda.</p><p style="margin-top:30px">${fecha}</p><div style="margin-top:80px;display:flex;justify-content:space-around"><div style="border-top:1px solid #000;padding-top:6px;width:200px;text-align:center">Secretario/a</div><div style="border-top:1px solid #000;padding-top:6px;width:200px;text-align:center">Director/a</div></div></div>`);
+}
+
+
+// ═════════════════════════════════════════════════════════════════════
+// ACADÉMICO POR MATERIA: notas y asistencia que carga cada docente en SU materia
+// · Las notas van a la libreta (DB.notas, por materia y período).
+// · La asistencia del docente por materia (DB.asistenciasMateria) la CONFIRMA el
+//   preceptor, y recién ahí pasa a la asistencia oficial (DB.asistencias).
+// ═════════════════════════════════════════════════════════════════════
+let acF={};
+function acEnsure(){ if(!Array.isArray(DB.asistenciasMateria)) DB.asistenciasMateria=[]; luaEnsure(DB); }
+function acSet(k,v){ acF[k]=v; acRefresh(); }
+function acRefresh(){ const mc=document.querySelector('.main-content'); if(!mc) return; const y=mc.scrollTop; const sec=currentSection; navigate(sec); const m2=document.querySelector('.main-content'); if(m2) m2.scrollTop=y; }
+function acNorm(t){ return String(t||'').toLowerCase().replace(/\s+/g,''); }
+function acDocenteActual(){
+  const v=(typeof docenteInstituciones==='function'?docenteInstituciones(currentUser):[]).find(x=>INST_DATA[x.institucionId]===DB);
+  return v?DB.docentes.find(d=>d.id===v.docenteId)||null:null;
+}
+// Combinaciones curso + materia en las que el docente tiene designación activa
+function acMisMaterias(doc){
+  const out=[], vistos=new Set();
+  DB.designaciones.filter(d=>d.docenteId===doc.id&&['activa','licencia'].includes(d.estado)&&d.estado==='activa'&&d.materia&&d.curso&&d.curso!=='—').forEach(d=>{
+    const cs=DB.cursos.filter(c=>c.estado!=='baja'&&(c.nombre===d.curso||acNorm(c.nombre).includes(acNorm(d.curso))));
+    cs.forEach(c=>{ const k=c.nombre+'||'+d.materia; if(!vistos.has(k)){ vistos.add(k); out.push({curso:c.nombre,materia:d.materia,k}); } });
+  });
+  return out;
+}
+function acSelectorMaterias(mis,sel,fn){
+  return `<select class="form-input" onchange="${fn}(this.value)"><option value="">— Seleccioná curso y materia —</option>${mis.map(m=>`<option value="${luaEsc(m.k)}"${m.k===sel?' selected':''}>${luaEsc(m.curso)} — ${luaEsc(m.materia)}</option>`).join('')}</select>`;
+}
+function acSinMaterias(){
+  return `<div style="max-width:520px;margin:40px auto;text-align:center"><div style="font-size:48px;opacity:.35">📚</div><h3 style="color:#1a3a5c">No tenés cursos y materias para cargar</h3><p style="font-size:14px;color:#64748b;line-height:1.6">Para cargar notas o asistencia necesitás una designación activa con materia y curso. Consultá <strong>Mis Designaciones</strong> o pedí a la administración que la registre.</p></div>`;
+}
+
+// ── DOCENTE: CARGAR NOTAS DE SU MATERIA ─────────────────────────────
+function renderDocNotas(){
+  acEnsure(); const doc=acDocenteActual(); if(!doc) return acSinMaterias();
+  const mis=acMisMaterias(doc); if(!mis.length) return acSinMaterias();
+  if(doc.autorizaBoletin===false) return sectionHeader('Cargar Notas')+luaNota('🔒 La administración no te habilitó la carga de notas en el boletín. Consultá en la secretaría de la escuela.','warn');
+  const sel=acF.nSel||'', per=acF.nPer||'', y=luaAnio();
+  const m=mis.find(x=>x.k===sel);
+  let html=sectionHeader('Cargar Notas de mi materia')+luaNota('Cargás las notas <strong>de tu materia</strong> en tus cursos. Aparecen automáticamente en la libreta de cada alumno.')
+   +luaCard('',`<div class="form-grid-2">${formGroup('Curso y materia',acSelectorMaterias(mis,sel,"acSetNSel"))}
+     ${formGroup('Período evaluatorio',`<select class="form-input" onchange="acSet('nPer',this.value)"><option value="">Seleccione</option>${LUA_PERIODOS.map(([n,l])=>`<option value="${n}"${n===per?' selected':''}>${l}</option>`).join('')}</select>`)}</div>`);
+  if(!m||!per) return html;
+  if(luaCerrada(m.curso,per,y)) return html+luaNota('🔒 Las notas de este curso y período están <strong>cerradas</strong> por la administración.','warn');
+  const al=DB.alumnos.filter(a=>a.curso===m.curso&&luaCursando(a));
+  const filas=al.map(a=>{ const n=DB.notas.find(x=>x.alumnoId===a.id&&x.materia===m.materia&&String(x.bimestre)===per);
+    return `<tr><td>${luaEsc(a.nombre)}</td>
+      <td><select class="form-input ac-n" data-al="${a.id}" style="width:100px">${'<option value=""></option>'+[1,2,3,4,5,6,7,8,9,10].map(v=>`<option value="${v}"${n&&n.nota===v?' selected':''}>${v}</option>`).join('')+'<option value="X">ELIMINAR</option>'}</select></td>
+      <td style="text-align:center"><input type="checkbox" class="ac-a" data-al="${a.id}"${n&&n.ausente?' checked':''}></td>
+      <td><select class="form-input ac-o" data-al="${a.id}" style="width:120px">${luaOpts(['','PPI','N/C','EX'],(n&&n.obs)||'')}</select></td></tr>`; }).join('');
+  return html+luaCard(`${luaEsc(m.curso)} — ${luaEsc(m.materia)} — ${(LUA_PERIODOS.find(x=>x[0]===per)||[0,per])[1]} — ${y}`,al.length?`<div style="overflow-x:auto"><table><thead><tr><th>Alumno</th><th>Nota</th><th>Ausente</th><th>Observación</th></tr></thead><tbody>${filas}</tbody></table></div><button class="btn btn-success" style="margin-top:12px" onclick="acNotasGrabar()">💾 Guardar notas</button>`:'<div class="empty-msg">No hay alumnos cursando en este curso.</div>');
+}
+function acSetNSel(v){ acF.nSel=v; acRefresh(); }
+function acNotasGrabar(){
+  const doc=acDocenteActual(), m=acMisMaterias(doc).find(x=>x.k===acF.nSel), p=parseInt(acF.nPer), y=luaAnio(); if(!m||!p) return;
+  if(luaCerrada(m.curso,String(p),y)){ showToast('Notas cerradas.','#991b1b'); return; }
+  let n=0;
+  document.querySelectorAll('.ac-n').forEach(sel=>{
+    const id=Number(sel.dataset.al), v=sel.value, aus=document.querySelector(`.ac-a[data-al="${id}"]`).checked, obs=document.querySelector(`.ac-o[data-al="${id}"]`).value;
+    const ex=DB.notas.find(x=>x.alumnoId===id&&x.materia===m.materia&&x.bimestre===p);
+    if(v==='X'){ if(ex) DB.notas=DB.notas.filter(x=>x!==ex); return; }
+    if(v===''&&!aus&&!obs) return;
+    if(ex){ if(v!=='') ex.nota=parseInt(v); ex.ausente=aus; ex.obs=obs; ex.anio=y; ex.docenteId=doc.id; }
+    else DB.notas.push({id:luaId(),alumnoId:id,materia:m.materia,bimestre:p,nota:v===''?0:parseInt(v),ausente:aus,obs,anio:y,docenteId:doc.id});
+    n++;
+  });
+  guardarEstado(); showToast('✅ Notas guardadas ('+n+'). Ya figuran en la libreta.'); acRefresh();
+}
+
+// ── DOCENTE: ASISTENCIA DE SU MATERIA ───────────────────────────────
+function renderDocAsistencia(){
+  acEnsure(); const doc=acDocenteActual(); if(!doc) return acSinMaterias();
+  const mis=acMisMaterias(doc); if(!mis.length) return acSinMaterias();
+  const sel=acF.aSel||'', hoy=luaHoy(), fecha=acF.aFecha||hoy;
+  const m=mis.find(x=>x.k===sel);
+  let html=sectionHeader('Asistencia de mi materia')+luaNota('Cargás la asistencia <strong>de tu materia</strong>. El/la preceptor/a la revisa y <strong>confirma</strong> la asistencia oficial del día.')
+   +luaCard('',`<div class="form-grid-2">${formGroup('Curso y materia',acSelectorMaterias(mis,sel,"acSetASel"))}
+     ${formGroup('Fecha',`<input type="date" class="form-input" max="${hoy}" value="${fecha}" onchange="acSet('aFecha',this.value)">`)}</div>`);
+  if(!m) return html;
+  const al=DB.alumnos.filter(a=>a.curso===m.curso&&luaCursando(a));
+  const reg=a=>DB.asistenciasMateria.find(r=>r.alumnoId===a.id&&r.curso===m.curso&&r.materia===m.materia&&r.fecha===fecha);
+  const conf=al.some(a=>{const r=reg(a);return r&&r.confirmada;});
+  if(conf) html+=luaNota('✔ El/la preceptor/a ya confirmó la asistencia de esta fecha. Si necesitás corregir algo, pedíselo a él/ella.','warn');
+  const filas=al.map(a=>{ const r=reg(a), cur=r?r.estado:'presente';
+    return `<div class="asist-row"><span style="font-size:14px;font-weight:600;color:#334155">${luaEsc(a.nombre)}</span><div style="display:flex;gap:6px">${['presente','ausente','tardanza'].map(e=>{
+      const clr=e==='presente'?['#dcfce7','#166534','#86efac']:e==='ausente'?['#fee2e2','#991b1b','#fca5a5']:['#fef9c3','#854d0e','#fde047'];
+      return `<label style="cursor:pointer;padding:6px 11px;border-radius:8px;border:1.5px solid ${clr[2]};background:${cur===e?clr[0]:'#fff'};color:${clr[1]};font-size:12px;font-weight:700"><input type="radio" class="ac-as" name="as${a.id}" data-al="${a.id}" value="${e}"${cur===e?' checked':''} style="display:none" onchange="this.closest('div').querySelectorAll('label').forEach(l=>l.style.background='#fff');this.closest('label').style.background='${clr[0]}'">${e}</label>`; }).join('')}</div></div>`; }).join('');
+  return html+luaCard(`${luaEsc(m.curso)} — ${luaEsc(m.materia)} — ${fmtDate(fecha)}`,al.length?`${filas}<button class="btn btn-success" style="margin-top:14px"${conf?' disabled':''} onclick="acAsistGrabar()">💾 Guardar asistencia de mi materia</button>`:'<div class="empty-msg">No hay alumnos cursando en este curso.</div>');
+}
+function acSetASel(v){ acF.aSel=v; acRefresh(); }
+function acAsistGrabar(){
+  const doc=acDocenteActual(), m=acMisMaterias(doc).find(x=>x.k===acF.aSel), fecha=acF.aFecha||luaHoy(); if(!m) return;
+  if(fecha>luaHoy()){ showToast('No se puede cargar asistencia de una fecha futura.','#991b1b'); return; }
+  document.querySelectorAll('.ac-as:checked').forEach(r=>{
+    const id=Number(r.dataset.al); const ex=DB.asistenciasMateria.find(x=>x.alumnoId===id&&x.curso===m.curso&&x.materia===m.materia&&x.fecha===fecha);
+    if(ex){ if(ex.confirmada) return; ex.estado=r.value; ex.docenteId=doc.id; }
+    else DB.asistenciasMateria.push({id:luaId(),alumnoId:id,curso:m.curso,materia:m.materia,docenteId:doc.id,fecha,estado:r.value,confirmada:false});
+  });
+  guardarEstado(); showToast('✅ Asistencia guardada. Queda pendiente de confirmación del preceptor.'); acRefresh();
+}
+
+// ── PRECEPTOR: CONFIRMA LA ASISTENCIA SEGÚN LO CARGADO POR CADA DOCENTE ─
+function acPendientesPrec(prec){
+  acEnsure(); const cursos=(prec&&prec.cursos)||[];
+  const s=new Set(DB.asistenciasMateria.filter(r=>!r.confirmada&&cursos.includes(r.curso)).map(r=>r.curso+'|'+r.fecha)); return s.size;
+}
+function renderPrecConfirmar(prec){
+  acEnsure(); const cursos=prec.cursos||[];
+  const curso=acF.pCurso||cursos[0]||'', fecha=acF.pFecha||luaHoy();
+  const regs=DB.asistenciasMateria.filter(r=>r.curso===curso&&r.fecha===fecha);
+  const mats=[...new Set(regs.map(r=>r.materia))].sort();
+  const al=DB.alumnos.filter(a=>a.curso===curso&&luaCursando(a));
+  const pend=DB.asistenciasMateria.filter(r=>!r.confirmada&&cursos.includes(r.curso));
+  const pendTxt=[...new Set(pend.map(r=>r.curso+' · '+fmtDate(r.fecha)))];
+  let html=sectionHeader('Confirmar Asistencia')
+   +luaNota('Cada docente carga la asistencia de su materia. Acá la revisás y <strong>confirmás la asistencia oficial del día</strong> de cada alumno. Sugerencia: ausente en todas las materias = 1 falta; ausente en alguna = ½ falta.')
+   +(pendTxt.length?luaNota('🔔 Pendientes de confirmar: '+pendTxt.map(luaEsc).join(' · '),'warn'):'')
+   +luaCard('',`<div class="form-grid-2">${formGroup('Curso',`<select class="form-input" onchange="acSet('pCurso',this.value)">${cursos.map(c=>`<option value="${luaEsc(c)}"${c===curso?' selected':''}>${luaEsc(c)}</option>`).join('')}</select>`)}
+     ${formGroup('Fecha',`<input type="date" class="form-input" max="${luaHoy()}" value="${fecha}" onchange="acSet('pFecha',this.value)">`)}</div>`);
+  if(!mats.length) return html+luaCard('','<div class="empty-msg">Ningún docente cargó asistencia de este curso en esa fecha.</div>');
+  const docDe=mat=>{ const r=regs.find(x=>x.materia===mat); const d=r&&DB.docentes.find(x=>x.id===r.docenteId); return d?d.nombre:''; };
+  const conf=regs.some(r=>r.confirmada);
+  const ico={presente:'<span style="color:#166534;font-weight:800">P</span>',ausente:'<span style="color:#991b1b;font-weight:800">A</span>',tardanza:'<span style="color:#854d0e;font-weight:800">T</span>'};
+  const filas=al.map(a=>{
+    const celdas=mats.map(mat=>{ const r=regs.find(x=>x.alumnoId===a.id&&x.materia===mat); return `<td style="text-align:center">${r?ico[r.estado]:'<span style="color:#cbd5e1">—</span>'}</td>`; }).join('');
+    const rs=regs.filter(x=>x.alumnoId===a.id); const aus=rs.filter(x=>x.estado==='ausente').length, tar=rs.filter(x=>x.estado==='tardanza').length;
+    const sug=!rs.length?'presente':aus===rs.length?'ausente':aus>0?'media':tar>0?'tardanza':'presente';
+    const of=DB.asistencias.find(x=>x.alumnoId===a.id&&x.fecha===fecha&&x.origen==='preceptor');
+    const cur=of?(of.estado==='ausente'?(of.cantidad===0.5?'media':'ausente'):of.estado):sug;
+    return `<tr><td>${luaEsc(a.nombre)}</td>${celdas}<td><select class="form-input ac-pc" data-al="${a.id}" style="width:150px">${[['presente','Presente'],['ausente','Ausente (1 falta)'],['media','Ausente (½ falta)'],['tardanza','Tardanza']].map(([v,l])=>`<option value="${v}"${cur===v?' selected':''}>${l}</option>`).join('')}</select></td></tr>`; }).join('');
+  return html+luaCard(`${luaEsc(curso)} — ${fmtDate(fecha)} ${conf?'<span class="badge badge-green" style="margin-left:8px">Confirmada</span>':'<span class="badge badge-red" style="margin-left:8px">Sin confirmar</span>'}`,
+    `<div style="overflow-x:auto"><table><thead><tr><th>Alumno</th>${mats.map(mat=>`<th style="text-align:center">${luaEsc(mat)}<div style="font-size:10px;font-weight:500;color:#64748b">${luaEsc(docDe(mat))}</div></th>`).join('')}<th>Asistencia del día</th></tr></thead><tbody>${filas}</tbody></table></div>
+     <button class="btn btn-teal" style="margin-top:12px" onclick="acConfirmarAsist()">✅ ${conf?'Volver a confirmar':'Confirmar asistencia del día'}</button>`);
+}
+function acConfirmarAsist(){
+  const prec=DB.preceptores.find(p=>p.id===currentUser.preceptorId); if(!prec) return;
+  const curso=acF.pCurso||prec.cursos[0], fecha=acF.pFecha||luaHoy(); let n=0;
+  document.querySelectorAll('.ac-pc').forEach(sel=>{
+    const id=Number(sel.dataset.al), v=sel.value;
+    DB.asistencias=DB.asistencias.filter(x=>!(x.alumnoId===id&&x.fecha===fecha));
+    const base={id:luaId(),alumnoId:id,fecha,origen:'preceptor',confirmadoPor:prec.nombre,estadoInasistencia:'Efectiva',justificada:false,justificacion:''};
+    if(v==='ausente') DB.asistencias.push({...base,estado:'ausente',tipo:'Falta',cantidad:1});
+    else if(v==='media') DB.asistencias.push({...base,estado:'ausente',tipo:'Falta',cantidad:0.5});
+    else DB.asistencias.push({...base,estado:v});
+    n++;
+  });
+  DB.asistenciasMateria.filter(r=>r.curso===curso&&r.fecha===fecha).forEach(r=>{ r.confirmada=true; r.confirmadaPor=prec.nombre; });
+  guardarEstado(); showToast('✅ Asistencia confirmada ('+n+' alumnos).'); acRefresh();
+}
+
+
+// ═════════════════════════════════════════════════════════════════════
+// PORTALES ALUMNO Y FAMILIA (rediseño)
+// ═════════════════════════════════════════════════════════════════════
+let ptF={};
+const PT_MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const PT_CARD='background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:18px;';
+let ptFamUid=null; // id del usuario (docente, preceptor, etc.) que está mirando el Portal Familia
+function ptFam(){ return !!currentUser&&(currentUser.rol==='padre'||ptFamUid===currentUser.id); }
+function ptRC(){ return ptFam()?ROL_COLOR.padre:(ROL_COLOR[currentUser&&currentUser.rol]||'#3a1a5c'); }
+function ptRolesConHijos(){ return ['docente','preceptor','director','secretario']; }
+function ptToggleFamilia(){
+  if(!currentUser) return;
+  ptFamUid=(ptFamUid===currentUser.id)?null:currentUser.id; padreHijoSel=null;
+  renderTopbar(); renderApp();
+}
+function ptBotonFamilia(){
+  const out=document.getElementById('topbar-familia'); const ok=currentUser&&ptRolesConHijos().includes(currentUser.rol);
+  if(!ok){ if(out) out.remove(); return; }
+  let b=out; if(!b){ b=document.createElement('button'); b.id='topbar-familia'; b.className='btn btn-ghost btn-sm'; b.style.marginRight='8px'; b.onclick=ptToggleFamilia; const lo=document.querySelector('.btn-logout'); lo.parentNode.insertBefore(b,lo); }
+  const n=(currentUser.hijoIds||[]).length;
+  b.textContent=ptFamUid===currentUser.id?'↩ Volver a mi portal':'👨‍👩‍👧 Portal Familia'+(n?' ('+n+')':'');
+}
+function ptSet(k,v){ ptF[k]=v; navigate(currentSection); }
+function ptColNota(n){ return n==null||n===''?'#94a3b8':n>=7?'#166534':n>=6?'#a16207':'#b91c1c'; }
+function ptBgNota(n){ return n==null||n===''?'#f1f5f9':n>=7?'#dcfce7':n>=6?'#fef9c3':'#fee2e2'; }
+function ptFechaCorta(f){ const p=String(f||'').split('-'); return p.length===3?p[2]+'/'+p[1]:'—'; }
+
+function ptDocenteDe(al,materia){
+  try{
+    const d=DB.designaciones.find(x=>x.materia===materia&&x.estado==='activa'&&x.curso&&(x.curso===al.curso||String(x.curso).replace(/\s/g,'').toLowerCase().includes(String(al.curso).replace(/\s/g,'').toLowerCase())));
+    if(!d) return '';
+    const doc=DB.docentes.find(x=>x.id===d.docenteId); return doc?doc.nombre:'';
+  }catch(e){ return ''; }
+}
+function ptStats(al){
+  const mats=[...new Set(DB.notas.filter(n=>n.alumnoId===al.id&&!n.cicloAnterior).map(n=>n.materia))].sort((a,b)=>a.localeCompare(b));
+  const materias=mats.map(m=>{ const p=luaPromedio(al,m); const nt=p.ns.filter(n=>n&&n.nota).length;
+    const estado=!nt?'Sin notas':(p.finalN<6?'En riesgo':(nt<3?'En curso':'Aprobada'));
+    return {m,p,nt,estado,docente:ptDocenteDe(al,m)}; });
+  const con=materias.filter(x=>x.p.finalN!=null);
+  const prom=con.length?con.reduce((s,x)=>s+x.p.finalN,0)/con.length:null;
+  const asist=DB.asistencias.filter(a=>a.alumnoId===al.id).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  const dias=new Set(asist.map(a=>a.fecha)).size;
+  const faltas=asist.filter(a=>a.estado==='ausente').reduce((s,a)=>s+(a.cantidad!=null?a.cantidad:1),0);
+  const tard=asist.filter(a=>a.estado==='tardanza').length;
+  const pres=asist.filter(a=>a.estado==='presente').length;
+  const pct=dias?Math.max(0,Math.round((1-faltas/dias)*100)):100;
+  const just=DB.justificaciones.filter(j=>j.alumnoId===al.id);
+  return {materias,prom,asist,dias,faltas,tard,pres,pct,just,riesgo:materias.filter(x=>x.estado==='En riesgo')};
+}
+function ptComunicados(al){
+  return (DB.comunicados||[]).filter(c=>!c.curso||c.curso===al.curso||c.curso==='Todos').sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+}
+function ptHero(al,rc,sub){
+  const ap=luaApeNom(al), c=DB.cursos.find(x=>x.nombre===al.curso)||{}; const inst=getInstUser();
+  return `<div style="background:linear-gradient(135deg,${rc},${rc}cc);border-radius:16px;padding:22px 24px;color:#fff;display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:18px;box-shadow:0 4px 14px ${rc}44">
+    <div style="width:64px;height:64px;border-radius:18px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900">${luaEsc((ap.nom||al.nombre||'?')[0])}${luaEsc((ap.ape||'')[0]||'')}</div>
+    <div style="flex:1;min-width:220px">
+      <div style="font-size:12px;opacity:.8;font-weight:700;letter-spacing:.6px;text-transform:uppercase">${sub}</div>
+      <div style="font-size:23px;font-weight:900;margin:2px 0">${luaEsc(ap.ape)}, ${luaEsc(ap.nom)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12.5px;margin-top:6px">
+        <span style="background:rgba(255,255,255,.18);border-radius:20px;padding:3px 11px">🎓 ${luaEsc(al.curso||'—')}${c.turno?' · '+luaEsc(c.turno):''}</span>
+        <span style="background:rgba(255,255,255,.18);border-radius:20px;padding:3px 11px">🪪 DNI ${luaEsc(al.dni||'—')}</span>
+        ${inst?`<span style="background:rgba(255,255,255,.18);border-radius:20px;padding:3px 11px">🏫 ${luaEsc(inst.nombre)}</span>`:''}
+        <span style="background:rgba(255,255,255,.18);border-radius:20px;padding:3px 11px">Ciclo ${luaAnio()}</span>
+      </div></div></div>`;
+}
+function ptKpi(icon,label,value,sub,color){
+  return `<div style="${PT_CARD}border-top:4px solid ${color};display:flex;gap:12px;align-items:center"><div style="font-size:28px">${icon}</div>
+    <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.4px">${label}</div>
+    <div style="font-size:26px;font-weight:900;color:${color};line-height:1.15">${value}</div>${sub?`<div style="font-size:11.5px;color:#94a3b8">${sub}</div>`:''}</div></div>`;
+}
+function ptKpis(st){
+  const asC=st.pct<75?'#b91c1c':st.pct<85?'#a16207':'#166534';
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px">
+    ${ptKpi('📊','Promedio general',st.prom==null?'—':st.prom.toFixed(2),st.materias.length+' materias',ptColNota(st.prom))}
+    ${ptKpi('✅','Asistencia',st.pct+'%',st.dias+' días registrados',asC)}
+    ${ptKpi('📅','Inasistencias',String(st.faltas).replace('.',','),'Tardanzas: '+st.tard,st.faltas>=20?'#b91c1c':st.faltas>=12?'#a16207':'#334155')}
+    ${ptKpi('⚠️','Materias en riesgo',st.riesgo.length,st.riesgo.length?st.riesgo.map(x=>luaEsc(x.m)).join(', '):'Todo al día',st.riesgo.length?'#b91c1c':'#166534')}
+  </div>`;
+}
+function ptAlertas(al,st,esFamilia){
+  const a=[]; const quien=esFamilia?luaEsc(al.nombres||al.nombre):'vos';
+  if(st.riesgo.length) a.push(['err',`📉 Promedio menor a 6 en: <strong>${st.riesgo.map(x=>luaEsc(x.m)).join(', ')}</strong>. Conviene reforzar${esFamilia?' y consultar con los docentes':' y consultar a tus docentes'}.`]);
+  if(st.faltas>=20) a.push(['err',`🚨 ${quien==='vos'?'Tenés':'Registra'} <strong>${String(st.faltas).replace('.',',')}</strong> inasistencias. El límite de referencia es 25.`]);
+  else if(st.faltas>=12) a.push(['warn',`⚠️ Llevás <strong>${String(st.faltas).replace('.',',')}</strong> inasistencias acumuladas (referencia: 25).`.replace('Llevás',esFamilia?'Lleva':'Llevás')]);
+  const pend=st.just.filter(j=>j.estado==='pendiente').length; if(pend) a.push(['warn',`📄 Hay <strong>${pend}</strong> justificación${pend>1?'es':''} pendiente${pend>1?'s':''} de revisión del preceptor.`]);
+  const sinJ=st.asist.filter(x=>x.estado==='ausente'&&!x.justificada&&!st.just.some(j=>j.fecha===x.fecha)).length;
+  if(sinJ) a.push(['info',`ℹ️ ${sinJ} inasistencia${sinJ>1?'s':''} sin justificar.${esFamilia?' Podés cargar la justificación desde <a href="#" onclick="navigate(\'asistencia\');return false">Asistencia</a>.':''}`]);
+  return a.length?a.map(([t,x])=>luaNota(x,t==='err'?'err':t==='warn'?'warn':'')).join(''):luaNota('🎉 Todo en orden: sin alertas académicas ni de asistencia.');
+}
+function ptNotaChip(n,lbl){
+  const v=n&&n.nota?n.nota:null;
+  return `<div style="text-align:center;min-width:52px"><div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:3px">${lbl}</div>
+    <div style="background:${ptBgNota(v)};color:${ptColNota(v)};border-radius:9px;padding:6px 0;font-size:17px;font-weight:900">${v||(n&&n.ausente?'Aus':'·')}</div></div>`;
+}
+function ptMateriaCard(x,rc){
+  const p=x.p, bar=p.finalN!=null?Math.round(p.finalN*10):0;
+  const eb=x.estado==='En riesgo'?'#fee2e2;color:#991b1b':x.estado==='Aprobada'?'#dcfce7;color:#166534':x.estado==='En curso'?'#dbeafe;color:#1e40af':'#f1f5f9;color:#64748b';
+  const obs=p.ns.filter(n=>n&&n.obs).map(n=>`<div style="font-size:12px;color:#475569;margin-top:6px"><strong>${n.bimestre}° trim.:</strong> ${luaEsc(n.obs)}</div>`).join('');
+  return `<div style="${PT_CARD}margin-bottom:12px;border-left:5px solid ${p.finalN==null?'#cbd5e1':ptColNota(p.finalN)}">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+      <div><div style="font-size:16px;font-weight:800;color:#1e293b">${luaEsc(x.m)}</div>${x.docente?`<div style="font-size:12px;color:#64748b">👩‍🏫 ${luaEsc(x.docente)}</div>`:''}</div>
+      <span style="background:${eb};border-radius:20px;padding:3px 12px;font-size:11.5px;font-weight:800">${x.estado}</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px">
+      ${ptNotaChip(p.ns[0],'1° TRIM')}${ptNotaChip(p.ns[1],'2° TRIM')}${ptNotaChip(p.ns[2],'3° TRIM')}
+      ${(p.dic||p.mar)?ptNotaChip(p.dic,'DIC.')+ptNotaChip(p.mar,'MARZO'):''}
+      <div style="flex:1;min-width:140px;margin-left:8px"><div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;font-weight:700;margin-bottom:4px"><span>PROMEDIO</span><span style="color:${ptColNota(p.finalN)};font-size:15px;font-weight:900">${p.finalN==null?'—':p.finalN.toFixed(2)}</span></div>
+      <div style="height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden"><div style="height:100%;width:${bar}%;background:${ptColNota(p.finalN)}"></div></div></div>
+    </div>${obs}</div>`;
+}
+function ptComunicadosHTML(al,limit){
+  const l=ptComunicados(al).slice(0,limit||50);
+  if(!l.length) return '<div class="empty-msg">Sin comunicados.</div>';
+  return l.map(c=>`<div style="${PT_CARD}margin-bottom:10px;padding:14px 16px;border-left:4px solid #0e7490">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><strong style="color:#1e293b">📢 ${luaEsc(c.asunto)}</strong><span style="font-size:11.5px;color:#94a3b8">${fmtDate(c.fecha)}${c.curso?' · '+luaEsc(c.curso):''}</span></div>
+    <div style="font-size:13.5px;color:#475569;margin-top:6px;line-height:1.5">${luaEsc(c.texto)}</div></div>`).join('');
+}
+function ptInicio(al,esFamilia,rc){
+  const st=ptStats(al);
+  const mats=st.materias.length?st.materias.map(x=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13.5px">
+     <div style="flex:1;font-weight:600;color:#334155">${luaEsc(x.m)}</div>
+     <div style="width:90px;height:7px;background:#e2e8f0;border-radius:5px;overflow:hidden"><div style="height:100%;width:${x.p.finalN?Math.round(x.p.finalN*10):0}%;background:${ptColNota(x.p.finalN)}"></div></div>
+     <div style="width:38px;text-align:right;font-weight:900;color:${ptColNota(x.p.finalN)}">${x.p.finalN==null?'—':x.p.finalN.toFixed(1)}</div></div>`).join(''):'<div class="empty-msg">Sin calificaciones.</div>';
+  return ptHero(al,rc,esFamilia?'Portal Familia — hijo/a':'Mi portal')+ptKpis(st)+ptAlertas(al,st,esFamilia)
+   +`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+     <div style="${PT_CARD}"><div style="font-weight:800;color:${rc};margin-bottom:6px">📚 Rendimiento por materia</div>${mats}
+       <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="navigate('notas')">Ver detalle de notas →</button></div>
+     <div><div style="font-weight:800;color:${rc};margin:0 0 10px">📢 Últimos comunicados</div>${ptComunicadosHTML(al,3)}
+       <button class="btn btn-ghost btn-sm" onclick="navigate('comunicados')">Ver todos →</button></div></div>
+   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px">
+     <button class="btn btn-primary btn-sm" onclick="navigate('libreta')">📒 Libreta</button>
+     <button class="btn btn-ghost btn-sm" onclick="navigate('asistencia')">✅ Asistencia</button>
+     <button class="btn btn-ghost btn-sm" onclick="ptConstancia(${al.id})">🖨️ Constancia de alumno regular</button></div>`;
+}
+function ptNotas(al,esFamilia){
+  const st=ptStats(al), rc=ptRC();
+  const sum=`<div style="${PT_CARD}margin-bottom:16px;display:flex;gap:22px;flex-wrap:wrap;align-items:center">
+    <div><div style="font-size:11px;color:#64748b;font-weight:700">PROMEDIO GENERAL</div><div style="font-size:34px;font-weight:900;color:${ptColNota(st.prom)}">${st.prom==null?'—':st.prom.toFixed(2)}</div></div>
+    <div style="font-size:13px;color:#475569;line-height:1.7"><span style="color:#166534;font-weight:800">● 7 a 10</span> muy bueno · <span style="color:#a16207;font-weight:800">● 6</span> aprobado · <span style="color:#b91c1c;font-weight:800">● menor a 6</span> en riesgo<br>Las notas las carga cada docente en su materia y se reflejan acá y en la libreta.</div></div>`;
+  return sectionHeader(esFamilia?'Notas de '+luaEsc(al.nombres||al.nombre):'Mis Notas')+sum
+   +(st.materias.length?st.materias.map(x=>ptMateriaCard(x,rc)).join(''):'<div class="table-wrap"><div class="empty-msg">Todavía no hay notas cargadas.</div></div>');
+}
+function ptLibreta(al,esFamilia){
+  luaEnsure(DB);
+  return sectionHeader(esFamilia?'Libreta de '+luaEsc(al.nombres||al.nombre):'Mi Libreta',
+     `<button class="btn btn-primary btn-sm" onclick="luaLibretaVer([${al.id}])">🖨️ Ver / imprimir libreta</button>`)
+   +luaNota('Esta es la libreta oficial con los trimestres, diciembre, marzo, inasistencias y observaciones. Usá <strong>Ver / imprimir</strong> para imprimirla o guardarla.')
+   +`<style>${LUA_LIB_CSS}</style><div style="${PT_CARD}overflow-x:auto">${luaLibretaHTML(al)}</div>`;
+}
+// Calendario mensual de asistencia
+function ptCalendario(al,st){
+  const y=luaAnio(); let mes=ptF.mes||((st.asist[0]&&st.asist[0].fecha)||luaHoy()).slice(0,7); const [yy,mm]=mes.split('-').map(Number);
+  const map={}; st.asist.forEach(a=>{ map[a.fecha]=a; });
+  const jus=new Set(st.just.filter(j=>j.estado!=='rechazada').map(j=>j.fecha));
+  const first=new Date(yy,mm-1,1), dim=new Date(yy,mm,0).getDate(); const off=(first.getDay()+6)%7;
+  const prev=new Date(yy,mm-2,1), next=new Date(yy,mm,1); const k=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  let cells=''; for(let i=0;i<off;i++) cells+='<div></div>';
+  for(let d=1;d<=dim;d++){
+    const f=mes+'-'+String(d).padStart(2,'0'), a=map[f], wd=(off+d-1)%7>=5;
+    let bg='#f8fafc',col='#cbd5e1',tt='';
+    if(a){ if(a.estado==='presente'){bg='#dcfce7';col='#166534';tt='Presente';} else if(a.estado==='tardanza'){bg='#fef3c7';col='#92400e';tt='Tardanza';} else {const j=a.justificada||jus.has(f); bg=j?'#dbeafe':'#fee2e2'; col=j?'#1e40af':'#991b1b'; tt=(a.cantidad===0.5?'Media falta':'Ausente')+(j?' (justificada)':'');} }
+    else if(!wd) col='#94a3b8';
+    cells+=`<div title="${tt}" style="aspect-ratio:1.25;border-radius:9px;background:${wd&&!a?'transparent':bg};color:${col};display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:13px">${d}${a?`<span style="font-size:9px;font-weight:700">${a.estado==='presente'?'P':a.estado==='tardanza'?'T':(a.cantidad===0.5?'½':'A')}</span>`:''}</div>`;
+  }
+  return `<div style="${PT_CARD}margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <button class="btn btn-ghost btn-sm" onclick="ptSet('mes','${k(prev)}')">‹</button><strong style="color:#1e293b">${PT_MESES[mm-1]} ${yy}</strong><button class="btn btn-ghost btn-sm" onclick="ptSet('mes','${k(next)}')">›</button></div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;text-align:center;font-size:11px;color:#94a3b8;font-weight:700;margin-bottom:5px">${['L','M','M','J','V','S','D'].map(x=>`<div>${x}</div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:#64748b;margin-top:12px"><span>🟩 Presente</span><span>🟨 Tardanza</span><span>🟥 Ausente</span><span>🟦 Justificada</span></div></div>`;
+}
+function ptAsistencia(al,esFamilia){
+  const st=ptStats(al), rc=ptRC();
+  const faltas=st.asist.filter(a=>a.estado!=='presente');
+  const jDe=f=>st.just.find(j=>j.fecha===f);
+  const rows=faltas.map(a=>{ const j=jDe(a.fecha); const est=a.justificada||(j&&j.estado==='aprobada')?'<span class="badge badge-green">Justificada</span>':j&&j.estado==='pendiente'?'<span class="badge badge-yellow">Justificación en revisión</span>':j&&j.estado==='rechazada'?'<span class="badge badge-red">Justificación rechazada</span>':'<span class="badge badge-red">Sin justificar</span>';
+    const btn=esFamilia&&a.estado==='ausente'&&!a.justificada&&!j?`<button class="btn btn-ghost btn-sm" onclick="ptJustificar(${al.id},'${a.fecha}')">Justificar</button>`:'';
+    return `<tr><td>${fmtDate(a.fecha)}</td><td>${a.estado==='tardanza'?'⏰ Tardanza':(a.cantidad===0.5?'½ Falta':'❌ Ausente')}</td><td>${est}</td><td>${btn}</td></tr>`; }).join('');
+  return sectionHeader(esFamilia?'Asistencia de '+luaEsc(al.nombres||al.nombre):'Mi Asistencia',esFamilia?`<button class="btn btn-primary btn-sm" onclick="ptJustificar(${al.id})">📄 Justificar inasistencia</button>`:'')
+   +`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:16px">
+      ${ptKpi('✅','Presentes',st.pres,st.pct+'% de asistencia','#166534')}${ptKpi('❌','Faltas',String(st.faltas).replace('.',','),'Referencia: 25','#b91c1c')}${ptKpi('⏰','Tardanzas',st.tard,'','#a16207')}${ptKpi('📄','Justificaciones',st.just.length,st.just.filter(j=>j.estado==='pendiente').length+' pendientes','#1e40af')}</div>`
+   +`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px"><div>${ptCalendario(al,st)}</div>
+     <div style="${PT_CARD}"><div style="font-weight:800;color:${rc};margin-bottom:10px">Inasistencias y tardanzas</div>
+     ${rows?`<div style="overflow-x:auto;max-height:430px;overflow-y:auto"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Estado</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty-msg">Sin inasistencias. ¡Muy bien!</div>'}</div></div>`;
+}
+function ptJustificar(alId,fecha){
+  const al=DB.alumnos.find(a=>a.id===alId); if(!al) return;
+  const st=ptStats(al); const opts=st.asist.filter(a=>a.estado==='ausente'&&!a.justificada&&!st.just.some(j=>j.fecha===a.fecha)).map(a=>a.fecha);
+  if(fecha&&!opts.includes(fecha)) opts.unshift(fecha);
+  showModal('Justificar inasistencia — '+luaEsc(al.nombre),`
+    ${luaNota('El pedido llega al preceptor/a del curso, que lo aprueba o lo rechaza. Podés consultar el estado en <strong>Asistencia</strong>.')}
+    <div class="form-grid-2">
+     ${formGroup('Fecha de la inasistencia',`<select class="form-input" id="pt-j-fecha">${opts.length?opts.map(f=>`<option value="${f}"${f===fecha?' selected':''}>${fmtDate(f)}</option>`).join(''):`<option value="">— Sin inasistencias pendientes —</option>`}</select>`,true)}
+     ${formGroup('Tipo',`<select class="form-input" id="pt-j-tipo">${['Médica','Particular','Familiar','Otra'].map(t=>`<option>${t}</option>`).join('')}</select>`,true)}</div>
+    ${formGroup('Motivo',`<textarea class="form-input" id="pt-j-motivo" rows="3" placeholder="Ej.: turno médico, certificado en secretaría…"></textarea>`,true)}
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-success" onclick="ptJustificarGuardar(${alId})">Enviar</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`);
+}
+function ptJustificarGuardar(alId){
+  const f=luaGet('pt-j-fecha'), t=luaGet('pt-j-tipo'), m=luaGet('pt-j-motivo').trim();
+  if(!f||!m){ showToast('Elegí la fecha y escribí el motivo.','#991b1b'); return; }
+  DB.justificaciones.push({id:uid(),alumnoId:alId,fecha:f,motivo:m,tipo:t,estado:'pendiente',obs:'',origen:'Familia',solicitante:currentUser.nombre});
+  guardarEstado(); showToast('✅ Justificación enviada al preceptor.'); closeModal(); navigate('asistencia');
+}
+function ptComunicadosPag(al){
+  return sectionHeader('Comunicados')+ptComunicadosHTML(al);
+}
+function ptConstancia(id){ try{ luaEnsure(DB); luaCertificado(id,'regular'); }catch(e){ showToast('No se pudo generar la constancia.','#991b1b'); } }
+function ptDatos(al,esFamilia){
+  const rc=ptRC();
+  const bloque=(t,rows)=>`<div style="${PT_CARD}margin-bottom:14px"><div style="font-weight:800;color:${rc};margin-bottom:6px">${t}</div>${rows.map(([k,v])=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:14px"><span style="color:#94a3b8;font-weight:600;font-size:12px">${k}</span><span style="color:#334155;font-weight:600;text-align:right">${luaEsc(v||'—')}</span></div>`).join('')}</div>`;
+  const ap=luaApeNom(al);
+  return sectionHeader(esFamilia?'Datos del alumno/a':'Mis Datos',`<button class="btn btn-ghost btn-sm" onclick="ptConstancia(${al.id})">🖨️ Constancia de alumno regular</button>`)
+   +`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">`
+   +bloque('👤 Datos personales',[['Apellido',ap.ape],['Nombre',ap.nom],['DNI',al.dni],['CUIL',al.cuil],['Fecha de nacimiento',fmtDate(al.fechaNac)],['Lugar de nacimiento',al.lugarNac],['Nacionalidad',al.nacionalidad]])
+   +bloque('🏫 Escolaridad',[['Curso',al.curso],['Estado',al.estado],['Ciclo lectivo',String(luaAnio())]])
+   +bloque('📞 Contacto',[['Domicilio',al.domicilio],['Teléfono',al.telefono],['Email',al.email]])
+   +bloque('👪 Familia',[['Padre',al.padre],['Madre',al.madre],['Tutor',al.tutor],['Tel. tutor',al.telTutor]])
+   +`</div>`+(esFamilia?'':`<button class="btn btn-primary" onclick="navigate('mi-legajo')">📋 Ver mi legajo completo</button>`);
+}
+
+// ── PORTAL ALUMNO ───────────────────────────────────────────────────
+function renderAlumno(sec){
+  currentSection=sec; ptF=ptF||{};
+  const al=DB.alumnos.find(a=>a.id===currentUser.alumnoId);
+  if(!al){document.getElementById('app-body').innerHTML='<div style="padding:40px;text-align:center;color:#ef4444">Alumno no encontrado</div>';return;}
+  const rc=ptRC(), nCom=ptComunicados(al).length;
+  const items=[
+    {id:'inicio',icon:'🏠',label:'Inicio',grupo:'general'},
+    {id:'libreta',icon:'📒',label:'Mi Libreta',grupo:'academico'},
+    {id:'notas',icon:'📝',label:'Mis Notas',grupo:'academico'},
+    {id:'asistencia',icon:'✅',label:'Mi Asistencia',grupo:'academico'},
+    {id:'comunicados',icon:'📢',label:'Comunicados'+(nCom?` <span style="background:rgba(255,255,255,.25);border-radius:10px;padding:0 7px;font-size:11px">${nCom}</span>`:''),grupo:'academico'},
+    {id:'datos',icon:'👤',label:'Mis Datos',grupo:'personal'},
+    {id:'familia',icon:'👪',label:'Mi Familia',grupo:'personal'},
+    {id:'mi-legajo',icon:'📋',label:'Mi Legajo',grupo:'personal'},
+  ];
+  if(sec==='mis-notas') sec=currentSection='notas'; if(sec==='mi-asist') sec=currentSection='asistencia'; if(sec==='mis-datos') sec=currentSection='datos';
+  const top=`<div class="sidebar-label">Portal Alumno</div><div class="sidebar-title">${luaEsc(al.nombre)}</div><div class="sidebar-sub">Curso: ${luaEsc(al.curso)}</div>${instChip(getInstUser())}`;
+  const sidebar=buildSidebar(rc,top,items,sec);
+  let content='';
+  if(sec==='inicio') content=ptInicio(al,false,rc);
+  else if(sec==='libreta') content=ptLibreta(al,false);
+  else if(sec==='notas') content=ptNotas(al,false);
+  else if(sec==='asistencia') content=ptAsistencia(al,false);
+  else if(sec==='comunicados') content=ptComunicadosPag(al);
+  else if(sec==='datos') content=ptDatos(al,false);
+  else if(sec==='familia') content=ptMiFamilia(al);
+  else if(sec==='mi-legajo'){ content=''; setTimeout(()=>abrirLegajo(al.id,'personal'),30); }
+  buildLayout(sidebar,content);
+}
+
+// ── PORTAL FAMILIA ──────────────────────────────────────────────────
+function renderPadre(sec){
+  currentSection=sec;
+  const hijos=DB.alumnos.filter(a=>currentUser.hijoIds&&currentUser.hijoIds.includes(a.id));
+  const rc=ptRC();
+  if(!hijos.length){
+    const top0=`<div class="sidebar-label">Portal Familia</div><div class="sidebar-title">${luaEsc(currentUser.nombre)}</div>${instChip(getInstUser())}`;
+    currentSection='hijos';
+    buildLayout(buildSidebar(rc,top0,[{id:'hijos',icon:'👨‍👩‍👧',label:'Mis hijos/as',grupo:'general'}],'hijos'),ptHijos()); return;
+  }
+  if(!padreHijoSel||!hijos.some(h=>h.id===padreHijoSel)) padreHijoSel=hijos[0].id;
+  const al=hijos.find(a=>a.id===padreHijoSel)||hijos[0];
+  if(sec==='hijos'){} else if(sec==='notas'||sec==='asistencia'||sec==='libreta'||sec==='comunicados'||sec==='datos'||sec==='resumen'||sec==='mi-legajo'){} else sec=currentSection='resumen';
+  const pendHijo=h=>ptStats(h).just.filter(j=>j.estado==='pendiente').length;
+  const items=[
+    {id:'resumen',icon:'🏠',label:'Resumen',grupo:'general'},
+    {id:'hijos',icon:'👨‍👩‍👧',label:'Mis hijos/as',grupo:'general'},
+    {id:'libreta',icon:'📒',label:'Libreta',grupo:'academico'},
+    {id:'notas',icon:'📝',label:'Notas',grupo:'academico'},
+    {id:'asistencia',icon:'✅',label:'Asistencia',grupo:'academico'},
+    {id:'comunicados',icon:'📢',label:'Comunicados',grupo:'academico'},
+    {id:'datos',icon:'👤',label:'Datos del alumno/a',grupo:'personal'},
+    {id:'mi-legajo',icon:'📋',label:'Mi Legajo',grupo:'personal'},
+  ];
+  if(currentUser.rol!=='padre') items.splice(items.findIndex(i=>i.id==='mi-legajo'),1);
+  const hijoSel=hijos.length>1?`<select onchange="padreHijoSel=parseInt(this.value);navigate('${sec}')" style="margin-top:8px;width:100%;padding:4px 8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:6px;font-size:12px;font-family:inherit">${hijos.map(h=>`<option style="color:#000" value="${h.id}"${h.id===padreHijoSel?' selected':''}>${luaEsc(h.nombre)}</option>`).join('')}</select>`:`<div style="font-size:12px;color:rgba(255,255,255,0.7);margin-top:4px">👤 ${luaEsc(al.nombre)}</div>`;
+  const top=`<div class="sidebar-label">Portal Familia</div><div class="sidebar-title">${luaEsc(currentUser.nombre)}</div>${hijoSel}${instChip(getInstUser())}`;
+  const sidebar=buildSidebar(rc,top,items,sec);
+  const barra=hijos.length>1&&sec!=='mi-legajo'&&sec!=='hijos'?`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">${hijos.map(h=>{ const s=ptStats(h), on=h.id===padreHijoSel; const ap=luaApeNom(h);
+     return `<button onclick="padreHijoSel=${h.id};navigate('${sec}')" style="cursor:pointer;text-align:left;border:2px solid ${on?rc:'#e2e8f0'};background:${on?rc:'#fff'};color:${on?'#fff':'#334155'};border-radius:14px;padding:10px 16px;min-width:200px;font-family:inherit">
+       <div style="font-weight:800">${luaEsc(ap.nom)} ${luaEsc(ap.ape)}</div><div style="font-size:12px;opacity:.85">${luaEsc(h.curso)} · prom. ${s.prom==null?'—':s.prom.toFixed(1)} · asist. ${s.pct}%</div></button>`; }).join('')}</div>`:'';
+  let content='';
+  if(sec==='resumen') content=ptInicio(al,true,rc);
+  else if(sec==='libreta') content=ptLibreta(al,true);
+  else if(sec==='notas') content=ptNotas(al,true);
+  else if(sec==='asistencia') content=ptAsistencia(al,true);
+  else if(sec==='comunicados') content=ptComunicadosPag(al);
+  else if(sec==='datos') content=ptDatos(al,true);
+  else if(sec==='hijos') content=ptHijos();
+  else if(sec==='mi-legajo'){ content=''; setTimeout(()=>abrirMiLegajoPendiente('personal'),0); }
+  buildLayout(sidebar,sec==='mi-legajo'?'':barra+content);
+}
+
+
+// ── VÍNCULO FAMILIA ⇄ ALUMNO (con código de vinculación) ────────────
+function ptCodigo(al,nuevo){
+  if(!al.codigoVinculo||nuevo){ const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)]; al.codigoVinculo=s; try{ guardarEstado(); }catch(e){} }
+  return al.codigoVinculo;
+}
+function ptFamiliares(al){ return USUARIOS.filter(u=>u.rol==='padre'&&(u.hijoIds||[]).includes(al.id)); }
+function ptMiFamilia(al){
+  const rc=ptRC(), cod=ptCodigo(al), fam=ptFamiliares(al);
+  return sectionHeader('Mi Familia')
+   +luaNota('Para que tu madre, padre o tutor vea tus notas y asistencia, pasale este <strong>código de vinculación</strong>. Lo ingresan en su portal, en <strong>Mis hijos/as</strong>, junto con tu DNI.')
+   +`<div style="${PT_CARD}margin-bottom:16px;text-align:center"><div style="font-size:12px;color:#64748b;font-weight:700;letter-spacing:.6px">TU CÓDIGO DE VINCULACIÓN</div>
+      <div style="font-size:42px;font-weight:900;letter-spacing:8px;color:${rc};margin:8px 0;font-family:monospace">${luaEsc(cod)}</div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:12px">Tu DNI: ${luaEsc(al.dni||'—')} · Si lo compartiste por error, generá uno nuevo.</div>
+      <button class="btn btn-ghost btn-sm" onclick="ptCodigoNuevo(${al.id})">🔄 Generar código nuevo</button></div>`
+   +`<div style="${PT_CARD}"><div style="font-weight:800;color:${rc};margin-bottom:8px">👪 Familiares vinculados</div>`
+   +(fam.length?fam.map(f=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #f1f5f9"><div><strong>${luaEsc(f.nombre)}</strong><div style="font-size:12px;color:#94a3b8">Usuario: ${luaEsc(f.usuario)}</div></div><button class="btn btn-danger btn-sm" onclick="ptDesvincular(${f.id},${al.id})">Quitar</button></div>`).join(''):'<div class="empty-msg">Todavía no hay familiares vinculados.</div>')+`</div>`;
+}
+function ptCodigoNuevo(id){ const al=DB.alumnos.find(a=>a.id===id); if(!al) return; ptCodigo(al,true); showToast('🔄 Código nuevo generado. El anterior ya no sirve.'); navigate('familia'); }
+function ptDesvincular(uid_,alId){
+  const u=USUARIOS.find(x=>x.id===uid_), al=DB.alumnos.find(a=>a.id===alId); if(!u||!al) return;
+  showModal('Quitar vínculo',`<p style="font-size:14px;line-height:1.6">¿Quitar el vínculo entre <strong>${luaEsc(u.nombre)}</strong> y <strong>${luaEsc(al.nombre)}</strong>? ${luaEsc(u.nombre)} dejará de ver sus notas y asistencia.</p>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-danger" onclick="ptDesvincularOk(${uid_},${alId})">Sí, quitar</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`);
+}
+function ptDesvincularOk(uid_,alId){
+  const u=USUARIOS.find(x=>x.id===uid_); if(u) u.hijoIds=(u.hijoIds||[]).filter(i=>i!==alId);
+  guardarEstado(); showToast('Vínculo eliminado.'); closeModal();
+  if(ptFam()){ if(padreHijoSel===alId) padreHijoSel=null; navigate('hijos'); } else navigate('familia');
+}
+function ptHijos(){
+  const rc=ptRC(), hijos=DB.alumnos.filter(a=>(currentUser.hijoIds||[]).includes(a.id));
+  return sectionHeader('Mis hijos/as')
+   +luaNota('Para vincular a un hijo/a necesitás su <strong>DNI</strong> y el <strong>código de vinculación</strong> que ve el alumno en su portal (<em>Mi Familia</em>) o que te entrega la escuela.')
+   +`<div style="${PT_CARD}margin-bottom:16px"><div style="font-weight:800;color:${rc};margin-bottom:10px">➕ Vincular un hijo/a</div>
+     <div class="form-grid-2">${formGroup('DNI del alumno/a',`<input class="form-input" id="pt-v-dni" placeholder="Ej.: 47.300.903">`,true)}${formGroup('Código de vinculación',`<input class="form-input" id="pt-v-cod" maxlength="8" style="text-transform:uppercase;letter-spacing:3px;font-family:monospace" placeholder="ABC123">`,true)}</div>
+     <button class="btn btn-success" onclick="ptVincular()">Vincular</button></div>`
+   +`<div style="${PT_CARD}"><div style="font-weight:800;color:${rc};margin-bottom:8px">👨‍👩‍👧 Hijos/as vinculados (${hijos.length})</div>`
+   +(hijos.length?hijos.map(h=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap"><div><strong>${luaEsc(h.nombre)}</strong><div style="font-size:12px;color:#94a3b8">${luaEsc(h.curso||'—')} · DNI ${luaEsc(h.dni||'—')}</div></div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="padreHijoSel=${h.id};navigate('resumen')">Ver</button><button class="btn btn-danger btn-sm" onclick="ptDesvincular(${currentUser.id},${h.id})">Desvincular</button></div></div>`).join(''):'<div class="empty-msg">Todavía no vinculaste a ningún hijo/a.</div>')+`</div>`;
+}
+function ptVincular(){
+  const dni=luaNorm(luaGet('pt-v-dni')), cod=luaGet('pt-v-cod').trim().toUpperCase();
+  if(!dni||!cod){ showToast('Ingresá el DNI y el código.','#991b1b'); return; }
+  const al=DB.alumnos.find(a=>luaNorm(a.dni)===dni&&a.codigoVinculo&&String(a.codigoVinculo).toUpperCase()===cod);
+  if(!al){ showToast('DNI o código incorrectos.','#991b1b'); return; }
+  currentUser.hijoIds=currentUser.hijoIds||[];
+  if(currentUser.hijoIds.includes(al.id)){ showToast('Ese alumno/a ya está vinculado.','#a16207'); return; }
+  currentUser.hijoIds.push(al.id); padreHijoSel=al.id;
+  const u=USUARIOS.find(x=>x.id===currentUser.id); if(u&&u!==currentUser) u.hijoIds=currentUser.hijoIds;
+  guardarEstado(); showToast('✅ Vinculaste a '+al.nombre+'.'); navigate('resumen');
+}
+
+// ── CUENTAS Y DATOS DE PRUEBA (se crean una sola vez) ───────────────
+function ptSeedDemo(){
+  try{
+    const D1=INST_DATA[1];
+    if(D1){
+      [[901,'ROJ901'],[902,'ROJ902']].forEach(([id,c])=>{ const a=D1.alumnos.find(x=>x.id===id); if(a&&!a.codigoVinculo) a.codigoVinculo=c; });
+      if(!D1.alumnos.some(a=>a.id===903)) D1.alumnos.push({id:903,nombre:'Lucía Benítez',apellido:'Benítez',nombres:'Lucía',dni:'47.300.903',cuil:'27-47300903-4',curso:'3°A',estado:'activo',fechaNac:'2010-02-02',lugarNac:'Federal, Entre Ríos',nacionalidad:'Argentina',domicilio:'Mitre 120, Federal',telefono:'3456-700300',email:'lucia.benitez@alumno.edu.ar',padre:'',madre:'',tutor:'',telTutor:'',codigoVinculo:'LUC903'});
+    }
+  }catch(e){}
+  try{
+    const DB1=INST_DATA[1]; if(!DB1||USUARIOS.some(u=>u.usuario==='crojas')) return;
+    const hash='ff960cb55673958c594d0daaab1e368651c75c02f9687192a1811e7b180336a7'; // clave: prueba123
+    const y=new Date().getFullYear(), hoy=new Date().toISOString().split('T')[0];
+    const ya=(id,ape,nom,dni,curso,fn,tut)=>({id,nombre:nom+' '+ape,apellido:ape,nombres:nom,dni,cuil:'27-'+dni.replace(/\./g,'')+'-4',curso,estado:'activo',fechaNac:fn,lugarNac:'Federal, Entre Ríos',nacionalidad:'Argentina',domicilio:'Urquiza 320, Federal',telefono:'3456-700100',email:nom.toLowerCase()+'.rojas@alumno.edu.ar',padre:'Hernán Rojas',madre:'Marcela Rojas',tutor:'Marcela Rojas',telTutor:'3456-700200'});
+    if(!DB1.alumnos.some(a=>a.id===901)) DB1.alumnos.push(ya(901,'Rojas','Camila','47.100.901','3°A','2010-04-12'));
+    if(!DB1.alumnos.some(a=>a.id===902)) DB1.alumnos.push(ya(902,'Rojas','Mateo','46.100.902','4°B','2009-08-30'));
+    const mk=(id,al,mats)=>{ mats.forEach(([m,t,o])=>t.forEach((n,i)=>{ if(n) DB1.notas.push({id:id++,alumnoId:al,materia:m,bimestre:i+1,nota:n,obs:(o&&o[i])||'',anio:y,ausente:false}); })); return id; };
+    let nid=900100;
+    nid=mk(nid,901,[['Matemática',[8,9,8]],['Lengua',[9,8,9],['Muy buena participación oral','','']],['Historia',[5,4,5],['Debe reforzar el trabajo con fuentes.','Recuperatorio pendiente.','']],['Biología',[7,8,7]],['Inglés',[9,10,9]],['Educación Física',[10,10,10]],['Geografía',[6,7,null]]]);
+    nid=mk(nid,902,[['Matemática',[6,7,null]],['Lengua',[7,7,8]],['Física',[8,8,9]],['Historia',[9,8,8]]]);
+    const feriado=new Set(['03-24','04-02','04-03','05-01','05-25','06-15','06-20','07-09','08-17','10-12']);
+    const gen=(id,al,ausentes,tard,media,just)=>{ let i=0,d=new Date(y,2,9);
+      while(d.toISOString().split('T')[0]<hoy){ const wd=d.getDay(), f=d.toISOString().split('T')[0];
+        if(wd>0&&wd<6&&!feriado.has(f.slice(5))){ i++; let r={id:id++,alumnoId:al,fecha:f,estado:'presente',origen:'preceptor'};
+          if(ausentes.includes(i)) r={...r,estado:'ausente',tipo:'Falta',cantidad:1,estadoInasistencia:'Efectiva',justificada:just.includes(i),justificacion:just.includes(i)?'Certificado médico':''};
+          else if(media.includes(i)) r={...r,estado:'ausente',tipo:'Falta',cantidad:0.5,estadoInasistencia:'Efectiva',justificada:false};
+          else if(tard.includes(i)) r.estado='tardanza';
+          DB1.asistencias.push(r); }
+        d.setDate(d.getDate()+1); } return id; };
+    let aid=900500;
+    aid=gen(aid,901,[8,9,27,41,60,75,90,104,118,131],[5,15,33,48,70,99],[20,55,110],[8,9,41]);
+    aid=gen(aid,902,[12,30,52,88],[7,22],[],[12]);
+    const inst=DB1.preceptores&&DB1.preceptores[0]?DB1.preceptores[0].id:1;
+    [['3°A','Reunión de padres y entrega de boletines','Se convoca a reunión de padres el viernes a las 17:00 hs en el SUM. Se entregarán los boletines del 2° trimestre.',-4],
+     ['3°A','Salida educativa — Museo Histórico','La salida del jueves requiere autorización firmada. Llevar DNI y colación.',-11],
+     ['4°B','Alerta de inasistencias','Recordamos que superar el 25% de inasistencias implica pérdida de regularidad.',-6],
+     ['Todos','Acto por el Día de la Bandera','Los alumnos deben concurrir con uniforme. Horario habitual.',-20]].forEach(([c,a,t,off],i)=>{ const dd=new Date(); dd.setDate(dd.getDate()+off); DB1.comunicados.push({id:900900+i,preceptorId:inst,curso:c,asunto:a,texto:t,fecha:dd.toISOString().split('T')[0],estado:'enviado'}); });
+    DB1.justificaciones.push({id:900950,alumnoId:901,fecha:(()=>{const f=DB1.asistencias.filter(a=>a.alumnoId===901&&a.estado==='ausente'&&!a.justificada).map(a=>a.fecha).sort();return f[f.length-1];})(),motivo:'Consulta médica',tipo:'Médica',estado:'pendiente',obs:'',origen:'Familia',solicitante:'Marcela Rojas'});
+    const ids=USUARIOS.map(u=>u.id); const nx=Math.max(...ids)+1;
+    USUARIOS.push({id:nx,usuario:'crojas',claveHash:hash,rol:'alumno',nombre:'Camila Rojas',estado:'activo',alumnoId:901,institucionId:1});
+    USUARIOS.push({id:nx+1,usuario:'mrojas',claveHash:hash,rol:'padre',nombre:'Marcela Rojas',estado:'activo',hijoIds:[901,902],institucionId:1});
+    try{ guardarEstado(); }catch(e){}
+  }catch(e){ console.error('Seed demo portales:',e); }
+}
+
+ptSeedDemo();
 </script>
 </body>
 </html>
