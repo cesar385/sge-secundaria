@@ -1927,6 +1927,7 @@ function _bootApp(){
   setTimeout(actualizarBannerSheets, 1500);
 }
 function doLogout(){
+  _accesoSec=null; try{ const vb=document.getElementById('btn-volver-panel'); if(vb) vb.remove(); }catch(e){}
   ptFamUid=null; try{ const b=document.getElementById('topbar-familia'); if(b) b.remove(); }catch(e){}
   guardarEstadoInmediato();
   olvidarSesion();
@@ -2645,7 +2646,8 @@ function renderAdmin(sec){
     {id:'notas',        icon:'📝', label:'Notas',           grupo:'alumnos'},
   ];
 
-  const items = inst ? [...itemsGlobal, ...itemsInst] : itemsGlobal;
+  // El administrador, al gestionar una institución, no ve su propio legajo.
+  const items = inst ? [...itemsGlobal.filter(i=>i.id!=='mi-legajo'), ...itemsInst] : itemsGlobal;
 
   // ── Cabecera del sidebar ──
   const topInst = inst ? `
@@ -3954,17 +3956,21 @@ function _logAuto(msg){
 
 // ── Accesos directos del Panel General ──
 const ACCESOS_DIRECTOS=[
-  ['cargar-tramite','🧾','Cargar trámite'],['consulta-tramites','🔎','Consulta de trámites'],
-  ['docentes','👩‍🏫','Docentes'],['designaciones','📌','Designaciones'],['licencias','📋','Licencias'],['plazas','🏛️','Plazas'],
-  ['preceptores','🗂️','Preceptores'],['cert-medicas','🩺','Cert. médicas'],['liquidaciones','💰','Liquidaciones'],
-  ['alumnos','🎓','Alumnos'],['lua','🧑‍🎓','Operaciones con alumnos'],['cursos','📚','Cursos'],
-  ['asistencias','✅','Asistencias'],['notas','📝','Notas'],['mi-legajo','📋','Mi legajo']
+  ['Gestión',[['cargar-tramite','🧾','Cargar trámite'],['consulta-tramites','🔎','Consulta de trámites'],['mi-legajo','📋','Mi legajo']]],
+  ['Gestión Docente',[['docentes','👩‍🏫','Docentes'],['designaciones','📌','Designaciones'],['licencias','📋','Licencias'],['plazas','🏛️','Plazas'],
+    ['preceptores','🗂️','Preceptores'],['cert-medicas','🩺','Cert. médicas'],['liquidaciones','💰','Liquidaciones']]],
+  ['Gestión Alumnos',[['alumnos','🎓','Alumnos'],['lua','🧑‍🎓','Operaciones con alumnos'],['cursos','📚','Cursos'],['asistencias','✅','Asistencias'],['notas','📝','Notas']]]
 ];
+const ACCESOS_CAT_ESTILO={'Gestión':['#0e7490','#ecfeff','🗂️'],'Gestión Docente':['#166534','#f0fdf4','👩‍🏫'],'Gestión Alumnos':['#6d28d9','#f5f3ff','🎓']};
 function accesosDirectosHTML(){
-  const ids=window._navIdsActual||[]; const rc=ROL_COLOR[currentUser&&currentUser.rol]||'#1a3a5c';
-  const t=ACCESOS_DIRECTOS.filter(([id])=>ids.includes(id)); if(!t.length) return '';
-  return `<div style="margin-bottom:18px"><div style="font-size:12px;font-weight:800;color:#64748b;letter-spacing:.6px;margin-bottom:8px">⚡ ACCESOS DIRECTOS</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">${t.map(([id,ic,lb])=>`<button onclick="navigate('${id}')" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;font-family:inherit;font-size:12.5px;font-weight:700;color:#334155;box-shadow:0 1px 3px rgba(0,0,0,.05);transition:.15s" onmouseover="this.style.borderColor='${rc}';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='#e2e8f0';this.style.transform='none'"><span style="font-size:26px">${ic}</span><span style="text-align:center;line-height:1.25">${lb}</span></button>`).join('')}</div></div>`;
+  const ids=window._navIdsActual||[];
+  const btn=([id,ic,lb],col)=>`<button onclick="irAcceso('${id}')" style="background:#fff;border:1px solid #e2e8f0;border-top:3px solid ${col};border-radius:12px;padding:13px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;font-family:inherit;font-size:12.5px;font-weight:700;color:#334155;box-shadow:0 1px 3px rgba(0,0,0,.05);transition:.15s" onmouseover="this.style.borderColor='${col}';this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 10px rgba(0,0,0,.1)'" onmouseout="this.style.borderColor='#e2e8f0';this.style.borderTopColor='${col}';this.style.transform='none';this.style.boxShadow='0 1px 3px rgba(0,0,0,.05)'"><span style="font-size:26px">${ic}</span><span style="text-align:center;line-height:1.25">${lb}</span></button>`;
+  const grupos=ACCESOS_DIRECTOS.map(([cat,l])=>[cat,l.filter(([id])=>ids.includes(id))]).filter(([,l])=>l.length);
+  if(!grupos.length) return '';
+  return `<div style="margin-bottom:18px"><div style="font-size:12px;font-weight:800;color:#64748b;letter-spacing:.6px;margin-bottom:10px">⚡ ACCESOS DIRECTOS</div>`
+   +grupos.map(([cat,l])=>{ const [col,bg,ic]=ACCESOS_CAT_ESTILO[cat]||['#1a3a5c','#f1f5f9','📁'];
+     return `<div style="margin-bottom:16px"><div style="display:flex;align-items:center;gap:10px;background:${bg};border-left:5px solid ${col};border-radius:8px;padding:8px 14px;margin-bottom:10px"><span style="font-size:18px">${ic}</span><span style="font-size:14.5px;font-weight:900;color:${col};letter-spacing:.2px;flex:1">${cat}</span><span style="font-size:11px;font-weight:700;color:${col};opacity:.75">${l.length} acceso${l.length>1?'s':''}</span></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">${l.map(x=>btn(x,col)).join('')}</div></div>`; }).join('')
+   +`</div>`;
 }
 function renderDashboard(){
   checkAutomatismos(); // ejecutar automatismos al abrir el dashboard
@@ -4045,23 +4051,20 @@ function renderDashboard(){
     ${accesosDirectosHTML()}
     ${alertaSolic}
     ${alertaReint}
-    <div class="cards-grid">
-      ${cardHTML('Docentes Activos',activos,'👩‍🏫','#1a3a5c')}
-      ${cardHTML('En Licencia',enLic,'📋','#854d0e','docentes')}
-      ${cardHTML('Plazas Activas',plazasActivas,'🏛️','#1e40af')}
-      ${cardHTML('Preceptores',precAct,'🗂️','#0f766e')}
-      ${cardHTML('Alumnos Inscriptos',aAct,'🎓','#3a1a5c')}
-      ${cardHTML('Cursos Activos',c.length,'📚','#1a5c3a')}
-      ${cardHTML('Licencias Pendientes',lPend,'⏳','#991b1b','por aprobar')}
-      ${reintPend.length?cardHTML('Reintegros Pendientes',reintPend.length,'🔄','#c2410c','por ejecutar'):''}
-    </div>
-    <div class="two-col">
-      <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.06)">
-        <h3 style="margin:0 0 16px;font-size:15px;color:#1a3a5c">Estado Docentes</h3>${bars}
+    <div style="background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:16px 18px">
+      <div style="font-size:12px;font-weight:800;color:#64748b;letter-spacing:.6px;margin-bottom:10px">📊 RESUMEN</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px">
+        ${[['👩‍🏫','Docentes activos',activos,'#1a3a5c',''],['📋','En licencia',enLic,'#854d0e',''],['🏛️','Plazas activas',plazasActivas,'#1e40af',''],['🗂️','Preceptores',precAct,'#0f766e',''],
+           ['🎓','Alumnos inscriptos',aAct,'#3a1a5c',''],['📚','Cursos activos',c.length,'#1a5c3a',''],['⏳','Licencias pendientes',lPend,lPend?'#991b1b':'#64748b',''],
+           ...(reintPend.length?[['🔄','Reintegros pendientes',reintPend.length,'#c2410c','']]:[])]
+          .map(([ic,lb,n,col])=>`<div style="display:flex;align-items:center;gap:9px;background:#f8fafc;border-radius:10px;padding:8px 11px"><span style="font-size:20px">${ic}</span><div><div style="font-size:19px;font-weight:900;color:${col};line-height:1.1">${n}</div><div style="font-size:11px;color:#64748b;font-weight:600">${lb}</div></div></div>`).join('')}
       </div>
-      <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.06)">
-        <h3 style="margin:0 0 16px;font-size:15px;color:#1a3a5c">Alumnos por Curso</h3>${cursosBars}
-      </div>
+      <details style="margin-top:12px"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:#1a3a5c;padding:4px 0">Ver detalle: estado de docentes y alumnos por curso</summary>
+        <div class="two-col" style="margin-top:12px">
+          <div><h3 style="margin:0 0 12px;font-size:14px;color:#1a3a5c">Estado Docentes</h3>${bars}</div>
+          <div><h3 style="margin:0 0 12px;font-size:14px;color:#1a3a5c">Alumnos por Curso</h3>${cursosBars||'<div class="empty-msg">Sin cursos.</div>'}</div>
+        </div>
+      </details>
     </div>`;
 }
 
@@ -5145,7 +5148,7 @@ function verDetalleLic(licId){
 
   const acciones = `<div class="form-actions" style="margin-top:16px">
     <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
-    <button class="btn btn-ghost" onclick="closeModal();generarFormularioLicencia(${lic.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Formulario</button>
+    <button class="btn btn-ghost" onclick="abrirDesdeDetalle(()=>generarFormularioLicencia(${lic.id}))" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Formulario</button>
     ${puedeGestionarPersonal()&&lic.estado==='pendiente'?(
       licenciaTienePlazaAsociada(lic)
         ? `<button class="btn btn-ghost" onclick="closeModal();asociarPlaza(${lic.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar Plazas</button>
@@ -5919,7 +5922,7 @@ function verDetalleDesig(desigId){
     {label:'Agente Designado', value: doc?`${doc.nombre}${doc.dni?` (${doc.dni})`:''}`:'—'},
     {label:'Establecimiento Origen', value: inst?`${inst.cue||'—'}-${inst.nombre}`:'—'},
     {label:'Fecha Desde', value: fmtDate(d.desde)},
-    {label:'Fecha Hasta', value: d.hasta?fmtDate(d.hasta):'Sin vencimiento'},
+    {label:'Fecha Hasta', value: d.hasta?fmtDate(d.hasta):'Abierto'},
     {label:'Situación Revista', value: d.caracter||'—'},
     {label:'Modalidad', value: d.modalidad||'—'},
     {label:'Cargo', value: d.cargo||'—'},
@@ -5938,8 +5941,8 @@ function verDetalleDesig(desigId){
        <div class="form-actions" style="margin-top:10px"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>`
     : `<div class="form-actions" style="margin-top:16px">
     <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
-    <button class="btn btn-ghost" onclick="closeModal();generarNotifDesignacion(${d.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Notificación</button>
-    <button class="btn btn-ghost" onclick="closeModal();verHistorialPlaza('${d.nroPlaza}')" style="border:1px solid #c4b5fd;color:#6d28d9">🕓 Historial de la plaza</button>
+    <button class="btn btn-ghost" onclick="abrirDesdeDetalle(()=>generarNotifDesignacion(${d.id}))" style="border:1.5px solid #1a3a5c;color:#1a3a5c">🖨️ Notificación</button>
+    <button class="btn btn-ghost" onclick="abrirDesdeDetalle(()=>verHistorialPlaza('${d.nroPlaza}'),true)" style="border:1px solid #c4b5fd;color:#6d28d9">🕓 Historial de la plaza</button>
     ${puedeGestionarPersonal()&&d.estado!=='anulada'?`<button class="btn btn-ghost" onclick="closeModal();openEditDesig(${d.id})">✏️ Modificar</button>`:''}
     ${botonAnularDesig(d,true)}
     ${puedeGestionarPersonal()&&d.estado==='activa'?`<button class="btn btn-danger" onclick="closeModal();inactivarDesig(${d.id})">Inactivar</button>`:''}
@@ -8526,7 +8529,7 @@ function verComprobanteTramite(tipoLabel, id, origen='admin'){
         </div>
         <div style="margin-bottom:6px"><strong>Agente:</strong> ${doc?(doc.nombre||`${doc.apellido||''}, ${doc.nombres||''}`):'—'}${doc&&doc.dni?' (DNI '+doc.dni+')':''}</div>
         <div style="margin-bottom:6px"><strong>Institución:</strong> ${inst?inst.nombre:'—'}</div>
-        <div style="margin-bottom:6px"><strong>Fecha Desde:</strong> ${fmtDate(rec.desde)}${rec.hasta?' &nbsp;&nbsp; <strong>Hasta:</strong> '+fmtDate(rec.hasta):''}</div>
+        <div style="margin-bottom:6px"><strong>Fecha Desde:</strong> ${fmtDate(rec.desde)} &nbsp;&nbsp; <strong>Fecha Hasta:</strong> ${rec.hasta?fmtDate(rec.hasta):'Abierto'}</div>
         <div style="margin:12px 0;border-top:1px dashed #cbd5e1"></div>
         <div style="line-height:1.9">${extraHTML}</div>
         <div style="margin-top:24px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center">
@@ -9642,7 +9645,6 @@ function generarFormularioLicencia(licId){
 <style>${estilosNotifSimple()}</style>
 </head>
 <body>
-<button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
 <div class="page">
   <div class="header">
     <div class="inst">${(inst?.nombre||'').toUpperCase()}${ciudad?' — '+ciudad.toUpperCase():''}</div>
@@ -9744,7 +9746,6 @@ function generarNotifDesignacion(desigId){
 <style>${estilosNotifSimple()}</style>
 </head>
 <body>
-<button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
 <div class="page">
   <div class="header">
     <div class="inst">${(inst?.nombre||'').toUpperCase()}${ciudad?' — '+ciudad.toUpperCase():''}</div>
@@ -9782,7 +9783,7 @@ function generarNotifDesignacion(desigId){
       ${campoNotif('Turno', plaza?.turno||'—')}
       ${campoNotif('Antigüedad', antig)}
       ${campoNotif('Fecha de inicio (Alta)', fmtDate(desig.desde))}
-      ${campoNotif('Fecha de término (Baja)', desig.hasta?fmtDate(desig.hasta):'Sin vencimiento')}
+      ${campoNotif('Fecha de término (Baja)', desig.hasta?fmtDate(desig.hasta):'Abierto')}
       ${campoNotif('N° de Resolución', desig.nroResolucion||'')}
       ${campoNotif('Documentación adosada', desig.docsAdjuntos||'', true)}
     </div>
@@ -9846,7 +9847,6 @@ function _fu01Comun({tramiteLabel, tipoSegmento, persona, inst, rubro4xTitulo, r
 <style>${estilosFU01()}</style>
 </head>
 <body>
-<button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
 <div class="page">
 
   <div class="fu-header">
@@ -10358,6 +10358,9 @@ function closeModal(){
 // Abre el detalle de un trámite desde la pestaña "Trámites" del Legajo del
 // agente, de forma que al cerrar/volver se regrese a esa pestaña del legajo
 // en vez de navegar al listado general de docentes.
+// Abre otra vista (notificación, formulario, historial…) desde un detalle conservando el destino de
+// retorno: así, al cerrar, se vuelve a donde se estaba (p.ej. Trámites del legajo) y no al listado general.
+function abrirDesdeDetalle(fn,esHistorialPlaza){ const ret=_modalReturnFn; fn(); _modalReturnFn=ret; if(esHistorialPlaza&&ret) _histPlazaReturnFn=ret; }
 function irDetalleTramiteLegajo(tipoLabel, id, docId, origen='admin'){
   verDetalleConsultaTramite(tipoLabel, id);
   _modalReturnFn = ()=>_volverATramitesLegajo(docId, origen);
@@ -14899,6 +14902,19 @@ function ptSeedDemo(){
   }catch(e){ console.error('Seed demo portales:',e); }
 }
 
+// ── Volver al Panel General desde un acceso directo ──
+var _accesoSec=null;
+function irAcceso(id){ _accesoSec=id; navigate(id); }
+function btnVolverPanel(){
+  const old=document.getElementById('btn-volver-panel'); if(old) old.remove();
+  if(!_accesoSec||!currentUser||currentSection==='dashboard') return;
+  const b=document.createElement('button'); b.id='btn-volver-panel';
+  b.textContent='🏠 Volver al Panel General';
+  b.style.cssText='position:fixed;right:20px;bottom:64px;z-index:60;background:#1a3a5c;color:#fff;border:none;border-radius:24px;padding:11px 18px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25);font-family:inherit';
+  b.onclick=()=>{ _accesoSec=null; navigate('dashboard'); };
+  document.body.appendChild(b);
+}
+(function(){ const orig=navigate; navigate=function(sec){ if(sec!==_accesoSec) _accesoSec=null; const r=orig.apply(this,arguments); try{ btnVolverPanel(); }catch(e){} return r; }; })();
 ptSeedDemo();
 iniciarSincronizacionYSesion();
 </script>
