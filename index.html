@@ -441,6 +441,70 @@ function docenteInstituciones(user){
   if(user && Array.isArray(user.instituciones) && user.instituciones.length) return user.instituciones;
   return [{institucionId:(user&&user.institucionId)||1, docenteId:user&&user.docenteId}];
 }
+
+// Todas las instituciones en las que figura el agente: las vinculadas a su
+// usuario + cualquier otra institución donde exista un/a docente con el mismo
+// DNI o CUIL (así aparecen servicios aunque el vínculo no se haya cargado).
+function agenteVinculosTodasInst(user, docRef){
+  const _norm = v => String(v||'').replace(/\D/g,'');
+  const vinculos = [];
+  const vistos = new Set();
+  const agregar = (instId, docId)=>{
+    const k = instId+'|'+docId;
+    if(instId==null || docId==null || vistos.has(k)) return;
+    vistos.add(k); vinculos.push({institucionId:instId, docenteId:docId});
+  };
+  docenteInstituciones(user).forEach(v=>agregar(v.institucionId, v.docenteId));
+  // Datos de identidad del agente (del registro de referencia o de cualquier vínculo)
+  let dni=_norm(docRef&&docRef.dni), cuil=_norm(docRef&&docRef.cuil);
+  if(!dni && !cuil){
+    vinculos.some(v=>{
+      const d=(INST_DATA[v.institucionId]&&INST_DATA[v.institucionId].docentes||[]).find(x=>x.id===v.docenteId);
+      if(d){ dni=_norm(d.dni); cuil=_norm(d.cuil); }
+      return dni||cuil;
+    });
+  }
+  if(dni || cuil){
+    Object.keys(INST_DATA).forEach(k=>{
+      const data=INST_DATA[k]; if(!data||!data.docentes) return;
+      const instId = isNaN(Number(k)) ? k : Number(k);
+      data.docentes.forEach(d=>{
+        if((dni && _norm(d.dni)===dni) || (cuil && _norm(d.cuil)===cuil)) agregar(instId, d.id);
+      });
+    });
+  }
+  return vinculos;
+}
+
+// Bloques para la tabla "Servicios Actuales" estilo SAGE con TODOS los
+// servicios activos (activos o en licencia) del agente, en todas las instituciones.
+function bloquesServiciosActualesAgente(user, docRef){
+  const porInst = {};
+  const orden = [];
+  agenteVinculosTodasInst(user, docRef).forEach(v=>{
+    const data = INST_DATA[v.institucionId];
+    if(!data) return;
+    const instObj = INSTITUCIONES.find(i=>i.id===v.institucionId);
+    if(instObj && instObj.estado && instObj.estado!=='activa') return;
+    if(!porInst[v.institucionId]){
+      porInst[v.institucionId] = {titulo:`${instObj?instObj.nombre:`Institución ${v.institucionId}`}${instObj&&instObj.tipo?' ('+instObj.tipo+')':''}`, items:[]};
+      orden.push(v.institucionId);
+    }
+    (data.designaciones||[])
+      .filter(d=>d.docenteId===v.docenteId && (d.estado==='activa'||d.estado==='licencia'))
+      .sort((a,b)=>(b.desde||'').localeCompare(a.desde||''))
+      .forEach(d=>{
+        const pl=(data.plazas||[]).find(p=>p.nroPlaza===d.nroPlaza);
+        porInst[v.institucionId].items.push({...d, _institucionId:v.institucionId,
+          nivel:(instObj&&instObj.nivel?instObj.nivel:'Secundario'),
+          programa:`${String(v.institucionId||1).padStart(2,'0')}-3`,
+          turno: pl?pl.turno:(d.turno||'')});
+      });
+  });
+  // Institución actual primero
+  orden.sort((a,b)=>(b===currentInstitucionId)-(a===currentInstitucionId));
+  return orden.map(id=>porInst[id]);
+}
 // Director/a y Secretario/a también son agentes con legajo, designación y licencias:
 // se les asegura un registro en DB.docentes (vinculado por user.docenteId) para que
 // "Mi Espacio" (Mi Legajo / Mis Designaciones / Mis Licencias) funcione igual que
@@ -1151,7 +1215,7 @@ function tablaServiciosActualesSage(bloques, volverExpr){
           const codSS=`2${String(d.id).padStart(7,'0')}`;
           totalCargoHs+=(d.horas||0);
           bodyRowsHTML+=`<tr style="border-bottom:1px solid #f1f5f9">
-            <td style="padding:6px 10px;text-align:center;cursor:pointer;color:#0e7490;font-weight:800" onclick="_histPlazaReturnFn=()=>{${volverExpr||"navigate(currentSection||'designaciones')"}};verHistorialPlaza('${d.nroPlaza}')" title="Ver historial de la plaza">+</td>
+            <td style="padding:6px 10px;text-align:center;cursor:pointer;color:#0e7490;font-weight:800" onclick="_histPlazaReturnFn=()=>{${volverExpr||"navigate(currentSection||'designaciones')"}};verHistorialPlaza('${d.nroPlaza}'${d._institucionId!=null?`,${JSON.stringify(d._institucionId)}`:''})" title="Ver historial de la plaza">+</td>
             <td style="padding:6px 10px 6px 24px;font-size:11.5px;color:#1e40af;line-height:1.5">
               <div>P: ${d.nroPlaza||'—'}</div>
               <div>S: ${codS}</div>
@@ -1177,6 +1241,9 @@ function tablaServiciosActualesSage(bloques, volverExpr){
     granTotalHs+=subTotalHs;
   });
 
+  if(bloques.length>1 && hayItems){
+    bodyRowsHTML+=`<tr style="background:#1a3a5c;color:#fff"><td></td><td style="padding:8px 10px;font-weight:900">Total general</td><td style="padding:8px 10px;text-align:center;font-weight:900">${granTotalHs}</td><td colspan="9" style="padding:8px 10px;font-size:11px;font-weight:600">${bloques.length} instituciones</td></tr>`;
+  }
   return `
     <div style="font-weight:800;color:#fff;background:#1a3a5c;padding:8px 14px;font-size:13px">Servicios Actuales</div>
     <div style="overflow-x:auto">
@@ -7603,17 +7670,8 @@ function renderMisDesig(){
   // Servicios Actuales con el mismo formato "estilo SAGE" (Institución › Cargo
   // › Situación de Revista › Servicio) que usa el legajo del agente en Administración,
   // agrupando por cada institución en la que el docente trabaja.
-  const bloquesPorInst=[];
-  misInsts.forEach(v=>{
-    const data = INST_DATA[v.institucionId];
-    if(!data) return;
-    const instObj = INSTITUCIONES.find(i=>i.id===v.institucionId);
-    const items = actuales.filter(d=>d._institucionId===v.institucionId).map(d=>{
-      const pl=(data.plazas||[]).find(p=>p.nroPlaza===d.nroPlaza);
-      return {...d, nivel:(instObj&&instObj.nivel?instObj.nivel:'Secundario'), programa:`${String(v.institucionId||1).padStart(2,'0')}-3`, turno: pl?pl.turno:''};
-    });
-    bloquesPorInst.push({titulo:`${instObj?instObj.nombre:`Institución ${v.institucionId}`}${instObj&&instObj.tipo?' ('+instObj.tipo+')':''}`, items});
-  });
+  const _docRefActual = (DB.docentes||[]).find(d=>d.id===currentUser.docenteId);
+  const bloquesPorInst = bloquesServiciosActualesAgente(currentUser, _docRefActual);
   const tablaActualesHTML = bloquesPorInst.length ? tablaServiciosActualesSage(bloquesPorInst)
     : tablaServiciosActualesSage([{titulo:'—', items:[]}]);
 
@@ -10158,7 +10216,7 @@ function cambiarSubtabServiciosLegajo(personaId, subtabId, origen='admin'){
 // Legajo" del propio docente/preceptor. Los datos ya vienen resueltos por
 // quien llama (designaciones activas/históricas, otras instituciones
 // finalizadas) para no acoplar esta función a un modelo de datos puntual.
-function renderServiciosSageLegajo(personaId, persona, desigActivas, desigHistArr, otrasFinalArr, origen='admin'){
+function renderServiciosSageLegajo(personaId, persona, desigActivas, desigHistArr, otrasFinalArr, origen='admin', bloquesActuales=null){
   if(typeof legajoServSubtab==='undefined' || !legajoServSubtab) legajoServSubtab='actuales';
   const inst = getInstUser()||instActual();
 
@@ -10183,7 +10241,9 @@ function renderServiciosSageLegajo(personaId, persona, desigActivas, desigHistAr
   const volverExpr = volverExprMap[origen] || volverExprMap.admin;
 
   let tablaHTML='';
-  if(legajoServSubtab==='actuales'){
+  if(legajoServSubtab==='actuales' && Array.isArray(bloquesActuales) && bloquesActuales.length){
+    tablaHTML = tablaServiciosActualesSage(bloquesActuales, volverExpr);
+  } else if(legajoServSubtab==='actuales'){
     const itemsSage = desigActivas.map(d=>{
       const pl=DB.plazas.find(p=>p.nroPlaza===d.nroPlaza);
       return {...d, nivel:(inst&&inst.nivel?inst.nivel:'Secundario'), programa:`${String(inst&&inst.id||1).padStart(2,'0')}-3`, turno: pl?pl.turno:(d.turno||'')};
@@ -11375,7 +11435,8 @@ function abrirLegajoPropio(docId, tab='personal'){
     const desigActivas=DB.designaciones.filter(d=>d.docenteId===docId&&d.estado==='activa');
     const desigHistArr=DB.designaciones.filter(d=>d.docenteId===docId&&d.estado!=='activa'&&d.estado!=='pendiente');
     const otrasFinalArr=(doc.otrasInstituciones||[]).filter(oi=>oi.estado==='finalizada');
-    bodyHTML = renderServiciosSageLegajo(docId, doc, desigActivas, desigHistArr, otrasFinalArr, 'propio');
+    bodyHTML = renderServiciosSageLegajo(docId, doc, desigActivas, desigHistArr, otrasFinalArr, 'propio',
+      bloquesServiciosActualesAgente(currentUser, doc));
   }
   else if(tab==='personal'){
     bodyHTML=`
