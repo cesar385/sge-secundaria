@@ -2567,6 +2567,7 @@ function buildLayout(sidebarHTML, contentHTML){
     </div>`;
 }
 function buildSidebar(color, topHTML, items, active){
+  window._navIdsActual=items.map(i=>i.id);
   const grouped = {};
   items.forEach(i=>{ if(!grouped[i.grupo]) grouped[i.grupo]=[]; grouped[i.grupo].push(i); });
   const groupLabels = {general:'General',docentes:'Gestión Docente',alumnos:'Gestión Alumnos',personal:'Mi Espacio',academico:'Académico'};
@@ -2636,7 +2637,7 @@ function renderAdmin(sec){
     {id:'reintegros',   icon:'🔄', label:'Reintegros',      grupo:'docentes'},
     {id:'preceptores',  icon:'🗂️', label:'Preceptores',     grupo:'docentes'},
     {id:'cert-medicas', icon:'🩺', label:'Certificaciones Médicas', grupo:'docentes'},
-    {id:'liquidaciones',icon:'💰', label:'Liquidaciones',   grupo:'docentes'},
+    ...(puedeLiquidar()?[{id:'liquidaciones',icon:'💰', label:'Liquidaciones',   grupo:'docentes'}]:[]),
     {id:'alumnos',      icon:'🎓', label:'Alumnos',         grupo:'alumnos'},
     {id:'lua',          icon:'🧑‍🎓',label:'Operaciones con Alumnos', grupo:'alumnos'},
     {id:'cursos',       icon:'📚', label:'Cursos',          grupo:'alumnos'},
@@ -2681,7 +2682,7 @@ function renderAdmin(sec){
   else if(sec==='reintegros')     content=renderReintegros();
   else if(sec==='preceptores')    content=renderPreceptoresAdmin();
   else if(sec==='cert-medicas')   content=renderCertificacionesMedicas();
-  else if(sec==='liquidaciones')  content=renderLiquidaciones();
+  else if(sec==='liquidaciones')  content=puedeLiquidar()?renderLiquidaciones():`${sectionHeader('Liquidaciones')}<div class="alert-info">Las liquidaciones las gestiona el Administrador.</div>`;
   else if(sec==='alumnos')        content=renderAlumnos();
   else if(sec==='lua')            content=renderLUA();
   else if(sec==='cursos')         content=renderCursos();
@@ -3951,6 +3952,20 @@ function _logAuto(msg){
 }
 
 
+// ── Accesos directos del Panel General ──
+const ACCESOS_DIRECTOS=[
+  ['cargar-tramite','🧾','Cargar trámite'],['consulta-tramites','🔎','Consulta de trámites'],
+  ['docentes','👩‍🏫','Docentes'],['designaciones','📌','Designaciones'],['licencias','📋','Licencias'],['plazas','🏛️','Plazas'],
+  ['preceptores','🗂️','Preceptores'],['cert-medicas','🩺','Cert. médicas'],['liquidaciones','💰','Liquidaciones'],
+  ['alumnos','🎓','Alumnos'],['lua','🧑‍🎓','Operaciones con alumnos'],['cursos','📚','Cursos'],
+  ['asistencias','✅','Asistencias'],['notas','📝','Notas'],['mi-legajo','📋','Mi legajo']
+];
+function accesosDirectosHTML(){
+  const ids=window._navIdsActual||[]; const rc=ROL_COLOR[currentUser&&currentUser.rol]||'#1a3a5c';
+  const t=ACCESOS_DIRECTOS.filter(([id])=>ids.includes(id)); if(!t.length) return '';
+  return `<div style="margin-bottom:18px"><div style="font-size:12px;font-weight:800;color:#64748b;letter-spacing:.6px;margin-bottom:8px">⚡ ACCESOS DIRECTOS</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">${t.map(([id,ic,lb])=>`<button onclick="navigate('${id}')" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;font-family:inherit;font-size:12.5px;font-weight:700;color:#334155;box-shadow:0 1px 3px rgba(0,0,0,.05);transition:.15s" onmouseover="this.style.borderColor='${rc}';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='#e2e8f0';this.style.transform='none'"><span style="font-size:26px">${ic}</span><span style="text-align:center;line-height:1.25">${lb}</span></button>`).join('')}</div></div>`;
+}
 function renderDashboard(){
   checkAutomatismos(); // ejecutar automatismos al abrir el dashboard
   const d=DB.docentes, a=DB.alumnos, c=DB.cursos, l=DB.licencias;
@@ -4027,6 +4042,7 @@ function renderDashboard(){
     </div>`;
   });
   return `${sectionHeader('Panel General')}
+    ${accesosDirectosHTML()}
     ${alertaSolic}
     ${alertaReint}
     <div class="cards-grid">
@@ -11457,7 +11473,7 @@ function abrirLegajoAdmin(docId, tab='situacion'){
     {id:'licencias',    label:'Licencias (detalle)'},
     {id:'conceptos',    label:'Conceptos del Período', editable:true},
   ];
-  const tabsHTML=`<div style="background:#1a3a5c;border-radius:8px 8px 0 0;padding:6px 8px 0;display:flex;gap:3px;flex-wrap:wrap">${TABS_ADMIN.map(t=>`
+  const tabsHTML=`<div style="background:#1a3a5c;border-radius:8px 8px 0 0;padding:6px 8px 0;display:flex;gap:3px;flex-wrap:wrap">${TABS_ADMIN.filter(t=>t.id!=='liquidaciones'||puedeLiquidar()).map(t=>`
     <button onclick="abrirLegajoAdmin(${docId},'${t.id}')" style="background:${tab===t.id?'#fff':'transparent'};color:${tab===t.id?'#1a3a5c':'#cbd5e1'};border:none;border-radius:6px 6px 0 0;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">
       ${t.label}
     </button>`).join('')}</div>`;
@@ -11986,7 +12002,8 @@ function liqModLabel(m){ return m==='cargo'?'Cargo':'Horas cátedra'; }
 function liqModBadge(m){ const c=m==='cargo'?['#ede9fe','#6d28d9']:['#e0f2fe','#0369a1']; return `<span style="background:${c[0]};color:${c[1]};font-size:10.5px;font-weight:800;padding:2px 9px;border-radius:10px;white-space:nowrap">${m==='cargo'?'🏛️ Cargo':'⏱️ Horas cátedra'}</span>`; }
 function liqKey(tipo,id,mod,periodo){ return `${tipo}-${id}-${mod}-${periodo}`; }
 function liqExcluidas(){ if(!DB.liqExcluidas) DB.liqExcluidas=[]; return DB.liqExcluidas; }
-function puedeLiquidar(){ return !!currentUser && ['admin','institucion'].includes(currentUser.rol); }
+// Liquidar sueldos: SÓLO el administrador del sistema (no el director, secretario ni el administrador de la institución).
+function puedeLiquidar(){ return !!currentUser && currentUser.rol==='admin'; }
 function liqMoney(n){ return '$ '+(Number(n)||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function liqRound(n){ return Math.round((Number(n)||0)*100)/100; }
 function liqPeriodoLabel(p){
@@ -13015,7 +13032,7 @@ function abrirLegajoPropioPrec(precId, tab='personal', origen='propio'){
   const pct=Math.round(completos/(camposObl.length+docsObl.length)*100);
   const pctColor=pct<60?'#991b1b':pct<85?'#854d0e':'#166534';
 
-  const tabsHTML=`<div style="background:#1a3a5c;border-radius:8px 8px 0 0;padding:6px 8px 0;display:flex;gap:3px;flex-wrap:wrap">${TABS_PREC.map(t=>`
+  const tabsHTML=`<div style="background:#1a3a5c;border-radius:8px 8px 0 0;padding:6px 8px 0;display:flex;gap:3px;flex-wrap:wrap">${TABS_PREC.filter(t=>t.id!=='liquidaciones'||origen!=='admin'||puedeLiquidar()).map(t=>`
     <button onclick="abrirLegajoPropioPrec(${precId},'${t.id}','${origen}')" style="background:${tab===t.id?'#fff':'transparent'};color:${tab===t.id?'#1a3a5c':'#cbd5e1'};border:none;border-radius:6px 6px 0 0;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">
       ${t.label}
     </button>`).join('')}</div>`;
@@ -13600,7 +13617,7 @@ window.addEventListener('visibilitychange', ()=>{ if(document.visibilityState===
 initUsers();
 
 // 3) Trae lo último de la planilla y vuelve a abrir la sesión recordada (si la hay).
-iniciarSincronizacionYSesion();
+// (se invoca al final del script, cuando ya están definidas todas las variables de los módulos)
 window.addEventListener('online', ()=>{ if(sheetsListoParaUsar()) sincronizarSheets(); });
 window.addEventListener('focus', ()=>{ if(sheetsListoParaUsar()) sincronizarSheets(); });
 
@@ -14883,6 +14900,7 @@ function ptSeedDemo(){
 }
 
 ptSeedDemo();
+iniciarSincronizacionYSesion();
 </script>
 </body>
 </html>
