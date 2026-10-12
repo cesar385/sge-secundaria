@@ -3438,7 +3438,7 @@ function renderUsuarios(filtro='todos'){
       <div style="display:flex;gap:5px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="openEditUsuario(${r.id})">✏️ Editar</button>
         <button class="btn btn-ghost btn-sm" onclick="openResetPass(${r.id})" style="border-color:#854d0e;color:#854d0e">🔑 Clave</button>
-        ${r.id===currentUser.id?'':`<button class="btn btn-sm" onclick="toggleEstadoUser(${r.id})"
+        ${r.id===currentUser.id?'':`<button class="btn btn-ghost btn-sm" onclick="usrConfirmarEliminar(${r.id})" style="border-color:#fca5a5;color:#991b1b">🗑️ Eliminar</button><button class="btn btn-sm" onclick="toggleEstadoUser(${r.id})"
           style="${r.estado==='inactivo'?'background:#f0fdf4;border:1px solid #86efac;color:#166534':'background:#fff7ed;border:1px solid #fca5a5;color:#991b1b'}">
           ${r.estado==='inactivo'?'✓ Activar':'⊘ Desactivar'}
         </button>`}
@@ -3452,6 +3452,7 @@ function renderUsuarios(filtro='todos'){
       ${cardHTML('Inactivos',inactivos,'⊘','#991b1b')}
       ${cardHTML('Roles',ROLES_DISPONIBLES.length,'🏷️','#6d28d9')}
     </div>
+    ${usrPanelLimpieza()}
     ${(()=>{ const f=agentesSinUsuario(); if(!f.length) return '';
       return `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin-bottom:16px">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px"><strong style="color:#92400e;flex:1">⚠️ Agentes de la institución sin usuario (${f.length})</strong>
@@ -3461,6 +3462,68 @@ function renderUsuarios(filtro='todos'){
       </div>`; })()}
     <div class="tabs" style="margin-bottom:16px">${tabsHTML}</div>
     <div class="table-wrap">${tableHTML(cols, data, 'Sin usuarios registrados')}</div>`;
+}
+
+// ── GESTIÓN DE USUARIOS: limpieza de duplicados / sin institución ───
+function usrSinInstitucion(){
+  return USUARIOS.filter(u=>u.rol!=='admin'&&!u.institucionId&&!(Array.isArray(u.instituciones)&&u.instituciones.length)&&u.id!==currentUser.id);
+}
+function usrDuplicados(){
+  const norm=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+  const grupos={};
+  USUARIOS.forEach(u=>{
+    if(u.rol==='admin') return;
+    const vin=u.docenteId?'doc'+u.docenteId:u.alumnoId?'al'+u.alumnoId:u.preceptorId?'pre'+u.preceptorId:'';
+    const k1='user|'+norm(u.usuario);
+    const k2=vin?('vin|'+u.rol+'|'+vin+'|'+(u.institucionId||'')):('nom|'+u.rol+'|'+norm(u.nombre)+'|'+(u.institucionId||''));
+    [[k1,'mismo nombre de usuario'],[k2,vin?'misma persona vinculada':'mismo nombre y rol']].forEach(([k,m])=>{ (grupos[k]=grupos[k]||{motivo:m,lista:[]}).lista.push(u); });
+  });
+  const vistos=new Set(), out=[];
+  Object.values(grupos).filter(g=>g.lista.length>1).forEach(g=>{
+    const ids=g.lista.map(u=>u.id).sort().join(',');
+    if(vistos.has(ids)) return; vistos.add(ids);
+    const ord=[...g.lista].sort((a,b)=>((b.institucionId?1:0)-(a.institucionId?1:0))||((a.estado==='activo'?0:1)-(b.estado==='activo'?0:1))||(a.id-b.id));
+    let keep=ord[0]; const cu=g.lista.find(u=>u.id===currentUser.id); if(cu) keep=cu;
+    out.push({motivo:g.motivo,keep,remove:g.lista.filter(u=>u!==keep)});
+  });
+  const keepers=new Set(out.map(g=>g.keep.id)), ya=new Set();
+  out.forEach(g=>{ g.remove=g.remove.filter(u=>{ if(keepers.has(u.id)||ya.has(u.id)) return false; ya.add(u.id); return true; }); });
+  return out.filter(g=>g.remove.length);
+}
+function usrPanelLimpieza(){
+  const sin=usrSinInstitucion(), dup=usrDuplicados(); if(!sin.length&&!dup.length) return '';
+  const fila=(u,tag)=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #fde68a;flex-wrap:wrap"><div style="flex:1;min-width:200px"><strong>${luaEsc(u.usuario)}</strong> <span style="font-size:11.5px;color:#92400e">· ${luaEsc(u.nombre)} · ${ROL_LABEL[u.rol]||u.rol}${u.institucionId?'':' · sin institución'}</span></div>${tag}</div>`;
+  const nDup=dup.reduce((s,g)=>s+g.remove.length,0);
+  return `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin-bottom:16px">
+    <div style="font-weight:800;color:#92400e;margin-bottom:6px">🧹 Limpieza de usuarios</div>
+    <div style="font-size:12px;color:#78350f;margin-bottom:8px">Los usuarios duplicados o sin institución pueden causar errores de acceso. Al eliminar un usuario <strong>no se borra</strong> el docente, alumno o preceptor vinculado: sólo su cuenta de ingreso.</div>
+    ${nDup?`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0"><strong style="flex:1">Duplicados (${nDup} a eliminar)</strong><button class="btn btn-danger btn-sm" onclick="usrConfirmarLote('dup')">🗑️ Eliminar duplicados</button></div>
+      ${dup.map(g=>`<div style="font-size:11.5px;color:#92400e;margin-top:6px">${g.motivo}</div>${fila(g.keep,'<span class="badge badge-green">Se conserva</span>')}${g.remove.map(u=>fila(u,`<button class="btn btn-danger btn-sm" onclick="usrConfirmarEliminar(${u.id})">Eliminar</button>`)).join('')}`).join('')}`:''}
+    ${sin.length?`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0 4px"><strong style="flex:1">Sin institución (${sin.length})</strong><button class="btn btn-danger btn-sm" onclick="usrConfirmarLote('sin')">🗑️ Eliminar todos</button></div>
+      ${sin.map(u=>fila(u,`<button class="btn btn-danger btn-sm" onclick="usrConfirmarEliminar(${u.id})">Eliminar</button>`)).join('')}`:''}
+  </div>`;
+}
+function usrPuedeEliminar(u){
+  if(!u) return 'Usuario inexistente.';
+  if(u.id===currentUser.id) return 'No podés eliminar tu propio usuario.';
+  if(u.rol==='admin'&&USUARIOS.filter(x=>x.rol==='admin').length<=1) return 'No se puede eliminar el único administrador.';
+  return '';
+}
+function usrConfirmarEliminar(id){
+  const u=USUARIOS.find(x=>x.id===id), err=usrPuedeEliminar(u); if(err){ showToast(err,'#991b1b'); return; }
+  showModal('Eliminar usuario',`<p style="font-size:14px;line-height:1.6">¿Eliminar el usuario <strong>${luaEsc(u.usuario)}</strong> (${luaEsc(u.nombre)}, ${ROL_LABEL[u.rol]||u.rol})? No podrá volver a ingresar. Su ficha de docente/alumno/preceptor, si la tiene, <strong>no se borra</strong>.</p>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-danger" onclick="usrEliminar([${u.id}])">Sí, eliminar</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`);
+}
+function usrConfirmarLote(tipo){
+  const l=tipo==='dup'?usrDuplicados().flatMap(g=>g.remove):usrSinInstitucion(); const ok=l.filter(u=>!usrPuedeEliminar(u)); if(!ok.length){ showToast('No hay usuarios para eliminar.','#a16207'); return; }
+  showModal(tipo==='dup'?'Eliminar usuarios duplicados':'Eliminar usuarios sin institución',`<p style="font-size:14px;line-height:1.6">Se van a eliminar <strong>${ok.length}</strong> usuario${ok.length>1?'s':''}:</p>
+    <ul style="font-size:13px;line-height:1.7;margin:8px 0 8px 18px">${ok.map(u=>`<li><strong>${luaEsc(u.usuario)}</strong> — ${luaEsc(u.nombre)} (${ROL_LABEL[u.rol]||u.rol})</li>`).join('')}</ul>
+    <p style="font-size:12.5px;color:#64748b">Las fichas de docentes, alumnos y preceptores no se borran.</p>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-danger" onclick="usrEliminar([${ok.map(u=>u.id).join(',')}])">Sí, eliminar ${ok.length}</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`);
+}
+function usrEliminar(ids){
+  let n=0; ids.forEach(id=>{ const u=USUARIOS.find(x=>x.id===id); if(u&&!usrPuedeEliminar(u)){ USUARIOS.splice(USUARIOS.indexOf(u),1); n++; } });
+  guardarEstado(); showToast('🗑️ '+n+' usuario'+(n===1?'':'s')+' eliminado'+(n===1?'':'s')+'.'); closeModal(); renderAdmin('usuarios');
 }
 
 function renderUsuariosFiltro(f){
@@ -3490,11 +3553,15 @@ function buildFormUsuario(u){
     + ROLES_DISPONIBLES.map(r=>`<option value="${r.value}"${u&&u.rol===r.value?' selected':''}>${r.label}</option>`).join('');
 
   // Opciones de vinculación (se muestran/ocultan con JS según rol)
-  const docenteOpts  = DB.docentes.map(d=>`<option value="${d.id}"${u&&u.docenteId===d.id?' selected':''}>${d.apellido}, ${d.nombres} (DNI ${d.dni})</option>`).join('');
-  const alumnoOpts   = DB.alumnos.map(a=>`<option value="${a.id}"${u&&u.alumnoId===a.id?' selected':''}>${a.nombre} — ${a.curso}</option>`).join('');
-  const preceptOpts  = DB.preceptores.map(p=>`<option value="${p.id}"${u&&u.preceptorId===p.id?' selected':''}>${p.nombre}</option>`).join('');
-  const alumnosMulti = DB.alumnos.map(a=>`<option value="${a.id}"${u&&(u.hijoIds||[]).includes(a.id)?' selected':''}>${a.nombre} — ${a.curso}</option>`).join('');
+  const instSel0 = u&&u.institucionId ? u.institucionId : (currentInstitucionId||(INSTITUCIONES.length===1?INSTITUCIONES[0].id:null));
+  const DBu = (instSel0&&INST_DATA[instSel0])||DB;
+  const instOpts = `<option value="">— Seleccioná la institución —</option>`+INSTITUCIONES.map(i=>`<option value="${i.id}"${i.id===instSel0?' selected':''}>${i.nombre}</option>`).join('');
+  const docenteOpts  = DBu.docentes.map(d=>`<option value="${d.id}"${u&&u.docenteId===d.id?' selected':''}>${d.apellido}, ${d.nombres} (DNI ${d.dni})</option>`).join('');
+  const alumnoOpts   = DBu.alumnos.map(a=>`<option value="${a.id}"${u&&u.alumnoId===a.id?' selected':''}>${a.nombre} — ${a.curso}</option>`).join('');
+  const preceptOpts  = DBu.preceptores.map(p=>`<option value="${p.id}"${u&&u.preceptorId===p.id?' selected':''}>${p.nombre}</option>`).join('');
+  const alumnosMulti = DBu.alumnos.map(a=>`<option value="${a.id}"${u&&(u.hijoIds||[]).includes(a.id)?' selected':''}>${a.nombre} — ${a.curso}</option>`).join('');
   const docenteCargoOpts = docenteOptsParaCargo(u?.docenteId||null);
+  const rolEsAdmin = u&&u.rol==='admin';
   const turnoCargoOpts = ['Mañana','Tarde','Noche'].map(t=>`<option value="${t}"${u&&u.turnoCargo===t?' selected':''}>${t}</option>`).join('');
 
   return `
@@ -3512,6 +3579,10 @@ function buildFormUsuario(u){
       ${formGroup('Rol <span style="color:#ef4444">*</span>', `<select id="fu-rol" class="form-input" onchange="actualizarVinculacion()">${rolOpts}</select>`)}
     </div>
 
+    <div id="fu-inst-wrap" style="display:${rolEsAdmin?'none':'block'}">
+      ${formGroup('Institución', `<select id="fu-inst" class="form-input" onchange="usrCambiarInst()">${instOpts}</select>`)}
+      <div style="font-size:11px;color:#94a3b8;margin:-6px 0 10px">Los datos para vincular (docentes, alumnos, preceptores) se toman de esta institución. <strong>Docentes y preceptores</strong> quedan sin institución hasta que sean designados; entonces se les asigna automáticamente.</div>
+    </div>
     <!-- VINCULACIÓN DINÁMICA -->
     <div id="fu-vinc-wrap">
       <div id="fu-vinc-docente" style="display:${!u||u.rol==='docente'?'block':'none'}">
@@ -3571,6 +3642,33 @@ function actualizarVinculacion(){
   });
   const cargoEl = document.getElementById('fu-vinc-cargo');
   if(cargoEl) cargoEl.style.display = (rol==='secretario'||rol==='director')?'block':'none';
+  const iw = document.getElementById('fu-inst-wrap'); if(iw) iw.style.display = rol==='admin'?'none':'block';
+}
+// Al cambiar la institución se recargan las listas para vincular con los datos de esa institución
+function usrCambiarInst(){
+  const id=parseInt(v('fu-inst')); const D=(id&&INST_DATA[id])||DB;
+  const fill=(sel,html)=>{ const e=document.getElementById(sel); if(e){ const keepFirst=e.multiple?'':'<option value="">— Sin vincular —</option>'; e.innerHTML=keepFirst+html; } };
+  fill('fu-docente',D.docentes.map(d=>`<option value="${d.id}">${d.apellido}, ${d.nombres} (DNI ${d.dni})</option>`).join(''));
+  fill('fu-alumno',D.alumnos.map(a=>`<option value="${a.id}">${a.nombre} — ${a.curso}</option>`).join(''));
+  fill('fu-preceptor',D.preceptores.map(pr=>`<option value="${pr.id}">${pr.nombre}</option>`).join(''));
+  fill('fu-hijos',D.alumnos.map(a=>`<option value="${a.id}">${a.nombre} — ${a.curso}</option>`).join(''));
+  toggleDatosPersonalesNuevoUsuario('docente'); toggleDatosPersonalesNuevoUsuario('preceptor');
+}
+// Institución elegida en el formulario (admin = ninguna)
+function usrInstElegida(rol){
+  if(rol==='admin') return null;
+  const id=parseInt(v('fu-inst')); return id||null;
+}
+// Institución que realmente se le asigna al usuario:
+// · docente / preceptor: sólo si ya fue designado (designación activa / plaza). Hasta entonces queda
+//   sin institución y se le asigna sola cuando lo designan (al iniciar sesión o con "reintentar").
+// · resto de los roles: la elegida en el formulario.
+function usrInstFinal(rol,u){
+  const id=usrInstElegida(rol); if(!id) return null;
+  const D=INST_DATA[id]; if(!D) return null;
+  if(rol==='docente') return (u.docenteId&&D.designaciones.some(d=>d.docenteId===u.docenteId&&d.estado==='activa'))?id:null;
+  if(rol==='preceptor'){ const pr=D.preceptores.find(x=>x.id===u.preceptorId); return (pr&&pr.nroPlaza)?id:null; }
+  return id;
 }
 
 async function saveNuevoUsuario(){
@@ -3579,7 +3677,8 @@ async function saveNuevoUsuario(){
   const clave   = v('fu-clave').trim();
   const rol     = v('fu-rol');
 
-  if(!nombre||!usuario||!clave||!rol){ alert('Completá todos los campos obligatorios'); return; }
+  if(!nombre||!usuario||!clave||!rol){ showToast('Completá todos los campos obligatorios','#991b1b'); return; }
+  if(rol!=='admin'&&rol!=='docente'&&rol!=='preceptor'&&!usrInstElegida(rol)){ showToast('Elegí la institución del usuario.','#991b1b'); return; }
   if(clave.length < 4){ alert('La contraseña debe tener al menos 4 caracteres'); return; }
   if(USUARIOS.find(u=>u.usuario===usuario)){ alert('Ese nombre de usuario ya existe. Elegí otro.'); return; }
   if(!/^[a-z0-9_.\-]+$/.test(usuario)){ alert('El usuario solo puede tener letras minúsculas, números, puntos y guiones bajos'); return; }
@@ -3589,8 +3688,9 @@ async function saveNuevoUsuario(){
   const nuevo = { id: uid(), usuario, rol, nombre, estado:'activo', institucionId: null };
   await establecerClave(nuevo, clave);
   asignarVinculacion(nuevo, rol);
-  nuevo.institucionId = institucionParaRol(rol, nuevo);
+  nuevo.institucionId = usrInstFinal(rol, nuevo);
   USUARIOS.push(nuevo);
+  guardarEstado();
 
   closeModal();
   showToast(`✅ Usuario <strong>${usuario}</strong> creado correctamente${nuevo.institucionId?'':' — sin institución vinculada aún'}`,'#166534');
@@ -3605,7 +3705,8 @@ async function saveEditUsuario(id){
   const clave   = v('fu-clave').trim();
   const rol     = v('fu-rol');
 
-  if(!nombre||!usuario||!rol){ alert('Completá todos los campos obligatorios'); return; }
+  if(!nombre||!usuario||!rol){ showToast('Completá todos los campos obligatorios','#991b1b'); return; }
+  if(rol!=='admin'&&rol!=='docente'&&rol!=='preceptor'&&!usrInstElegida(rol)){ showToast('Elegí la institución del usuario.','#991b1b'); return; }
   if(usuario!==u.usuario && USUARIOS.find(x=>x.usuario===usuario)){ alert('Ese nombre de usuario ya existe'); return; }
   if(clave && clave.length<4){ alert('La contraseña debe tener al menos 4 caracteres'); return; }
   const chkCargo = validarCargoDocenteCompatibleUsuario(rol,{excludeUserId:id});
@@ -3619,7 +3720,8 @@ async function saveEditUsuario(id){
   // Limpiar vinculaciones previas y reasignar
   delete u.docenteId; delete u.alumnoId; delete u.preceptorId; delete u.hijoIds; delete u.turnoCargo;
   asignarVinculacion(u, rol);
-  u.institucionId = institucionParaRol(rol, u);
+  u.institucionId = usrInstFinal(rol, u);
+  guardarEstado();
 
   closeModal();
   showToast(`✅ Usuario <strong>${usuario}</strong> actualizado`+(u.institucionId?'':' — todavía sin institución vinculada'),'#1a3a5c');
