@@ -385,7 +385,7 @@ const SIDEBAR_COLOR = {admin:"#1a3a5c",docente:"#1a5c3a",alumno:"#3a1a5c",padre:
 
 // ═══ MULTI-INSTITUCIÓN ═══════════════════════════════════════
 let INSTITUCIONES = [
-  {id:1, nombre:"Escuela Secundaria N°1", cue:"300100100",
+  {id:1, nombre:"Escuela Secundaria N°1", cue:"300103456",
    tipo:"Secundaria", nivel:"Secundario",
    turnos:["Mañana","Tarde"],
    direccion:"Av. San Martín 200, Federal, Entre Ríos",
@@ -1197,6 +1197,7 @@ function tablaServiciosActualesSage(bloques, volverExpr){
 const SGE_STORAGE_KEY = 'sge_secundaria_estado_v1';
 
 function guardarEstado(){
+  try{ asegurarNroExpDesignacionesTodas(); }catch(e){}
   try{
     const snapshot = {
       version: 1,
@@ -1745,7 +1746,7 @@ async function doLogin(){
 }
 
 function _bootApp(){
-  try{ normalizarTodosLosDocentes(); }catch(e){}
+  try{ normalizarTodosLosDocentes(); asegurarNroExpDesignacionesTodas(); }catch(e){}
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app-screen').style.display='block';
   renderTopbar();
@@ -4668,7 +4669,7 @@ function verDetalleLic(licId){
   if(!lic) return;
   const s=solicitanteLicencia(lic);
   const esPrec=!!lic.preceptorId;
-  const inst=getInstUser()||instActual();
+  const inst=getInstUser()||instActual()||_instPorData(DB);
   const dias = lic.hasta ? Math.round((new Date(lic.hasta)-new Date(lic.desde))/(1000*60*60*24))+1 : null;
 
   const ids=getPlazaIds(lic);
@@ -5309,16 +5310,18 @@ const CARACTERES = [
   'Sup. Término Fijo','Cargo Vacante','STF','Sup. Ter. F. Art. 169',
   'Idóneo (Art. 146 Res. 1000/13)','Cargo Político','Tit. Condicional R500','Estabilidad Laboral',
 ];
-const MODALIDADES_DESIG = ['Concurso','Proyecto','Designación por Listado','Idóneo'];
+const MODALIDADES_DESIG = ['Designación por Listado','Concurso','Proyecto','Artículo 40 (Constitución Provincial)'];
 // Mapeo de modalidad de designación a los códigos y etiquetas que exige el FU-01
 // (Rubro 1: Trámite, y el segmento "Tipo" del N° de Trámite)
 const MODALIDAD_DESIG_CODIGO = {
-  'Concurso':'DC', 'Proyecto':'DP', 'Designación por Listado':'DL', 'Idóneo':'ID',
+  'Concurso':'DC', 'Proyecto':'DP', 'Designación por Listado':'DL', 'Listado':'DL', 'Artículo 40 (Constitución Provincial)':'A40', 'Idóneo':'ID',
 };
 const MODALIDAD_DESIG_LABEL = {
+  'Listado':'DESIGNACIÓN POR LISTADO (DL)',
   'Concurso':'DESIGNACIÓN POR CONCURSO (DC)',
   'Proyecto':'DESIGNACIÓN POR PROYECTO (DP)',
   'Designación por Listado':'DESIGNACIÓN POR LISTADO (DL)',
+  'Artículo 40 (Constitución Provincial)':'DESIGNACIÓN ARTÍCULO 40 — CONSTITUCIÓN PROVINCIAL (A40)',
   'Idóneo':'DESIGNACIÓN IDÓNEO (ID)',
 };
 
@@ -7494,8 +7497,31 @@ function actualizarCodigoLicSugerido(){
   const inpNorma=document.getElementById('f-normaLegal');
   if(inpNorma&&tipo&&NORMA_LEGAL_POR_TIPO[tipo]) inpNorma.value = NORMA_LEGAL_POR_TIPO[tipo];
 }
+// ── Numeración de trámites: [CÓDIGO][últimos 4 dígitos del CUE]-[N° de 5 dígitos]-[AÑO]
+// Licencias: LA3456-00001-2025 · Designaciones: DL3456-00001-2026 (DL/DC/DP/A40 según el tipo).
+function cue4(inst){ const n=String((inst&&inst.cue)||'').replace(/\D/g,''); return (n.slice(-4)||'0000').padStart(4,'0'); }
+function _instPorData(data){ const k=Object.keys(INST_DATA||{}).find(k=>INST_DATA[k]===data); return k?INSTITUCIONES.find(i=>i.id===parseInt(k)):null; }
+// Devuelve {cod, n, anio} de un N° de trámite nuevo, o null si es de formato anterior
+function leerNroExp(nroExp){
+  const m=/^([A-Z]{2}|A40)(\d{4})-(\d{5})-(\d{4})$/.exec(nroExp||''); return m?{cod:m[1],cue:m[2],n:parseInt(m[3]),anio:m[4]}:null;
+}
+function codigoTipoDesignacion(d){ return MODALIDAD_DESIG_CODIGO[d&&d.modalidad]||'DL'; }
+function asegurarNroExpDesignaciones(data){
+  const D=data||DB; const lista=(D||{}).designaciones; if(!Array.isArray(lista)) return;
+  const c4=cue4(_instPorData(D)||instActual());
+  const max={};   // una secuencia propia por tipo de designación (DL/DC/DP/A40)
+  lista.forEach(d=>{ const r=leerNroExp(d.nroExp); if(r && r.cod===codigoTipoDesignacion(d) && r.cue===c4) max[r.cod]=Math.max(max[r.cod]||0,r.n); });
+  lista.forEach(d=>{
+    const cod=codigoTipoDesignacion(d), r=leerNroExp(d.nroExp);
+    if(r && r.cod===cod && r.cue===c4) return;             // ya tiene un N° vigente para su tipo
+    const anio=(d.desde||'').split('-')[0] || new Date().getFullYear();
+    max[cod]=(max[cod]||0)+1;
+    d.nroExp=`${cod}${c4}-${String(max[cod]).padStart(5,'0')}-${anio}`;
+  });
+}
+function asegurarNroExpDesignacionesTodas(){ Object.keys(INST_DATA||{}).forEach(k=>asegurarNroExpDesignaciones(INST_DATA[k])); }
 function generarNroExpLicencia(tipo, fechaDesde, codigoManual){
-  const inst=getInstUser()||instActual();
+  const inst=getInstUser()||instActual()||_instPorData(DB);
   const codigo=codigoManual||(LICENCIA_TIPO_REMUNERADA[tipo]===false?'LC':'LA');
   const dto='06';
   const cue=inst?.cue||'0000000';
@@ -7504,19 +7530,17 @@ function generarNroExpLicencia(tipo, fechaDesde, codigoManual){
   // no compartida entre códigos. Se toma el N° más alto ya usado para ESTE código y se suma 1.
   let maxNro=0;
   DB.licencias.forEach(l=>{
-    if(!l.nroExp) return;
-    const partes=l.nroExp.split('-');
-    if(partes[0]!==codigo) return;
-    const n=parseInt(partes[3]);
-    if(!isNaN(n)&&n>maxNro) maxNro=n;
+    const r=leerNroExp(l.nroExp);
+    if(r && r.cod===codigo && r.n>maxNro) maxNro=r.n;
   });
-  const nro=String(maxNro+1).padStart(2,'0');
-  return `${codigo}-${dto}-${cue}-${nro}-${year}`;
+  return `${codigo}${cue4(inst)}-${String(maxNro+1).padStart(5,'0')}-${year}`;
 }
 // Descompone un N° de expediente ya generado en sus segmentos Tipo/Dto/CUE/N°/Año
 // (para mostrarlos en los casilleros del Rubro 1 del formulario impreso).
 function parsearNroTramite(nroExp){
   if(!nroExp) return {tipo:'--',dto:'--',cue:'--',nro:'--',anio:'--'};
+  const nuevo=leerNroExp(nroExp);
+  if(nuevo) return {tipo:nuevo.cod,dto:'06',cue:nuevo.cue,nro:String(nuevo.n).padStart(5,'0'),anio:nuevo.anio};
   const partes=nroExp.split('-');
   return {
     tipo:partes[0]||'--',
@@ -7547,20 +7571,16 @@ const MOTIVOS_BAJA = [
 // Genera un N° de trámite genérico [CÓDIGO]-06-[CUE]-[N° ascendente propio de ese código]-[AÑO]
 // (misma convención que generarNroExpLicencia, pero reutilizable para Traslados/Permutas/Bajas).
 function generarNroTramiteGenerico(codigo, arr, fechaDesde){
-  const inst=getInstUser()||instActual();
+  const inst=getInstUser()||instActual()||_instPorData(DB);
   const dto='06';
   const cue=inst?.cue||'0000000';
   const year=fechaDesde?fechaDesde.split('-')[0]:new Date().getFullYear();
   let maxNro=0;
   (arr||[]).forEach(x=>{
-    if(!x.nroExp) return;
-    const partes=x.nroExp.split('-');
-    if(partes[0]!==codigo) return;
-    const n=parseInt(partes[3]);
-    if(!isNaN(n)&&n>maxNro) maxNro=n;
+    const r=leerNroExp(x.nroExp);
+    if(r && r.cod===codigo && r.n>maxNro) maxNro=r.n;
   });
-  const nro=String(maxNro+1).padStart(2,'0');
-  return `${codigo}-${dto}-${cue}-${nro}-${year}`;
+  return `${codigo}${cue4(inst)}-${String(maxNro+1).padStart(5,'0')}-${year}`;
 }
 
 // Plazas donde el docente tiene una designación ACTIVA en la institución actual
@@ -7778,6 +7798,7 @@ function calcularResultadosConsultaTramites(){
       });
     });
   };
+  asegurarNroExpDesignaciones();
   addRows('Designación','📌',DB.designaciones,d=>({id:d.id,nroExp:d.nroExp||`DE-${d.id}`,docenteId:d.docenteId,estado:d.estado,desde:d.desde,plaza:d.nroPlaza||'',normaLegal:'',caracter:d.caracter||'',materia:d.materia||DB.plazas.find(p=>p.nroPlaza===d.nroPlaza)?.materia||'',curso:d.curso||DB.plazas.find(p=>p.nroPlaza===d.nroPlaza)?.curso||''}));
   addRows('Licencia','📋',DB.licencias,l=>{ const pz=getPlazaIds(l).map(pid=>resolverPlaza(pid)).filter(Boolean); return {id:l.id,nroExp:l.nroExp||`LC-${l.id}`,docenteId:l.docenteId,estado:l.estado,desde:l.desde,plaza:pz.map(p=>p.nroPlaza).join(', '),normaLegal:l.normaLegal||'',caracter:'',materia:pz.map(p=>p.materia).filter(Boolean).join(', '),curso:pz.map(p=>p.curso).filter(Boolean).join(', ')}; });
   addRows('Traslado','🔁',DB.traslados,t=>({id:t.id,nroExp:t.nroExp,docenteId:t.docenteId,estado:t.estado,desde:t.desde,plaza:`${t.nroPlazaOrigen||'—'} → ${t.nroPlazaDestino||'—'}`,normaLegal:'',caracter:'',materia:DB.plazas.find(p=>p.nroPlaza===t.nroPlazaOrigen)?.materia||'',curso:DB.plazas.find(p=>p.nroPlaza===t.nroPlazaOrigen)?.curso||''}));
@@ -7893,7 +7914,7 @@ function verComprobanteTramite(tipoLabel, id, origen='admin'){
   if(!rec) return;
   const doc = rec.docenteId ? DB.docentes.find(d=>d.id===rec.docenteId) : (rec.preceptorId?DB.preceptores.find(p=>p.id===rec.preceptorId):null);
   const est=estiloEstadoHist(rec.estado);
-  const inst=getInstUser()||instActual();
+  const inst=getInstUser()||instActual()||_instPorData(DB);
   const bodyHTML=`
     <div id="comprobante-print" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
       <div style="text-align:center;padding:16px;border-bottom:2px solid #1a3a5c">
@@ -10510,6 +10531,7 @@ function parseTitulosDoc(doc){
 // docenteId o preceptorId, y origen controla a qué pantalla se vuelve al
 // cerrar el detalle o el comprobante.
 function renderTramitesSageHTML(personaId, filterField, origen){
+  asegurarNroExpDesignaciones();
   const propios=[
     ...DB.designaciones.filter(d=>d[filterField]===personaId).map(d=>({id:d.id,tipoLabel:'Designación',nroExp:d.nroExp||`DE-${d.id}`,desde:d.desde,hasta:d.hasta,estado:d.estado})),
     ...DB.licencias.filter(l=>l[filterField]===personaId).map(l=>({id:l.id,tipoLabel:'Licencia',nroExp:l.nroExp||`LC-${l.id}`,desde:l.desde,hasta:l.hasta,estado:l.estado})),
