@@ -4114,6 +4114,10 @@ function canManagePlazas(){
 function puedeGestionarPersonal(){
   return currentUser && ['admin','institucion','director','secretario'].includes(currentUser.rol);
 }
+// Validar títulos/capacitaciones/datos y tildar documentación: sólo el administrador.
+function puedeValidarLegajo(){
+  return currentUser && ['admin','institucion'].includes(currentUser.rol);
+}
 function badgeHabilitada(p){
   return p.habilitada===false
     ? '<span class="badge badge-red">🚫 Deshabilitada</span>'
@@ -6315,6 +6319,34 @@ function verHistorialPlaza(nroPlaza, institucionId){
 }
 
 function fmtDate(d){ if(!d) return '—'; const p=d.split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; }
+
+// Fecha de la PRIMERA designación del agente (en cualquier institución, hallado
+// por DNI/CUIL). La antigüedad docente se cuenta desde ahí; si no tiene
+// designaciones cargadas, se usa la fecha de ingreso registrada.
+function fechaPrimeraDesignacion(persona){
+  if(!persona) return '';
+  const nz=v=>String(v||'').replace(/\D/g,'');
+  const dni=nz(persona.dni), cuil=nz(persona.cuil);
+  let min='';
+  const ok=d=>d&&d.desde&&!['rechazada','anulada','pendiente'].includes(d.estado);
+  const considerar=(data,esMisma)=>{
+    (data.designaciones||[]).forEach(d=>{
+      if(!ok(d)) return;
+      let es=false;
+      if(esMisma && d.docenteId===persona.id) es=true;
+      else{
+        const dc=(data.docentes||[]).find(x=>x.id===d.docenteId);
+        if(dc && ((dni&&nz(dc.dni)===dni)||(cuil&&nz(dc.cuil)===cuil))) es=true;
+      }
+      if(es && (!min||d.desde<min)) min=d.desde;
+    });
+  };
+  try{
+    Object.keys(INST_DATA).forEach(k=>considerar(INST_DATA[k],INST_DATA[k]===DB));
+    if(!Object.values(INST_DATA).includes(DB)) considerar(DB,true);
+  }catch(e){}
+  return min || persona.fechaIngreso || (persona.antiguedad&&persona.antiguedad.docente&&persona.antiguedad.docente.desde) || '';
+}
 
 // ─── ANTIGUEDAD helpers ───────────────────────────────────────────────────────
 // Calcula años/meses/días entre dos fechas (ISO strings)
@@ -9358,7 +9390,7 @@ function generarFormularioLicencia(licId){
     'Cargo Político':'Cargo Político','Tit. Condicional R500':'Tit. Condicional R500',
     'Estabilidad Laboral':'Estabilidad Laboral',
   };
-  const antigDoc = doc.fechaIngreso ? calcAntig(doc.fechaIngreso, lic.desde) : null;
+  const _fpd = fechaPrimeraDesignacion(doc); const antigDoc = _fpd ? calcAntig(_fpd, lic.desde) : null;
   const antigTexto = antigDoc ? `${antigDoc.años}a ${antigDoc.meses}m` : '—';
 
   // Plaza(s) afectada(s) por la licencia (equivalente al Rubro 5), agrupadas por institución
@@ -9487,7 +9519,7 @@ function generarNotifDesignacion(desigId){
     'STF':           'Suplente por Titular con Funciones (STF) — Art. 80',
   };
   const carDesc = CARACTER_DESC[desig.caracter] || desig.caracter;
-  const antig = doc.fechaIngreso ? (a=>`${a.años}a ${a.meses}m`)(calcAntig(doc.fechaIngreso,desig.desde)) : '—';
+  const _fpd2 = fechaPrimeraDesignacion(doc); const antig = _fpd2 ? (a=>`${a.años}a ${a.meses}m`)(calcAntig(_fpd2,desig.desde)) : '—';
   const hoy = new Date().toLocaleDateString('es-AR');
 
   const html = `<!DOCTYPE html>
@@ -10364,7 +10396,7 @@ function renderServiciosSageLegajo(personaId, persona, desigActivas, desigHistAr
       </div>`;
   } else if(legajoServSubtab==='antiguedades'){
     const da=persona.antiguedad||{};
-    const antigDocente=calcAntig(da.docente?da.docente.desde:(persona.fechaIngreso||''));
+    const antigDocente=calcAntig(fechaPrimeraDesignacion(persona));
     const antigNoDoc=da.noDocente||{años:0,meses:0,dias:0};
     const antigCert=da.certServicio||{años:0,meses:0,dias:0};
     const antigTotalCGE=sumarAntig(antigDocente,antigNoDoc);
@@ -11072,6 +11104,13 @@ function cerrarFormAntecedenteAgente(){
 function _refrescarBoxAntecedentes(personaId, filterField, puedeValidar){
   const box=document.getElementById('antecedentes-estructurado-box');
   if(box) box.innerHTML = renderAntecedentesEstructuradosHTML(personaId, filterField, puedeValidar);
+  const sb=document.getElementById('antecedentes-sage-box');
+  if(sb){
+    const p=(filterField==='preceptorId'?DB.preceptores:DB.docentes).find(x=>x.id===personaId);
+    if(p) sb.innerHTML=_renderAntecedentesSageInner(filterField==='preceptorId'?{...p,cursos:p.capacitaciones}:p, filterField);
+  }
+  const bn=document.getElementById(`banner-validado-${filterField==='preceptorId'?'preceptor':'docente'}-${personaId}`);
+  if(bn){ const p=(filterField==='preceptorId'?DB.preceptores:DB.docentes).find(x=>x.id===personaId); if(p) bn.outerHTML=bannerTitulosValidadosHTML(p,filterField); }
 }
 function guardarAntecedenteAgente(personaId, filterField, tipo, editId){
   const nombre=(document.getElementById('aa-nombre')?.value||'').trim();
@@ -11125,7 +11164,7 @@ function editarAntecedenteAgente(id){
 }
 // Validación (director/a, secretario/a o admin) desde el legajo administrativo.
 function validarAntecedenteAgente(id, nuevoEstado){
-  if(!puedeGestionarPersonal()){ alert('No tenés permisos para validar antecedentes.'); return; }
+  if(!puedeValidarLegajo()){ alert('Sólo el administrador puede validar antecedentes.'); return; }
   const rec=(DB.antecedentesAgente||[]).find(r=>r.id===id);
   if(!rec) return;
   let comentario='';
@@ -11142,8 +11181,88 @@ function validarAntecedenteAgente(id, nuevoEstado){
   const filterField = rec.docenteId!=null?'docenteId':'preceptorId';
   _refrescarBoxAntecedentes(rec[filterField], filterField, true);
 }
-function renderAntecedentesSageHTML(doc){
+// ── Documentación entregada (título, DNI, foto, antecedentes penales) ──
+// Sólo la ve quien gestiona el personal (administrador/dirección) al revisar y
+// aprobar títulos y datos personales; el/la agente no la ve en su portal.
+const DOCS_AGENTE=[
+  {key:'docTitulo',      label:'Título habilitante (copia certificada)'},
+  {key:'docDNI',         label:'DNI (fotocopia doble faz)'},
+  {key:'docFoto',        label:'Foto carnet actualizada (4×4)'},
+  {key:'docAntecedentes',label:'Certificado de antecedentes penales'},
+];
+function renderDocumentacionAdminHTML(persona, tipo){
+  if(!puedeValidarLegajo()){
+    // El/la agente ve sólo lo que le falta entregar; lo que está OK no se muestra.
+    const faltan=DOCS_AGENTE.filter(d=>!persona[d.key]);
+    if(!faltan.length) return '';
+    return `<div style="margin-bottom:22px">
+      <div style="font-weight:800;color:#1a3a5c;font-size:13px;margin-bottom:10px">📎 Documentación pendiente</div>
+      <div style="font-size:12.5px;color:#64748b;margin-bottom:14px">Te falta entregar en la administración:</div>
+      ${faltan.map(d=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fef2f2;border-radius:8px;border:1.5px solid #fecaca;margin-bottom:8px">
+          <div>
+            <div style="font-size:14px;font-weight:600;color:#334155">${d.label}</div>
+            <div style="font-size:11px;color:#991b1b">✗ Pendiente</div>
+          </div>
+          <span style="margin-left:auto"><span class="badge badge-red">Falta</span></span>
+        </div>`).join('')}
+    </div>`;
+  }
+  const idp = persona.id;
+  return `<div id="doc-admin-box-${tipo}-${idp}" style="margin-bottom:22px">
+    <div style="font-weight:800;color:#1a3a5c;font-size:13px;margin-bottom:10px">📎 Documentación</div>
+    <div style="font-size:12.5px;color:#64748b;margin-bottom:14px">Marcá los documentos que el/la agente entregó en la administración.</div>
+    ${DOCS_AGENTE.map(d=>`
+      <label style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8fafc;border-radius:8px;border:1.5px solid ${persona[d.key]?'#86efac':'#e2e8f0'};margin-bottom:8px;cursor:pointer">
+        <input type="checkbox" ${persona[d.key]?'checked':''} onchange="toggleDocAgente('${tipo}',${idp},'${d.key}',this.checked)" style="width:18px;height:18px;accent-color:#1a5c3a;cursor:pointer">
+        <div>
+          <div style="font-size:14px;font-weight:600;color:#334155">${d.label}</div>
+          <div style="font-size:11px;color:${persona[d.key]?'#166534':'#991b1b'}">${persona[d.key]?'✓ Entregado':'✗ Pendiente'}</div>
+        </div>
+        <span style="margin-left:auto">${persona[d.key]?'<span class="badge badge-green">OK</span>':'<span class="badge badge-red">Falta</span>'}</span>
+      </label>`).join('')}
+  </div>`;
+}
+function toggleDocAgente(tipo, id, key, val){
+  if(!puedeValidarLegajo()){ alert('No tenés permisos.'); return; }
+  const lista = tipo==='preceptor' ? DB.preceptores : DB.docentes;
+  const p = lista.find(x=>x.id===id); if(!p) return;
+  p[key] = !!val;
+  guardarEstado();
+  const box = document.getElementById(`doc-admin-box-${tipo}-${id}`);
+  if(box) box.outerHTML = renderDocumentacionAdminHTML(p, tipo);
+  const ban = document.getElementById(`banner-validado-${tipo}-${id}`);
+  if(ban) ban.outerHTML = bannerTitulosValidadosHTML(p, tipo==='preceptor'?'preceptorId':'docenteId');
+}
+// Todo validado = los 4 documentos entregados y los títulos cargados validados
+// (ninguno pendiente ni rechazado, al menos uno validado).
+function agenteTodoValidado(persona, filterField){
+  if(!persona || !DOCS_AGENTE.every(d=>persona[d.key])) return false;
+  const tit=(DB.antecedentesAgente||[]).filter(r=>r[filterField]===persona.id && r.tipo==='Titulo');
+  return tit.length>0 && tit.every(r=>r.estado==='Validado');
+}
+function bannerTitulosValidadosHTML(persona, filterField){
+  const tipo = filterField==='preceptorId'?'preceptor':'docente';
+  const ok = agenteTodoValidado(persona, filterField);
+  return `<div id="banner-validado-${tipo}-${persona.id}">${ok?'<div style="background:#dcfce7;color:#166534;font-weight:700;font-size:12.5px;padding:10px 14px;border-radius:8px;margin-bottom:14px">Todos los títulos se encuentran digitalizados.</div>':''}</div>`;
+}
+function renderAntecedentesSageHTML(doc, filterField){
+  return `<div id="antecedentes-sage-box">${_renderAntecedentesSageInner(doc, filterField)}</div>`;
+}
+function _renderAntecedentesSageInner(doc, filterField){
   const capacitaciones = parseCapacitacionesDoc(doc.cursos);
+  // Capacitaciones cargadas por el/la agente (antecedentes estructurados): también van en la tabla
+  const esc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  if(filterField){
+    (DB.antecedentesAgente||[]).filter(r=>r[filterField]===doc.id && r.tipo==='Capacitacion').forEach(r=>{
+      const col={Validado:'#166534',Rechazado:'#991b1b'}[r.estado]||'#92400e';
+      capacitaciones.push({
+        nombre:`${esc(r.nombre||'')} <span style="font-size:10px;font-weight:700;color:${col}">(${r.estado||'Pendiente'})</span>`,
+        tematica:'', fechaInicio:r.fechaInicio||'', fechaFin:r.fechaFin||'', cursado:r.cursado||'',
+        hCat:r.hCat||0, anio:(r.fechaInicio||'').slice(0,4), resolucion:esc(r.resolucion||''), caracter:esc(r.caracter||'')
+      });
+    });
+  }
   const headCols=['Nombre','Tematica','Fecha Inicio','Fecha Fin','Cursado','H Cat','Anio','Resolucion','Caracter'];
   const theadHTML=`<tr>${headCols.map(c=>`<th style="padding:8px 10px;background:#e2e8f0;color:#334155;font-weight:800;font-size:11.5px;text-align:left;white-space:nowrap;border-bottom:2px solid #cbd5e1">${c}</th>`).join('')}</tr>`;
   const filterRowHTML=`<tr style="background:#fff">${headCols.map(()=>`<td style="padding:4px 6px;border-bottom:1px solid #e2e8f0"><input class="form-input" style="padding:5px 7px;font-size:11px;width:100%"></td>`).join('')}</tr>`;
@@ -11168,19 +11287,6 @@ function renderAntecedentesSageHTML(doc){
     </div>`).join('') : `<div style="color:#94a3b8;font-size:13px;padding:16px;text-align:center;background:#f8fafc;border-radius:8px">Sin títulos cargados</div>`;
 
   return `
-    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:24px">
-      <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;background:#fff;border-bottom:1px solid #e2e8f0">
-        <span style="font-size:18px">📘</span>
-        <span style="font-weight:800;color:#1d4ed8;font-size:15px">Mis títulos</span>
-      </div>
-      <div style="padding:16px 18px">
-        <div style="font-size:12.5px;font-weight:700;color:#334155;margin-bottom:10px">Listado de títulos</div>
-        <div style="background:#dcfce7;color:#166534;font-weight:700;font-size:12.5px;padding:10px 14px;border-radius:8px;margin-bottom:14px">Todos los títulos se encuentran digitalizados.</div>
-        <div style="font-size:12px;font-weight:700;color:#64748b;margin-bottom:8px">Títulos</div>
-        ${titulosCardsHTML}
-      </div>
-    </div>
-
     <div style="font-weight:800;color:#fff;background:#1a3a5c;padding:8px 14px;font-size:13px;border-radius:8px 8px 0 0">Capacitaciones Del Agente</div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -11208,7 +11314,7 @@ function abrirLegajoAdmin(docId, tab='situacion'){
   ];
   const tabsHTML=`<div style="background:#1a3a5c;border-radius:8px 8px 0 0;padding:6px 8px 0;display:flex;gap:3px;flex-wrap:wrap">${TABS_ADMIN.map(t=>`
     <button onclick="abrirLegajoAdmin(${docId},'${t.id}')" style="background:${tab===t.id?'#fff':'transparent'};color:${tab===t.id?'#1a3a5c':'#cbd5e1'};border:none;border-radius:6px 6px 0 0;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">
-      ${t.label}${t.editable?` <span style="background:#1a5c3a;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;vertical-align:middle">editable</span>`:''}
+      ${t.label}
     </button>`).join('')}</div>`;
 
   let bodyHTML='';
@@ -11269,10 +11375,10 @@ function abrirLegajoAdmin(docId, tab='situacion'){
   }
 
   else if(tab==='antecedentes'){
-    bodyHTML = renderAntecedentesSageHTML(doc) + `
-      <div id="antecedentes-estructurado-box" style="margin-top:28px;padding-top:22px;border-top:2px solid #e2e8f0">
-        ${renderAntecedentesEstructuradosHTML(docId, 'docenteId', true)}
-      </div>`;
+    bodyHTML = bannerTitulosValidadosHTML(doc,'docenteId') + `
+      <div id="antecedentes-estructurado-box" style="margin-bottom:28px">
+        ${renderAntecedentesEstructuradosHTML(docId, 'docenteId', puedeValidarLegajo())}
+      </div>` + renderAntecedentesSageHTML(doc,'docenteId') + `<div style="margin-top:26px;padding-top:22px;border-top:2px solid #e2e8f0">${renderDocumentacionAdminHTML(doc,'docente')}</div>`;
   }
 
   else if(tab==='salud'){
@@ -11465,7 +11571,7 @@ function abrirLegajoPropio(docId, tab='personal'){
 
   const tabsHTML=`<div style="background:#1a3a5c;border-radius:8px 8px 0 0;padding:6px 8px 0;display:flex;gap:3px;flex-wrap:wrap">${TABS_DOC.map(t=>`
     <button onclick="abrirLegajoPropio(${docId},'${t.id}')" style="background:${tab===t.id?'#fff':'transparent'};color:${tab===t.id?'#1a3a5c':'#cbd5e1'};border:none;border-radius:6px 6px 0 0;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">
-      ${t.label}${t.editable?` <span style="background:#1a5c3a;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;vertical-align:middle">editable</span>`:''}
+      ${t.label}
     </button>`).join('')}</div>`;
 
   let bodyHTML='';
@@ -11524,45 +11630,18 @@ function abrirLegajoPropio(docId, tab='personal'){
   }
   else if(tab==='antecedentes'){
     bodyHTML=`
-      <div class="alert-info" style="margin-bottom:14px;font-size:12px">
-        ✏️ Podés actualizar tu título habilitante y marcar la documentación ya entregada en la administración.
-      </div>
-      ${fg('Título habilitante','fd-tituloHab',doc.tituloHab)}
-      <div class="form-grid-2">
-        ${fg('Institución otorgante','fd-institucionTit',doc.institucionTit)}
-        ${fg('Año de egreso','fd-añoEgreso',doc.añoEgreso,'number')}
-      </div>
-      <div style="background:#f0fdf4;border-radius:8px;padding:10px 14px;margin-top:4px;margin-bottom:20px;font-size:12px;color:#166534">
-        💡 Mantené actualizado tu título habilitante para que cuente en el escalafón.
-      </div>
-
-      <div style="font-weight:800;color:#1a3a5c;font-size:13px;margin-bottom:10px">📎 Documentación</div>
-      <div style="font-size:12.5px;color:#64748b;margin-bottom:14px">Marcá los documentos que ya entregaste en la administración.</div>
-      ${[
-        {key:'docTitulo',      label:'Título habilitante (copia certificada)'},
-        {key:'docDNI',         label:'DNI (fotocopia doble faz)'},
-        {key:'docFoto',        label:'Foto carnet actualizada (4×4)'},
-        {key:'docAntecedentes',label:'Certificado de antecedentes penales'},
-      ].map(d=>`
-        <label style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8fafc;border-radius:8px;border:1.5px solid ${doc[d.key]?'#86efac':'#e2e8f0'};margin-bottom:8px;cursor:pointer">
-          <input type="checkbox" id="fd-${d.key}" ${doc[d.key]?'checked':''}
-            style="width:18px;height:18px;accent-color:#1a5c3a;cursor:pointer">
-          <div>
-            <div style="font-size:14px;font-weight:600;color:#334155">${d.label}</div>
-            <div style="font-size:11px;color:${doc[d.key]?'#166534':'#991b1b'}">${doc[d.key]?'✓ Entregado':'✗ Pendiente'}</div>
-          </div>
-          <span style="margin-left:auto">${doc[d.key]?'<span class="badge badge-green">OK</span>':'<span class="badge badge-red">Falta</span>'}</span>
-        </label>`).join('')}
-
-      <div style="margin-top:26px;padding-top:22px;border-top:1px solid #e2e8f0">
+      <div>
+        ${bannerTitulosValidadosHTML(doc,'docenteId')}
         <div id="antecedentes-estructurado-box">
           ${renderAntecedentesEstructuradosHTML(docId, 'docenteId', false)}
         </div>
       </div>
 
       <div style="margin-top:26px;padding-top:22px;border-top:1px solid #e2e8f0">
-        ${renderAntecedentesSageHTML(doc)}
-      </div>`;
+        ${renderAntecedentesSageHTML(doc,'docenteId')}
+      </div>
+
+      ${renderDocumentacionAdminHTML(doc,'docente')?`<div style="margin-top:26px;padding-top:22px;border-top:1px solid #e2e8f0">${renderDocumentacionAdminHTML(doc,'docente')}</div>`:''}`;
   }
   else if(tab==='salud'){
     bodyHTML = renderPedidoLicenciaMedicaHTML(doc) + renderMisCertificacionesHTML(docId) + `
@@ -11643,7 +11722,7 @@ function abrirLegajoPropio(docId, tab='personal'){
       <span style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:5px 12px;font-size:11px;color:#166534;font-weight:700;white-space:nowrap">✏️ Mi Legajo — edición habilitada</span>
     </div>`;
 
-  const TABS_EDITABLES_DOC=['personal','antecedentes','salud'];
+  const TABS_EDITABLES_DOC=['personal','salud'];
   const mostrarGuardar = TABS_EDITABLES_DOC.includes(tab);
   const btnGuardar = mostrarGuardar
     ? `<div style="display:flex;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0">
@@ -11694,7 +11773,7 @@ function guardarLegajoDocente(docId, tab){
   } else if(tab==='antecedentes'){
     Object.assign(DB.docentes[idx],{
       tituloHab:g('fd-tituloHab'), institucionTit:g('fd-institucionTit'), añoEgreso:g('fd-añoEgreso'),
-      docTitulo:gc('fd-docTitulo'), docDNI:gc('fd-docDNI'), docFoto:gc('fd-docFoto'), docAntecedentes:gc('fd-docAntecedentes'),
+      
     });
   } else if(tab==='salud'){
     Object.assign(DB.docentes[idx],{grupoSang:g('fd-grupoSang'),obraSocial:g('fd-obraSocial'),medico:g('fd-medico'),alergias:g('fd-alergias'),medicamentos:g('fd-medicamentos'),discapacidad:g('fd-discapacidad')});
@@ -11873,7 +11952,7 @@ function liqPorcentajePago(lic){
 function liqAntiguedad(persona, r){
   if(!persona) return {años:0,meses:0,dias:0};
   const ant=persona.antiguedad||{};
-  const base=calcAntig(persona.fechaIngreso||ant.docente?.desde, r.fin);
+  const base=calcAntig(fechaPrimeraDesignacion(persona), r.fin);
   const nd={años:ant.noDocente?.años||0, meses:ant.noDocente?.meses||0, dias:ant.noDocente?.dias||0};
   const cs={años:ant.certServicio?.años||0, meses:ant.certServicio?.meses||0, dias:ant.certServicio?.dias||0};
   return sumarAntig(sumarAntig(base,nd),cs);
@@ -12374,7 +12453,7 @@ function liqReciboHTML(liq){
     <tr><td colspan="4" style="padding:8px;text-align:right;font-weight:700">LÍQUIDO A PAGAR</td><td style="padding:8px;text-align:right;font-weight:800;font-size:14px;border:2px solid #111">${num(tot.neto)}</td></tr>
   </table>
   <table style="border-top:1px solid #d1d5db;margin-top:6px"><tr>
-    ${campo('Fecha de ingreso',fmtDate(persona.fechaIngreso||persona.antiguedad?.docente?.desde||'')||'—')}${campo('Sueldo básico',num(basicoTot))}${campo('Fecha de pago',fmtDate(fechaPago))}${campo('Acreditado en',esc(persona.banco||'—'))}${campo('CBU',esc(persona.cbu||'—'))}</tr></table>
+    ${campo('Fecha de ingreso',fmtDate(fechaPrimeraDesignacion(persona))||'—')}${campo('Sueldo básico',num(basicoTot))}${campo('Fecha de pago',fmtDate(fechaPago))}${campo('Acreditado en',esc(persona.banco||'—'))}${campo('CBU',esc(persona.cbu||'—'))}</tr></table>
   <div style="padding:8px;border-top:1px solid #d1d5db"><strong>Importe neto en letras:</strong> ${liqNumeroALetras(tot.neto)}</div>
   <div style="padding:2px 8px"><strong>Antigüedad reconocida:</strong> ${ant.años||0} años, ${ant.meses||0} meses, ${ant.dias||0} días</div>
   <div style="padding:2px 8px 8px"><strong>Licencias en el período:</strong> ${dl.total?`${dl.total} día(s) — con goce ${dl.conGoce}, con goce 50% ${dl.parcial}, sin goce ${dl.sinGoce}`:'Sin licencias'}</div>
@@ -12481,7 +12560,7 @@ function renderTabAntiguedad(doc, esAdmin){
   const ant=doc.antiguedad||{};
 
   // Fila DOCENTE: auto-calculada desde fechaIngreso
-  const antDoc=calcAntig(doc.fechaIngreso||ant.docente?.desde);
+  const antDoc=calcAntig(fechaPrimeraDesignacion(doc));
 
   // Fila NO DOCENTE: manual
   const antND={ años:ant.noDocente?.años||0, meses:ant.noDocente?.meses||0, dias:ant.noDocente?.dias||0 };
@@ -12575,7 +12654,7 @@ function renderTabAntiguedad(doc, esAdmin){
             <td style="${tdLabelStyle}">
               <div>Docente</div>
               <div style="font-size:10px;color:#94a3b8;margin-top:2px">
-                Desde: ${fmtDate(doc.fechaIngreso||ant.docente?.desde)} · calculado al ${fmtDate(hoy)}
+                Desde: ${fmtDate(fechaPrimeraDesignacion(doc))} · calculado al ${fmtDate(hoy)}
               </div>
             </td>
             <td style="${tdNumStyle}color:#1a3a5c">${antDoc.años}</td>
@@ -12791,7 +12870,7 @@ function abrirLegajoPropioPrec(precId, tab='personal', origen='propio'){
 
   const tabsHTML=`<div style="background:#1a3a5c;border-radius:8px 8px 0 0;padding:6px 8px 0;display:flex;gap:3px;flex-wrap:wrap">${TABS_PREC.map(t=>`
     <button onclick="abrirLegajoPropioPrec(${precId},'${t.id}','${origen}')" style="background:${tab===t.id?'#fff':'transparent'};color:${tab===t.id?'#1a3a5c':'#cbd5e1'};border:none;border-radius:6px 6px 0 0;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">
-      ${t.label}${t.editable?` <span style="background:#1a5c3a;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;vertical-align:middle">editable</span>`:''}
+      ${t.label}
     </button>`).join('')}</div>`;
 
   let bodyHTML='';
@@ -12856,45 +12935,18 @@ function abrirLegajoPropioPrec(precId, tab='personal', origen='propio'){
   }
   else if(tab==='antecedentes'){
     bodyHTML=`
-      <div class="alert-info" style="margin-bottom:14px;font-size:12px">
-        ✏️ Podés actualizar tu título habilitante y marcar la documentación ya entregada en la administración.
-      </div>
-      ${fg('Título habilitante','fp-tituloHab',prec.tituloHab||'')}
-      <div class="form-grid-2">
-        ${fg('Institución otorgante','fp-institucionTit',prec.institucionTit||'')}
-        ${fg('Año de egreso','fp-añoEgreso',prec.añoEgreso||'','number')}
-      </div>
-      <div style="background:#f0fdf4;border-radius:8px;padding:10px 14px;margin-top:4px;margin-bottom:20px;font-size:12px;color:#166534">
-        💡 Mantené actualizado tu título habilitante para que cuente en el escalafón.
-      </div>
-
-      <div style="font-weight:800;color:#1a3a5c;font-size:13px;margin-bottom:10px">📎 Documentación</div>
-      <div style="font-size:12.5px;color:#64748b;margin-bottom:14px">Marcá los documentos que ya entregaste en la administración.</div>
-      ${[
-        {key:'docTitulo',      label:'Título habilitante (copia certificada)'},
-        {key:'docDNI',         label:'DNI (fotocopia doble faz)'},
-        {key:'docFoto',        label:'Foto carnet actualizada (4×4)'},
-        {key:'docAntecedentes',label:'Certificado de antecedentes penales'},
-      ].map(d=>`
-        <label style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8fafc;border-radius:8px;border:1.5px solid ${prec[d.key]?'#86efac':'#e2e8f0'};margin-bottom:8px;cursor:pointer">
-          <input type="checkbox" id="fp-${d.key}" ${prec[d.key]?'checked':''}
-            style="width:18px;height:18px;accent-color:#0f766e;cursor:pointer">
-          <div>
-            <div style="font-size:14px;font-weight:600;color:#334155">${d.label}</div>
-            <div style="font-size:11px;color:${prec[d.key]?'#166534':'#991b1b'}">${prec[d.key]?'✓ Entregado':'✗ Pendiente'}</div>
-          </div>
-          <span style="margin-left:auto">${prec[d.key]?'<span class="badge badge-green">OK</span>':'<span class="badge badge-red">Falta</span>'}</span>
-        </label>`).join('')}
-
-      <div style="margin-top:26px;padding-top:22px;border-top:1px solid #e2e8f0">
+      <div>
+        ${bannerTitulosValidadosHTML(prec,'preceptorId')}
         <div id="antecedentes-estructurado-box">
           ${renderAntecedentesEstructuradosHTML(precId, 'preceptorId', false)}
         </div>
       </div>
 
       <div style="margin-top:26px;padding-top:22px;border-top:1px solid #e2e8f0">
-        ${renderAntecedentesSageHTML({...prec, cursos: prec.capacitaciones})}
-      </div>`;
+        ${renderAntecedentesSageHTML({...prec, cursos: prec.capacitaciones},'preceptorId')}
+      </div>
+
+      ${renderDocumentacionAdminHTML(prec,'preceptor')?`<div style="margin-top:26px;padding-top:22px;border-top:1px solid #e2e8f0">${renderDocumentacionAdminHTML(prec,'preceptor')}</div>`:''}`;
   }
   else if(tab==='salud'){
     bodyHTML=`
@@ -12975,7 +13027,7 @@ function abrirLegajoPropioPrec(precId, tab='personal', origen='propio'){
       <span style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:5px 12px;font-size:11px;color:#166534;font-weight:700;white-space:nowrap">✏️ ${origen==='admin'?'Legajo de Preceptor/a':'Mi Legajo'} — edición habilitada</span>
     </div>`;
 
-  const TABS_EDITABLES_PREC=['personal','antecedentes','salud'];
+  const TABS_EDITABLES_PREC=['personal','salud'];
   const mostrarGuardar = TABS_EDITABLES_PREC.includes(tab);
   const btnGuardar = mostrarGuardar
     ? `<div style="display:flex;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0">
@@ -13028,7 +13080,7 @@ function guardarLegajoPreceptor(precId, tab, origen='propio'){
   } else if(tab==='antecedentes'){
     Object.assign(DB.preceptores[idx],{
       tituloHab:g('fp-tituloHab'), institucionTit:g('fp-institucionTit'), añoEgreso:g('fp-añoEgreso'),
-      docTitulo:gc('fp-docTitulo'), docDNI:gc('fp-docDNI'), docFoto:gc('fp-docFoto'), docAntecedentes:gc('fp-docAntecedentes'),
+      
     });
   } else if(tab==='salud'){
     Object.assign(DB.preceptores[idx],{grupoSang:g('fp-grupoSang'),obraSocial:g('fp-obraSocial'),medico:g('fp-medico'),alergias:g('fp-alergias'),medicamentos:g('fp-medicamentos'),discapacidad:g('fp-discapacidad')});
