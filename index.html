@@ -2659,7 +2659,7 @@ function renderAdmin(sec){
     {id:'designaciones',icon:'📌', label:'Designaciones',   grupo:'docentes'},
     {id:'reintegros',   icon:'🔄', label:'Reintegros',      grupo:'docentes'},
     {id:'preceptores',  icon:'🗂️', label:'Preceptores',     grupo:'docentes'},
-    {id:'credenciales', icon:'🪪', label:'Credenciales'+(crdCantPendientes()?' <span style="background:#dc2626;color:#fff;border-radius:10px;padding:0 6px;font-size:11px">'+crdCantPendientes()+'</span>':''), grupo:'docentes'},
+    ...(isInstUser?[]:[{id:'credenciales', icon:'🪪', label:'Credenciales'+(crdCantPendientes()?' <span style="background:#dc2626;color:#fff;border-radius:10px;padding:0 6px;font-size:11px">'+crdCantPendientes()+'</span>':''), grupo:'docentes'}]),
     {id:'cert-medicas', icon:'🩺', label:'Certificaciones Médicas', grupo:'docentes'},
     ...(puedeLiquidar()?[{id:'liquidaciones',icon:'💰', label:'Liquidaciones',   grupo:'docentes'}]:[]),
     {id:'alumnos',      icon:'🎓', label:'Alumnos',         grupo:'alumnos'},
@@ -2707,7 +2707,7 @@ function renderAdmin(sec){
   else if(sec==='reintegros')     content=renderReintegros();
   else if(sec==='preceptores')    content=renderPreceptoresAdmin();
   else if(sec==='cert-medicas')   content=renderCertificacionesMedicas();
-  else if(sec==='credenciales')   content=renderCredencialesAdmin();
+  else if(sec==='credenciales')   content=isInstUser?renderDashboard():renderCredencialesAdmin();
   else if(sec==='liquidaciones')  content=puedeLiquidar()?renderLiquidaciones():`${sectionHeader('Liquidaciones')}<div class="alert-info">Las liquidaciones las gestiona el Administrador.</div>`;
   else if(sec==='alumnos')        content=renderAlumnos();
   else if(sec==='lua')            content=renderLUA();
@@ -14986,7 +14986,7 @@ const CRD_MOTIVOS=['Primera emisión','Renovación','Duplicado por extravío','A
 const CRD_TABS=[['puntajes','Puntajes'],['analitico','Analítico'],['titulos','Títulos'],['antecedentes','Antecedentes'],['solicitud','Solicitud de Credencial'],['credencial','Credencial']];
 let crdF={tab:'puntajes'}, crdAdminF={q:'',est:'todos'}, crdAnaQ='', crdAnaK='', crdAntQ='', crdAntE='';
 
-function puedeEmitirCredencial(){ return !!currentUser && currentUser.rol==='admin'; }
+function puedeEmitirCredencial(){ return !!currentUser && (currentUser.rol==='admin'||currentUser.rol==='institucion'); }
 function crdEsc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 function crdLista(){
   if(!DB.credenciales) DB.credenciales=[];
@@ -15261,7 +15261,7 @@ function crdAnaModal(campo,id){
   showModal('Analítico — '+crdNombre(ag.obj),`<div style="background:#f8fafc;padding:10px;border-radius:10px">${crdAvisoPeriodo(ag)}${crdAnaliticoHTML(ag,true)}</div>`);
 }
 function crdCompAgregar(campo,id){
-  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador puede agregar competencias','#991b1b'); return; }
+  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador o la Institución puede agregar competencias','#991b1b'); return; }
   const g=i=>(document.getElementById(i)?.value||'').trim();
   const nombre=g('cc-nombre'); if(!nombre){ showToast('Indicá el cargo o asignatura','#991b1b'); return; }
   if(!DB.competenciasExtra) DB.competenciasExtra=[];
@@ -15310,7 +15310,7 @@ function crdAntModal(campo,id){
   showModal('Antecedentes — '+crdNombre(ag.obj),`<div style="background:#f8fafc;padding:10px;border-radius:10px">${crdAvisoPeriodo(ag)}${crdAntecedentesHTML(ag,true)}</div>`);
 }
 function crdCapPuntaje(campo,id,key,val,el){
-  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador puede asignar puntajes','#991b1b'); return; }
+  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador o la Institución puede asignar puntajes','#991b1b'); return; }
   const ag=crdAgenteDe(campo,id); if(!ag) return;
   if(!DB.puntajesCap) DB.puntajesCap=[];
   DB.puntajesCap=DB.puntajesCap.filter(x=>!(x.campo===campo&&x.personaId===id&&x.clave===key));
@@ -15520,7 +15520,7 @@ function crdCredencialTabHTML(ag,rc){
 
 // ── Administrador: emisión ──
 function renderCredencialesAdmin(){
-  if(!puedeEmitirCredencial()) return `${sectionHeader('Credenciales')}<div class="alert-info">Las credenciales las emite el Administrador.</div>`;
+  if(!puedeEmitirCredencial()) return `${sectionHeader('Credenciales')}<div class="alert-info">Las credenciales las emite el Administrador o la Institución.</div>`;
   const ags=crdAgentesInst();
   const q=(crdAdminF.q||'').toLowerCase();
   const info=ags.map(a=>({a,v:crdVigente(a),p:crdPendiente(a),u:crdRec(a)}));
@@ -15536,7 +15536,7 @@ function renderCredencialesAdmin(){
       <td style="padding:9px 12px;white-space:nowrap;display:flex;gap:5px;flex-wrap:wrap">${b('📊 Puntajes',`crdVerPuntajes('${a.campo}',${a.id})`)}${b('📚 Analítico',`crdAnaModal('${a.campo}',${a.id})`)}${b('🎓 Títulos',`crdTitModal('${a.campo}',${a.id})`)}${b('📎 Antecedentes',`crdAntModal('${a.campo}',${a.id})`)}${b(v?'🔁 Actualizar':'🪪 Emitir',`crdEmitirModal('${a.campo}',${a.id})`,'btn-primary')}${p?b('✖ Rechazar',`crdRechazarModal(${p.id})`):''}${v?b('🖨️',`crdImprimir('${a.campo}',${a.id},${v.id})`)+b('🚫 Anular',`crdAnularModal(${v.id})`):''}</td></tr>`;
   }).join('');
   return `${sectionHeader('Credenciales')}
-   <div class="alert-info" style="margin-bottom:14px">🪪 Sólo el <strong>Administrador</strong> emite las credenciales de docentes, preceptores, secretarios y directores.</div>
+   <div class="alert-info" style="margin-bottom:14px">🪪 Sólo el <strong>Administrador</strong> y la <strong>Institución</strong> emiten las credenciales de docentes, preceptores, secretarios y directores.</div>
    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kpi('Solicitudes pendientes',nSol,'#d97706','sol')}${kpi('Credenciales emitidas',nEm,'#166534','em')}${kpi('Sin credencial',nSin,'#64748b','sin')}${kpi('Todos los agentes',ags.length,'#1a3a5c','todos')}</div>
    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><input id="crd-q" class="form-input" style="max-width:280px" placeholder="Buscar por nombre o DNI" value="${crdEsc(crdAdminF.q)}" oninput="crdAdminF.q=this.value;crdRefrescarLista()">
     <span style="font-size:12px;color:#64748b">Puntaje de zona por año:</span><input id="crd-zona" type="number" step="0.05" min="0" class="form-input" style="width:90px" value="${parseFloat(inst&&inst.zonaPuntaje)||0}" onchange="crdGuardarZona(this.value)"></div>
@@ -15573,7 +15573,7 @@ function crdIrValidar(campo,id){
   if(campo==='preceptorId') abrirLegajoPropioPrec(id,'antecedentes','admin'); else abrirLegajoAdmin(id,'antecedentes');
 }
 function crdEmitir(campo,id){
-  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador puede emitir credenciales','#991b1b'); return; }
+  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador o la Institución puede emitir credenciales','#991b1b'); return; }
   const ag=crdAgenteDe(campo,id); if(!ag) return;
   if(crdPendientesAnt(ag)){ showToast('Hay antecedentes pendientes de evaluar','#991b1b'); return; }
   const vig=document.getElementById('crd-vig')?.value||'';
@@ -15604,7 +15604,7 @@ function crdAnularModal(cid){
    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="crdResolver(${cid},'Anulada')">Anular</button></div>`);
 }
 function crdResolver(cid,estado){
-  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador puede resolver credenciales','#991b1b'); return; }
+  if(!puedeEmitirCredencial()){ showToast('Sólo el Administrador o la Institución puede resolver credenciales','#991b1b'); return; }
   const c=crdLista().find(x=>x.id===cid); if(!c) return;
   const m=(document.getElementById('crd-mot')?.value||'').trim();
   if(!m){ showToast('Indicá el motivo','#991b1b'); return; }
