@@ -961,10 +961,30 @@ function fechaHoraStr(){
   const pad=n=>String(n).padStart(2,'0');
   return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
+// Nombre de la persona que realiza una acción (para el registro de trabajo, firmas, etc.).
+// Si actúa la cuenta de la institución, se usa el nombre y apellido del director/a de esa institución.
+function nombreActor(){
+  const u=currentUser; if(!u) return 'Sistema';
+  if(u.rol==='institucion'){
+    const d=USUARIOS.find(x=>x.rol==='director'&&x.institucionId===u.institucionId&&x.estado!=='inactivo');
+    if(d&&d.nombre) return d.nombre;
+    const inst=INSTITUCIONES.find(i=>i.id===u.institucionId);
+    if(inst&&inst.director) return inst.director;
+  }
+  return u.nombre||u.usuario||'Sistema';
+}
+// Para registros viejos que guardaron el nombre de la institución como responsable:
+// se muestra el nombre y apellido del director/a de esa institución.
+function responsableVisible(r){
+  const inst=INSTITUCIONES.find(i=>i.nombre===r);
+  if(!inst) return r;
+  const d=USUARIOS.find(x=>x.rol==='director'&&x.institucionId===inst.id&&x.estado!=='inactivo');
+  return (d&&d.nombre)||inst.director||r;
+}
 function registrarHistorial(obj, operacion, comentario=''){
   if(!obj) return;
   if(!Array.isArray(obj.historial)) obj.historial=[];
-  obj.historial.push({ operacion, comentario, fecha:fechaHoraStr(), responsable: currentUser?.nombre || 'Sistema' });
+  obj.historial.push({ operacion, comentario, fecha:fechaHoraStr(), responsable: nombreActor() || 'Sistema' });
 }
 function colorOperacionHist(op){
   op=(op||'').toUpperCase();
@@ -1006,7 +1026,7 @@ function modalDetalleTramite({codigo,estado,fechaDesde,fechaHasta,campos,plazas,
   const histRows=(historial&&historial.length)?historial.map(h=>`<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;color:${colorOperacionHist(h.operacion)}">${h.operacion}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;white-space:nowrap;color:#475569">${h.fecha}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;color:#334155">${h.responsable}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;color:#334155">${responsableVisible(h.responsable)}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;color:#64748b">${h.comentario||''}</td>
     </tr>`).join(''):`<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:12px;font-size:12px">Sin movimientos registrados</td></tr>`;
 
@@ -3378,13 +3398,23 @@ async function crearUsuarioAgente(tipo,id){
   await establecerClave(nuevo, clave);
   USUARIOS.push(nuevo); guardarEstado();
   showToast(`✅ Usuario <strong>${nuevo.usuario}</strong> creado para ${a.nombre} — clave inicial: su DNI (sin puntos)`,'#166534');
-  renderAdmin('usuarios');
+  usrRefrescar();
 }
 async function crearUsuariosFaltantes(){
   for(const a of agentesSinUsuario()){ if(String(a.dni||'').replace(/\D/g,'').length>=4) await crearUsuarioAgente(a.tipo,a.id); }
 }
+function usrEsDir(){ return !!currentUser && currentUser.rol==='director'; }
+function usrEnAlcance(u){
+  if(!u) return false;
+  if(!usrEsDir()) return true;
+  return false;   // el director no gestiona usuarios
+  if(u.rol==='admin'||u.rol==='institucion') return false;
+  const i=currentUser.institucionId;
+  return u.institucionId===i || u.creadoEnInst===i || (Array.isArray(u.instituciones)&&u.instituciones.some(x=>x.institucionId===i));
+}
+function usrRefrescar(){ if(usrEsDir()) renderDirector('usuarios'); else renderAdmin('usuarios'); }
 function renderUsuarios(filtro='todos'){
-  const todos = USUARIOS;
+  const todos = USUARIOS.filter(usrEnAlcance);
   const data  = filtro==='activos'   ? todos.filter(u=>u.estado!=='inactivo')
               : filtro==='inactivos' ? todos.filter(u=>u.estado==='inactivo')
               : todos;
@@ -3456,14 +3486,14 @@ function renderUsuarios(filtro='todos'){
       </div>`},
   ];
 
-  return `${sectionHeader('Gestión de Usuarios', `<button class="btn btn-success" onclick="openNuevoUsuario()">+ Nuevo Usuario</button>`)}
+  return `${sectionHeader(usrEsDir()?'Usuarios de mi institución':'Gestión de Usuarios', `<button class="btn btn-success" onclick="openNuevoUsuario()">+ Nuevo Usuario</button>`)}
     <div class="cards-grid" style="margin-bottom:16px">
       ${cardHTML('Total',todos.length,'👥','#1a3a5c')}
       ${cardHTML('Activos',activos,'✅','#166534')}
       ${cardHTML('Inactivos',inactivos,'⊘','#991b1b')}
       ${cardHTML('Roles',ROLES_DISPONIBLES.length,'🏷️','#6d28d9')}
     </div>
-    ${usrPanelLimpieza()}
+    ${usrEsDir()?'':usrPanelLimpieza()}
     ${(()=>{ const f=agentesSinUsuario(); if(!f.length) return '';
       return `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin-bottom:16px">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px"><strong style="color:#92400e;flex:1">⚠️ Agentes de la institución sin usuario (${f.length})</strong>
@@ -3521,7 +3551,7 @@ function usrPuedeEliminar(u){
   return '';
 }
 function usrConfirmarEliminar(id){
-  const u=USUARIOS.find(x=>x.id===id), err=usrPuedeEliminar(u); if(err){ showToast(err,'#991b1b'); return; }
+  const u=USUARIOS.find(x=>x.id===id); if(!usrEnAlcance(u)) return; const err=usrPuedeEliminar(u); if(err){ showToast(err,'#991b1b'); return; }
   showModal('Eliminar usuario',`<p style="font-size:14px;line-height:1.6">¿Eliminar el usuario <strong>${luaEsc(u.usuario)}</strong> (${luaEsc(u.nombre)}, ${ROL_LABEL[u.rol]||u.rol})? No podrá volver a ingresar. Su ficha de docente/alumno/preceptor, si la tiene, <strong>no se borra</strong>.</p>
     <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-danger" onclick="usrEliminar([${u.id}])">Sí, eliminar</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`);
 }
@@ -3533,8 +3563,8 @@ function usrConfirmarLote(tipo){
     <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-danger" onclick="usrEliminar([${ok.map(u=>u.id).join(',')}])">Sí, eliminar ${ok.length}</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`);
 }
 function usrEliminar(ids){
-  let n=0; ids.forEach(id=>{ const u=USUARIOS.find(x=>x.id===id); if(u&&!usrPuedeEliminar(u)){ USUARIOS.splice(USUARIOS.indexOf(u),1); n++; } });
-  guardarEstado(); showToast('🗑️ '+n+' usuario'+(n===1?'':'s')+' eliminado'+(n===1?'':'s')+'.'); closeModal(); renderAdmin('usuarios');
+  let n=0; ids.forEach(id=>{ const u=USUARIOS.find(x=>x.id===id); if(u&&usrEnAlcance(u)&&!usrPuedeEliminar(u)){ USUARIOS.splice(USUARIOS.indexOf(u),1); n++; } });
+  guardarEstado(); showToast('🗑️ '+n+' usuario'+(n===1?'':'s')+' eliminado'+(n===1?'':'s')+'.'); closeModal(); usrRefrescar();
 }
 
 function renderUsuariosFiltro(f){
@@ -3543,9 +3573,9 @@ function renderUsuariosFiltro(f){
 
 function toggleEstadoUser(id){
   const u = USUARIOS.find(x=>x.id===id);
-  if(!u) return;
+  if(!u||!usrEnAlcance(u)) return;
   u.estado = u.estado==='inactivo' ? 'activo' : 'inactivo';
-  renderAdmin('usuarios');
+  usrRefrescar();
 }
 
 function openNuevoUsuario(){
@@ -3554,19 +3584,19 @@ function openNuevoUsuario(){
 
 function openEditUsuario(id){
   const u = USUARIOS.find(x=>x.id===id);
-  if(!u) return;
+  if(!u||!usrEnAlcance(u)) return;
   showModal(`Editar Usuario — ${u.usuario}`, buildFormUsuario(u));
 }
 
 function buildFormUsuario(u){
   const esNuevo = !u;
   const rolOpts = (esNuevo?`<option value="" selected disabled>— Seleccioná un rol —</option>`:'')
-    + ROLES_DISPONIBLES.map(r=>`<option value="${r.value}"${u&&u.rol===r.value?' selected':''}>${r.label}</option>`).join('');
+    + ROLES_DISPONIBLES.filter(r=>!(usrEsDir()&&r.value==='admin')).map(r=>`<option value="${r.value}"${u&&u.rol===r.value?' selected':''}>${r.label}</option>`).join('');
 
   // Opciones de vinculación (se muestran/ocultan con JS según rol)
-  const instSel0 = u&&u.institucionId ? u.institucionId : (currentInstitucionId||(INSTITUCIONES.length===1?INSTITUCIONES[0].id:null));
+  const instSel0 = usrEsDir() ? currentUser.institucionId : u&&u.institucionId ? u.institucionId : (currentInstitucionId||(INSTITUCIONES.length===1?INSTITUCIONES[0].id:null));
   const DBu = (instSel0&&INST_DATA[instSel0])||DB;
-  const instOpts = `<option value="">— Seleccioná la institución —</option>`+INSTITUCIONES.map(i=>`<option value="${i.id}"${i.id===instSel0?' selected':''}>${i.nombre}</option>`).join('');
+  const instOpts = `<option value="">— Seleccioná la institución —</option>`+INSTITUCIONES.filter(i=>!usrEsDir()||i.id===currentUser.institucionId).map(i=>`<option value="${i.id}"${i.id===instSel0?' selected':''}>${i.nombre}</option>`).join('');
   const docenteOpts  = DBu.docentes.map(d=>`<option value="${d.id}"${u&&u.docenteId===d.id?' selected':''}>${d.apellido}, ${d.nombres} (DNI ${d.dni})</option>`).join('');
   const alumnoOpts   = DBu.alumnos.map(a=>`<option value="${a.id}"${u&&u.alumnoId===a.id?' selected':''}>${a.nombre} — ${a.curso}</option>`).join('');
   const preceptOpts  = DBu.preceptores.map(p=>`<option value="${p.id}"${u&&u.preceptorId===p.id?' selected':''}>${p.nombre}</option>`).join('');
@@ -3667,6 +3697,7 @@ function usrCambiarInst(){
 }
 // Institución elegida en el formulario (admin = ninguna)
 function usrInstElegida(rol){
+  if(usrEsDir()) return rol==='admin'?null:currentUser.institucionId;
   if(rol==='admin') return null;
   const id=parseInt(v('fu-inst')); return id||null;
 }
@@ -3696,7 +3727,9 @@ async function saveNuevoUsuario(){
   const chkCargo = validarCargoDocenteCompatibleUsuario(rol);
   if(!chkCargo.ok){ alert(chkCargo.msg); return; }
 
+  if(usrEsDir()&&rol==='admin'){ showToast('No podés crear administradores.','#991b1b'); return; }
   const nuevo = { id: uid(), usuario, rol, nombre, estado:'activo', institucionId: null };
+  if(usrEsDir()) nuevo.creadoEnInst = currentUser.institucionId;
   await establecerClave(nuevo, clave);
   asignarVinculacion(nuevo, rol);
   nuevo.institucionId = usrInstFinal(rol, nuevo);
@@ -3705,12 +3738,12 @@ async function saveNuevoUsuario(){
 
   closeModal();
   showToast(`✅ Usuario <strong>${usuario}</strong> creado correctamente${nuevo.institucionId?'':' — sin institución vinculada aún'}`,'#166534');
-  renderAdmin('usuarios');
+  usrRefrescar();
 }
 
 async function saveEditUsuario(id){
   const u       = USUARIOS.find(x=>x.id===id);
-  if(!u) return;
+  if(!u||!usrEnAlcance(u)) return;
   const nombre  = v('fu-nombre').trim();
   const usuario = v('fu-usuario').trim().toLowerCase();
   const clave   = v('fu-clave').trim();
@@ -3723,6 +3756,7 @@ async function saveEditUsuario(id){
   const chkCargo = validarCargoDocenteCompatibleUsuario(rol,{excludeUserId:id});
   if(!chkCargo.ok){ alert(chkCargo.msg); return; }
 
+  if(usrEsDir()&&rol==='admin'){ showToast('No podés asignar el rol Administrador.','#991b1b'); return; }
   u.nombre  = nombre;
   u.usuario = usuario;
   u.rol     = rol;
@@ -3736,7 +3770,7 @@ async function saveEditUsuario(id){
 
   closeModal();
   showToast(`✅ Usuario <strong>${usuario}</strong> actualizado`+(u.institucionId?'':' — todavía sin institución vinculada'),'#1a3a5c');
-  renderAdmin('usuarios');
+  usrRefrescar();
 }
 
 // Valida que el cargo administrativo (Secretario/a o Director/a) vinculado a un/a docente
@@ -3808,7 +3842,7 @@ function asignarVinculacion(u, rol){
 
 function openResetPass(id){
   const u = USUARIOS.find(x=>x.id===id);
-  if(!u) return;
+  if(!u||!usrEnAlcance(u)) return;
   showModal(`Cambiar contraseña — ${u.usuario}`, `
     <div class="alert-info" style="margin-bottom:14px;font-size:13px">
       Ingresá la nueva contraseña para <strong>${u.nombre}</strong> (<code>${u.usuario}</code>).
@@ -3827,6 +3861,7 @@ function openResetPass(id){
 }
 
 async function guardarResetPass(id){
+  if(!usrEnAlcance(USUARIOS.find(x=>x.id===id))) return;
   const clave   = v('rp-clave').trim();
   const confirm = v('rp-confirm').trim();
   if(!clave){ alert('Ingresá la nueva contraseña'); return; }
@@ -3835,7 +3870,7 @@ async function guardarResetPass(id){
   await establecerClave(USUARIOS.find(x=>x.id===id), clave);
   closeModal();
   showToast('🔑 Contraseña actualizada correctamente','#854d0e');
-  renderAdmin('usuarios');
+  usrRefrescar();
 }
 
 function showToast(msg, color='#166534'){
@@ -4246,7 +4281,7 @@ function badgePlazaEstado(p){
 //    puede crear, editar, cerrar o habilitar/deshabilitar plazas directamente.
 //    Director/a y Secretario/a sólo pueden SOLICITAR el alta al admin.
 function canManagePlazas(){
-  return currentUser && (currentUser.rol==='admin' || currentUser.rol==='institucion');
+  return currentUser && ['admin','institucion','director'].includes(currentUser.rol);
 }
 // Roles con permiso para gestionar (crear/editar/aprobar/inactivar) designaciones y
 // licencias de docentes y preceptores. Docentes y Preceptores sólo pueden VER las
@@ -4256,7 +4291,7 @@ function puedeGestionarPersonal(){
 }
 // Validar títulos/capacitaciones/datos y tildar documentación: sólo el administrador.
 function puedeValidarLegajo(){
-  return currentUser && ['admin','institucion'].includes(currentUser.rol);
+  return currentUser && ['admin','institucion','director'].includes(currentUser.rol);
 }
 function badgeHabilitada(p){
   return p.habilitada===false
@@ -4820,7 +4855,7 @@ function saveSolicitarPlaza(){
   DB.solicitudesPlaza.push({
     id:uid(), materia:mat, nivel:v('fsp-nivel'), turno:v('fsp-turno'),
     horasCatedra:parseInt(v('fsp-horas'))||0, curso:v('fsp-curso'), motivo:motivo,
-    solicitadoPor:currentUser.nombre, solicitadoPorRol:currentUser.rol,
+    solicitadoPor:nombreActor(), solicitadoPorRol:currentUser.rol,
     fecha:new Date().toISOString().split('T')[0], estado:'pendiente',
     respuesta:'', fechaRespuesta:'', plazaCreadaId:null,
   });
@@ -5069,7 +5104,7 @@ function confirmarAnulacionLic(id){
   const hoy=new Date().toISOString().split('T')[0];
   const supDes=(lic.docenteId&&eraAprobada)?DB.designaciones.find(d=>d.docenteTitularId===lic.docenteId&&d.desde===lic.desde&&(d.hasta||'')===(lic.hasta||'')&&d.estado==='activa'):null;
   lic.estado='anulada';
-  lic.anulacion={motivo, fecha:fechaHoraStr(), por:currentUser?currentUser.nombre:'Sistema'};
+  lic.anulacion={motivo, fecha:fechaHoraStr(), por:currentUser?nombreActor():'Sistema'};
   registrarHistorial(lic,'ANULADO',`Motivo de anulación: ${motivo}`);
   if(eraAprobada){
     if(lic.docenteId){
@@ -5520,7 +5555,7 @@ function registrarAutorizacionLic(lic){
   const nroRes=v('f-nro-res'), obs=v('f-obs-autorizacion');
   lic.nroResolucion = nroRes||lic.nroResolucion||'';
   lic.observacionesAutorizacion = obs||lic.observacionesAutorizacion||'';
-  lic.funcionarioAutorizante = currentUser.nombre;
+  lic.funcionarioAutorizante = nombreActor();
   lic.fechaAutorizacion = new Date().toISOString().split('T')[0];
   // Rubro 4.2: remunerada/porcentaje, definido por el directivo según el tipo de licencia
   const selRem=document.getElementById('f-remunerada');
@@ -5531,7 +5566,7 @@ function registrarAutorizacionLic(lic){
   // Rubro 8: documentación adosada, un único campo de texto libre
   const elDocs=document.getElementById('f-docs-adjuntos');
   if(elDocs) lic.docsAdjuntos = elDocs.value.trim();
-  registrarHistorial(lic,'AUTORIZACIÓN REGISTRADA',`${nroRes?'Res. '+nroRes+'. ':''}Funcionario/a: ${currentUser.nombre}.`);
+  registrarHistorial(lic,'AUTORIZACIÓN REGISTRADA',`${nroRes?'Res. '+nroRes+'. ':''}Funcionario/a: ${nombreActor()}.`);
 }
 // Bloque HTML compartido (Rubro 4.2 remunerada, Rubro 8 documentación, Rubro 7 autorización)
 // que el directivo completa al aprobar una licencia, según el tipo declarado.
@@ -5991,7 +6026,7 @@ function confirmarAnulacionDesig(id){
   if(!motivo){ alert('Indicá el motivo de la anulación: es obligatorio y queda registrado en el trámite.'); return; }
   const estabaVigente=['activa','licencia'].includes(d.estado);
   d.estado='anulada';
-  d.anulacion={motivo, fecha:fechaHoraStr(), por:currentUser?currentUser.nombre:'Sistema'};
+  d.anulacion={motivo, fecha:fechaHoraStr(), por:currentUser?nombreActor():'Sistema'};
   registrarHistorial(d,'ANULADO',`Motivo de anulación: ${motivo}`);
   // Si reemplazaba a un titular, el titular recupera su cargo (salvo que otra suplencia siga vigente)
   if(estabaVigente){
@@ -6045,7 +6080,7 @@ function cambiarDesigPendiente(id, estado){
       const dtDoc=DB.docentes.find(x=>x.id===d.docenteTitularId);
       if(dtDoc && dtDoc.estado!=='baja' && dtDoc.estado!=='renuncia') dtDoc.estado='licencia';
     }
-    registrarHistorial(d,'APROBADA',`Designación aprobada por ${currentUser.nombre}.`);
+    registrarHistorial(d,'APROBADA',`Designación aprobada por ${nombreActor()}.`);
     const hastaTexto=d.hasta?` hasta el ${fmtDate(d.hasta)}`:'(sin fecha de vencimiento)';
     crearNotificacion(d.docenteId,'alta_desig',
       `Nueva designación — ${d.caracter}`,
@@ -6776,7 +6811,7 @@ function saveDesig(){
     horas:parseInt(v('f-horas'))||0,desde:v('f-desde'),hasta:v('f-hasta'),
     estado:'pendiente',docenteTitularId:titularId,desigTitularId:desigTitId,
     // Rubro 7: quien autoriza el trámite es siempre quien lo crea (Director/a, Secretario/a o Admin)
-    nroResolucion:v('f-nro-res')||'', funcionarioAutorizante:currentUser.nombre, fechaAutorizacion:new Date().toISOString().split('T')[0],
+    nroResolucion:v('f-nro-res')||'', funcionarioAutorizante:nombreActor(), fechaAutorizacion:new Date().toISOString().split('T')[0],
     // Rubro 8: documentación adosada al trámite (texto libre)
     docsAdjuntos:(document.getElementById('f-docs-adjuntos')?.value||'').trim(),
   };
@@ -8408,11 +8443,11 @@ function calcularResultadosConsultaTramites(){
     });
   };
   asegurarNroExpDesignaciones();
-  addRows('Designación','📌',DB.designaciones,d=>({id:d.id,nroExp:d.nroExp||`DE-${d.id}`,docenteId:d.docenteId,estado:d.estado,desde:d.desde,plaza:d.nroPlaza||'',normaLegal:'',caracter:d.caracter||'',materia:d.materia||DB.plazas.find(p=>p.nroPlaza===d.nroPlaza)?.materia||'',curso:d.curso||DB.plazas.find(p=>p.nroPlaza===d.nroPlaza)?.curso||''}));
-  addRows('Licencia','📋',DB.licencias,l=>{ const pz=getPlazaIds(l).map(pid=>resolverPlaza(pid)).filter(Boolean); return {id:l.id,nroExp:l.nroExp||`LC-${l.id}`,docenteId:l.docenteId,estado:l.estado,desde:l.desde,plaza:pz.map(p=>p.nroPlaza).join(', '),normaLegal:l.normaLegal||'',caracter:'',materia:pz.map(p=>p.materia).filter(Boolean).join(', '),curso:pz.map(p=>p.curso).filter(Boolean).join(', ')}; });
-  addRows('Traslado','🔁',DB.traslados,t=>({id:t.id,nroExp:t.nroExp,docenteId:t.docenteId,estado:t.estado,desde:t.desde,plaza:`${t.nroPlazaOrigen||'—'} → ${t.nroPlazaDestino||'—'}`,normaLegal:'',caracter:'',materia:DB.plazas.find(p=>p.nroPlaza===t.nroPlazaOrigen)?.materia||'',curso:DB.plazas.find(p=>p.nroPlaza===t.nroPlazaOrigen)?.curso||''}));
-  addRows('Permuta','🔀',DB.permutas,p=>({id:p.id,nroExp:p.nroExp,docenteId:p.docenteId,estado:p.estado,desde:p.desde,plaza:p.nroPlazaOrigen||'',normaLegal:'',caracter:'',materia:DB.plazas.find(x=>x.nroPlaza===p.nroPlazaOrigen)?.materia||'',curso:DB.plazas.find(x=>x.nroPlaza===p.nroPlazaOrigen)?.curso||''}));
-  addRows('Baja','⛔',DB.bajasTramite,b=>({id:b.id,nroExp:b.nroExp,docenteId:b.docenteId,estado:b.estado,desde:b.desde,plaza:b.nroPlaza||'',normaLegal:'',caracter:'',materia:DB.plazas.find(p=>p.nroPlaza===b.nroPlaza)?.materia||'',curso:DB.plazas.find(p=>p.nroPlaza===b.nroPlaza)?.curso||''}));
+  addRows('Designación','📌',DB.designaciones,d=>({id:d.id,nroExp:d.nroExp||`DE-${d.id}`,docenteId:d.docenteId,estado:d.estado,desde:d.desde,hasta:d.hasta||'',plaza:d.nroPlaza||'',normaLegal:'',caracter:d.caracter||'',materia:d.materia||DB.plazas.find(p=>p.nroPlaza===d.nroPlaza)?.materia||'',curso:d.curso||DB.plazas.find(p=>p.nroPlaza===d.nroPlaza)?.curso||''}));
+  addRows('Licencia','📋',DB.licencias,l=>{ const pz=getPlazaIds(l).map(pid=>resolverPlaza(pid)).filter(Boolean); return {id:l.id,nroExp:l.nroExp||`LC-${l.id}`,docenteId:l.docenteId,estado:l.estado,desde:l.desde,hasta:l.hasta||'',plaza:pz.map(p=>p.nroPlaza).join(', '),normaLegal:l.normaLegal||'',caracter:'',materia:pz.map(p=>p.materia).filter(Boolean).join(', '),curso:pz.map(p=>p.curso).filter(Boolean).join(', ')}; });
+  addRows('Traslado','🔁',DB.traslados,t=>({id:t.id,nroExp:t.nroExp,docenteId:t.docenteId,estado:t.estado,desde:t.desde,hasta:t.hasta||'',plaza:`${t.nroPlazaOrigen||'—'} → ${t.nroPlazaDestino||'—'}`,normaLegal:'',caracter:'',materia:DB.plazas.find(p=>p.nroPlaza===t.nroPlazaOrigen)?.materia||'',curso:DB.plazas.find(p=>p.nroPlaza===t.nroPlazaOrigen)?.curso||''}));
+  addRows('Permuta','🔀',DB.permutas,p=>({id:p.id,nroExp:p.nroExp,docenteId:p.docenteId,estado:p.estado,desde:p.desde,hasta:p.hasta||'',plaza:p.nroPlazaOrigen||'',normaLegal:'',caracter:'',materia:DB.plazas.find(x=>x.nroPlaza===p.nroPlazaOrigen)?.materia||'',curso:DB.plazas.find(x=>x.nroPlaza===p.nroPlazaOrigen)?.curso||''}));
+  addRows('Baja','⛔',DB.bajasTramite,b=>({id:b.id,nroExp:b.nroExp,docenteId:b.docenteId,estado:b.estado,desde:b.desde,hasta:b.hasta||'',plaza:b.nroPlaza||'',normaLegal:'',caracter:'',materia:DB.plazas.find(p=>p.nroPlaza===b.nroPlaza)?.materia||'',curso:DB.plazas.find(p=>p.nroPlaza===b.nroPlaza)?.curso||''}));
 
   const inst=instActual();
 
@@ -8697,6 +8732,7 @@ function renderConsultaTramites(){
     {key:'dni',label:'DNI',render:r=>DB.docentes.find(d=>d.id===r.docenteId)?.dni||'—'},
     {key:'plaza',label:'Plaza',render:r=>r.plaza||'—'},
     {key:'desde',label:'Desde',render:r=>fmtDate(r.desde)},
+    {key:'hasta',label:'Hasta',render:r=>r.hasta?fmtDate(r.hasta):'—'},
     {key:'carga',label:'Carga',render:r=>r.fechaCarga?fmtDate(r.fechaCarga):'—'},
     {key:'validacion',label:'Validación',render:r=>r.fechaValid?fmtDate(r.fechaValid):'—'},
     {key:'estado',label:'Estado',render:r=>badge(r.estado)},
@@ -9245,7 +9281,7 @@ function enviarTramiteWizard(){
       id:uid(), nroPlaza:d1.plaza, docenteId, caracter:d1.caracter, modalidad:d1.modalidad,
       cargo:d1.cargo, materia:d1.materia, curso:d1.curso, horas:d1.horas, desde, hasta:'', estado:'pendiente',
       docenteTitularId:null, desigTitularId:null,
-      funcionarioAutorizante:currentUser.nombre, fechaAutorizacion:new Date().toISOString().split('T')[0],
+      funcionarioAutorizante:nombreActor(), fechaAutorizacion:new Date().toISOString().split('T')[0],
     };
     registrarHistorial(nueva,'INGRESO FORMULARIO',`Cargado desde CARGAR TRAMITE — Paso 3 (Enviado a Validación). Pendiente de aprobación por un superior.${obsTxt}`);
     DB.designaciones.push(nueva);
@@ -9350,7 +9386,7 @@ function cambiarTraslado(id, estado){
       modalidad:'Traslado', cargo:desigOrigen.cargo, materia:desigOrigen.materia, curso:desigOrigen.curso,
       horas:desigOrigen.horas, desde:tr.desde, hasta:'', estado:'activa',
       docenteTitularId:null, desigTitularId:null,
-      funcionarioAutorizante:currentUser.nombre, fechaAutorizacion:new Date().toISOString().split('T')[0],
+      funcionarioAutorizante:nombreActor(), fechaAutorizacion:new Date().toISOString().split('T')[0],
     };
     registrarHistorial(nueva,'INGRESO FORMULARIO',`Alta por Traslado ${tr.nroExp} desde plaza ${tr.nroPlazaOrigen}.`);
     DB.designaciones.push(nueva);
@@ -9403,8 +9439,8 @@ function cambiarPermuta(id, estado){
     desigOtro.estado='inactiva'; desigOtro.hasta=pm.desde;
     registrarHistorial(desigPropia,'INACTIVADA POR PERMUTA',`Permuta ${pm.nroExp} con DNI ${pm.dniOtroAgente}.`);
     registrarHistorial(desigOtro,'INACTIVADA POR PERMUTA',`Permuta ${pm.nroExp}.`);
-    const nuevaA={id:uid(),nroPlaza:plazaB,docenteId:pm.docenteId,caracter:desigPropia.caracter,modalidad:'Permuta',cargo:desigPropia.cargo,materia:desigPropia.materia,curso:desigPropia.curso,horas:desigPropia.horas,desde:pm.desde,hasta:'',estado:'activa',docenteTitularId:null,desigTitularId:null,funcionarioAutorizante:currentUser.nombre,fechaAutorizacion:new Date().toISOString().split('T')[0]};
-    const nuevaB={id:uid(),nroPlaza:plazaA,docenteId:otroDoc.id,caracter:desigOtro.caracter,modalidad:'Permuta',cargo:desigOtro.cargo,materia:desigOtro.materia,curso:desigOtro.curso,horas:desigOtro.horas,desde:pm.desde,hasta:'',estado:'activa',docenteTitularId:null,desigTitularId:null,funcionarioAutorizante:currentUser.nombre,fechaAutorizacion:new Date().toISOString().split('T')[0]};
+    const nuevaA={id:uid(),nroPlaza:plazaB,docenteId:pm.docenteId,caracter:desigPropia.caracter,modalidad:'Permuta',cargo:desigPropia.cargo,materia:desigPropia.materia,curso:desigPropia.curso,horas:desigPropia.horas,desde:pm.desde,hasta:'',estado:'activa',docenteTitularId:null,desigTitularId:null,funcionarioAutorizante:nombreActor(),fechaAutorizacion:new Date().toISOString().split('T')[0]};
+    const nuevaB={id:uid(),nroPlaza:plazaA,docenteId:otroDoc.id,caracter:desigOtro.caracter,modalidad:'Permuta',cargo:desigOtro.cargo,materia:desigOtro.materia,curso:desigOtro.curso,horas:desigOtro.horas,desde:pm.desde,hasta:'',estado:'activa',docenteTitularId:null,desigTitularId:null,funcionarioAutorizante:nombreActor(),fechaAutorizacion:new Date().toISOString().split('T')[0]};
     registrarHistorial(nuevaA,'INGRESO FORMULARIO',`Alta por Permuta ${pm.nroExp}.`);
     registrarHistorial(nuevaB,'INGRESO FORMULARIO',`Alta por Permuta ${pm.nroExp}.`);
     DB.designaciones.push(nuevaA, nuevaB);
@@ -10024,7 +10060,7 @@ function generarFU01BajaCese(tipo, id){
     autorizado: true,
     nroRes: '',
     fechaAut: hist?.fecha ? hist.fecha.split(' ')[0].split('/').reverse().join('-') : new Date().toISOString().split('T')[0],
-    funcionario: hist?.responsable || currentUser.nombre,
+    funcionario: hist?.responsable || nombreActor(),
     observaciones: '',
     tituloDoc: `${esRenuncia?'Renuncia':'Baja'} — ${persona.apellido||persona.nombre}`,
   });
@@ -10062,7 +10098,7 @@ function generarFU01Traslado(tipo, id){
     rubro4xHTML,
     filasPlazas5: '',
     autorizado: false,
-    nroRes: '', fechaAut: '', funcionario: currentUser.nombre,
+    nroRes: '', fechaAut: '', funcionario: nombreActor(),
     observaciones: '',
     tituloDoc: `Traslado — ${persona.apellido||persona.nombre}`,
   });
@@ -10101,7 +10137,7 @@ function generarFU01Permuta(tipo, id){
     rubro4xHTML,
     filasPlazas5: '',
     autorizado: false,
-    nroRes: '', fechaAut: '', funcionario: currentUser.nombre,
+    nroRes: '', fechaAut: '', funcionario: nombreActor(),
     observaciones: '',
     tituloDoc: `Permuta — ${persona.apellido||persona.nombre}`,
   });
@@ -11351,10 +11387,10 @@ function validarAntecedenteAgente(id, nuevoEstado){
     if(comentario===null) return;
   }
   rec.estado=nuevoEstado;
-  rec.validadoPor=currentUser.nombre;
+  rec.validadoPor=nombreActor();
   rec.fechaValidacion=new Date().toISOString().split('T')[0];
   rec.comentarioValidacion = nuevoEstado==='Rechazado'?comentario:'';
-  registrarHistorial(rec, nuevoEstado==='Validado'?'VALIDADO':'RECHAZADO', nuevoEstado==='Validado'?`Validado por ${currentUser.nombre}.`:`Rechazado por ${currentUser.nombre}. Motivo: ${comentario}`);
+  registrarHistorial(rec, nuevoEstado==='Validado'?'VALIDADO':'RECHAZADO', nuevoEstado==='Validado'?`Validado por ${nombreActor()}.`:`Rechazado por ${nombreActor()}. Motivo: ${comentario}`);
   showToast(nuevoEstado==='Validado'?'✅ Antecedente validado':'❌ Antecedente rechazado', nuevoEstado==='Validado'?'#166534':'#991b1b');
   const filterField = rec.docenteId!=null?'docenteId':'preceptorId';
   _refrescarBoxAntecedentes(rec[filterField], filterField, true);
@@ -12230,7 +12266,7 @@ function liqGenerar(suj, periodo, modalidad, auto){
   const calc=liqCalcular(suj,periodo,modalidad);
   const inst=instActual()||{};
   liq={ id:uid(), sujetoTipo:suj.tipo, sujetoId:suj.id, periodo, modalidad, escuela:inst.nombre||'', estado:'Borrador',
-    fechaGeneracion:new Date().toISOString().split('T')[0], generadoPor:currentUser?currentUser.nombre:'Sistema',
+    fechaGeneracion:new Date().toISOString().split('T')[0], generadoPor:currentUser?nombreActor():'Sistema',
     fechaPago:'', conceptos:calc.conceptos, eliminados:[], licencias:calc.licencias, diasLic:calc.diasLic,
     observaciones:'', historial:[] };
   liqRecalcularPorcentajes(liq);
@@ -12363,7 +12399,7 @@ function liqLiquidarTodos(){
   const bs=liqLista().filter(l=>l.periodo===liqPeriodoSel && l.estado==='Borrador');
   if(!bs.length) return;
   liqConfirmar(`¿Marcar como <strong>LIQUIDADAS</strong> ${bs.length} liquidación(es) de ${liqPeriodoLabel(liqPeriodoSel)}? Quedarán bloqueadas para edición (podés reabrirlas una por una).`, ()=>{
-    bs.forEach(l=>{ l.estado='Liquidada'; registrarHistorial(l,'LIQUIDADA','Liquidación cerrada por '+currentUser.nombre+'.'); });
+    bs.forEach(l=>{ l.estado='Liquidada'; registrarHistorial(l,'LIQUIDADA','Liquidación cerrada por '+nombreActor()+'.'); });
     guardarEstado(); showToast('✅ Liquidaciones cerradas','#166534'); navigate('liquidaciones');
   }, 'Liquidar');
 }
@@ -12457,7 +12493,7 @@ function liqCerrar(id){
 }
 function liqCerrarOk(id){
   const l=liqLista().find(x=>x.id===id); if(!l) return;
-  l.estado='Liquidada'; registrarHistorial(l,'LIQUIDADA','Liquidación cerrada por '+currentUser.nombre+'.');
+  l.estado='Liquidada'; registrarHistorial(l,'LIQUIDADA','Liquidación cerrada por '+nombreActor()+'.');
   liqRefrescar(id); showToast('✅ Liquidación cerrada','#166534');
 }
 function liqReabrir(id){
@@ -12466,7 +12502,7 @@ function liqReabrir(id){
 }
 function liqReabrirOk(id){
   const l=liqLista().find(x=>x.id===id); if(!l) return;
-  l.estado='Borrador'; registrarHistorial(l,'REABIERTA','Reabierta por '+currentUser.nombre+'.');
+  l.estado='Borrador'; registrarHistorial(l,'REABIERTA','Reabierta por '+nombreActor()+'.');
   liqRefrescar(id);
 }
 function liqAgregarConcepto(liqId){ liqFormConcepto(liqId,null); }
@@ -15551,7 +15587,7 @@ function crdEmitir(campo,id){
   if(!rec.nro) rec.nro=`CR-${anio}-${String(lista.filter(c=>c.nro&&c.nro.startsWith('CR-'+anio)).length+1).padStart(4,'0')}`;
   if(!rec.fechaPrimeraEmision) rec.fechaPrimeraEmision=hoy;
   Object.assign(rec,{estado:yaEmitida?'Actualizada':'Emitida',emitida:true,motivo,fechaEmision:hoy,fechaResolucion:hoy,vigencia:vig,
-    emitidaPor:currentUser.nombre||currentUser.usuario,obsEmision:document.getElementById('crd-eobs')?.value||'',
+    emitidaPor:nombreActor()||currentUser.usuario,obsEmision:document.getElementById('crd-eobs')?.value||'',
     motivoRechazo:'',rechazoReciente:''});
   const F=crdFoto(ag,true);   // se congela lo computado a la fecha de emisión
   Object.assign(rec,{puntaje:F.live,snapV2:true,snapDes:(()=>{const q=crdPuntajes(ag);return {total:q.total,ant:q.antecedentes,antTit:q.antTit,antCap:q.antCap,servicios:q.servicios,zona:q.zona,conceptos:q.conceptos,jerarquia:q.jerarquia};})(),snapCargos:JSON.parse(JSON.stringify(crdCargosHTML(ag,F.live))),snapTits2:F.tits,snapN:F.nTit});
