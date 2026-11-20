@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src https://*.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>SGE — Migración única a Supabase</title>
+<script src="js/sge-config.js"></script>
+<style>
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:24px}
+  main{max-width:640px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:24px}
+  h1{font-size:20px;color:#1a3a5c;margin:0 0 6px} p,li{font-size:14px;line-height:1.55}
+  label{display:block;font-weight:700;font-size:13px;margin:14px 0 6px}
+  input[type=password],input[type=file]{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;box-sizing:border-box}
+  button{background:#1a3a5c;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer;margin-top:14px}
+  button.sec{background:#e2e8f0;color:#1e293b} pre{background:#0f172a;color:#e2e8f0;padding:12px;border-radius:8px;font-size:12px;white-space:pre-wrap}
+  .aviso{background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Migración única al servidor seguro</h1>
+  <p>Esta página carga los datos del SGE anterior en Supabase. Se usa <strong>una sola vez</strong>, la usa el administrador del sistema, y después hay que borrar el secreto <code>SGE_IMPORT_TOKEN</code>.</p>
+  <div class="aviso">Los datos viajan cifrados (HTTPS) directamente a tu proyecto de Supabase. Esta página no guarda nada.</div>
+
+  <label>1. Backup del sistema anterior</label>
+  <input type="file" id="archivo" accept="application/json,.json">
+  <button class="sec" id="usarLocal" type="button">…o usar los datos guardados en este navegador</button>
+  <div id="resumen" style="font-size:13px;margin-top:8px;color:#475569"></div>
+
+  <label for="token">2. Token de importación (secreto SGE_IMPORT_TOKEN)</label>
+  <input type="password" id="token" autocomplete="off">
+
+  <button id="importar" type="button" disabled>3. Importar</button>
+  <pre id="salida" hidden></pre>
+</main>
+<script>
+(function(){
+  const CFG = window.SGE_CONFIG || {};
+  let estado = null;
+  const $ = (id) => document.getElementById(id);
+  const mostrar = (t) => { $('salida').hidden = false; $('salida').textContent = t; };
+  if(!CFG.supabaseUrl){ mostrar('Falta completar supabaseUrl y supabaseKey en js/sge-config.js.'); }
+
+  function cargar(obj){
+    const e = obj && (obj.estado || obj);
+    if(!e || !Array.isArray(e.USUARIOS) || !Array.isArray(e.INSTITUCIONES) || typeof e.INST_DATA !== 'object'){
+      $('resumen').textContent = '⚠️ El archivo no parece un backup del SGE.'; estado = null; $('importar').disabled = true; return;
+    }
+    estado = { USUARIOS: e.USUARIOS, INSTITUCIONES: e.INSTITUCIONES, INST_DATA: e.INST_DATA };
+    let n = 0; Object.values(e.INST_DATA).forEach(d => Object.values(d||{}).forEach(a => { if(Array.isArray(a)) n += a.length; }));
+    $('resumen').textContent = `✅ ${e.INSTITUCIONES.length} instituciones · ${e.USUARIOS.length} cuentas · ${n} registros`;
+    $('importar').disabled = !CFG.supabaseUrl;
+  }
+  $('archivo').onchange = async () => {
+    const f = $('archivo').files[0]; if(!f) return;
+    try { cargar(JSON.parse(await f.text())); } catch(e){ $('resumen').textContent = '⚠️ No se pudo leer el archivo.'; }
+  };
+  $('usarLocal').onclick = () => {
+    try { cargar(JSON.parse(localStorage.getItem('sge_secundaria_estado_v1') || 'null')); }
+    catch(e){ $('resumen').textContent = '⚠️ No hay datos guardados en este navegador.'; }
+  };
+  $('importar').onclick = async () => {
+    if(!estado) return;
+    $('importar').disabled = true; mostrar('Importando… no cierres la página.');
+    try{
+      const r = await fetch(`${CFG.supabaseUrl}/functions/v1/importar-estado`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: CFG.supabaseKey, 'x-sge-import-token': $('token').value },
+        body: JSON.stringify({ estado }),
+      });
+      const j = await r.json().catch(() => ({}));
+      mostrar(JSON.stringify(j, null, 2) + (j.ok ? '\n\n✅ Listo. Ahora BORRÁ el secreto SGE_IMPORT_TOKEN en Supabase.' : ''));
+    }catch(e){ mostrar('Error de conexión: ' + e.message); }
+    $('token').value = ''; $('importar').disabled = false;
+  };
+})();
+</script>
+</body>
+</html>

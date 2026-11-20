@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://script.google.com https://script.googleusercontent.com; frame-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta name="referrer" content="no-referrer">
+<!-- Configuración del servidor (Supabase). Ver js/sge-config.js -->
+<script src="js/sge-config.js"></script>
 <title>SGE Secundaria — Sistema de Gestión Escolar</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1421,6 +1425,9 @@ async function _sgeFirmaSesion(tipo, cuenta){
 }
 
 function guardarEstado(){
+  // Con Supabase activo nunca se guardan datos personales en el navegador
+  // (js/sge-supabase.js reemplaza esta función al cargar).
+  if(window.SGE_SUPABASE_ACTIVO) return true;
   try{ asegurarNroExpDesignacionesTodas(); }catch(e){}
   sgeSanearEstado();
   try{
@@ -3527,7 +3534,7 @@ async function saveNuevaInst(){
   const id = uid();
   const pwPendiente = d._pwPendiente; delete d._pwPendiente;
   const nueva = { id, ...d };
-  if(pwPendiente) nueva.claveHash = await sha256(pwPendiente);
+  if(pwPendiente){ if(window.SGE_SUPABASE_ACTIVO) sgeRegistrarClavePendiente(nueva, pwPendiente); else nueva.claveHash = await sha256(pwPendiente); }
   INSTITUCIONES.push(nueva);
   INST_DATA[id] = createEmptyInstData();
   closeModal();
@@ -3543,7 +3550,7 @@ async function saveEditInst(id){
   const idx = INSTITUCIONES.findIndex(i=>i.id===id);
   const pwPendiente = d._pwPendiente; delete d._pwPendiente;
   INSTITUCIONES[idx] = { ...INSTITUCIONES[idx], ...d };
-  if(pwPendiente) INSTITUCIONES[idx].claveHash = await sha256(pwPendiente);
+  if(pwPendiente){ if(window.SGE_SUPABASE_ACTIVO) sgeRegistrarClavePendiente(INSTITUCIONES[idx], pwPendiente); else INSTITUCIONES[idx].claveHash = await sha256(pwPendiente); }
   closeModal();
   showToast(`✅ Institución actualizada`,'#1a3a5c');
   renderAdmin('instituciones');
@@ -13870,15 +13877,16 @@ function saveComunicado(){
 // ═══════════════════════════════════════════════════════════════
 // 1) Si hay datos guardados en este navegador de una sesión anterior, los carga
 //    (reemplazando los datos de demostración) antes de armar la pantalla de login.
-const _seCargoEstadoPrevio = cargarEstadoGuardado();
+// Con Supabase los datos NO se guardan en el navegador (vienen del servidor según el rol).
+const _seCargoEstadoPrevio = window.SGE_SUPABASE_ACTIVO ? false : cargarEstadoGuardado();
 
 // 1.b) Config de Google Sheets guardada en este navegador (si se conectó antes)
-cargarConfigSheets();
+if(!window.SGE_SUPABASE_ACTIVO) cargarConfigSheets();
 
 // 2) Autoguardado: cada 5s (local siempre; a Sheets cada ~30s si está conectado)
 // y también justo antes de cerrar/recargar la pestaña.
-setInterval(autoguardadoTick, 5000);
-window.addEventListener('beforeunload', guardarEstado);
+setInterval(()=>autoguardadoTick(), 5000);
+window.addEventListener('beforeunload', ()=>guardarEstado());
 window.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') guardarEstadoInmediato(); });
 
 initUsers();
@@ -15828,7 +15836,10 @@ function crdResolver(cid,estado){
 }
 
 
-iniciarSincronizacionYSesion();
+if(!window.SGE_SUPABASE_ACTIVO) iniciarSincronizacionYSesion();
 </script>
+<!-- Capa segura con Supabase (sólo se activa si js/sge-config.js tiene URL y clave) -->
+<script src="vendor/supabase-2.119.2.js" integrity="sha384-A97u3Qnt9GZHURO9YJZRe7VQgGUeFzcv6I1oIGnUTxQrCxnpQMwR0/G8F2zt9abZ"></script>
+<script src="js/sge-supabase.js"></script>
 </body>
 </html>
