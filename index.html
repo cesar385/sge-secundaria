@@ -11431,15 +11431,37 @@ function parseTitulosDoc(doc){
 // propio docente/preceptor — filterField indica si se filtra por
 // docenteId o preceptorId, y origen controla a qué pantalla se vuelve al
 // cerrar el detalle o el comprobante.
+// Instituciones (y legajo en cada una) a mostrar en el legajo de un agente.
+// En "Mi Legajo" del propio docente se juntan TODAS las instituciones donde
+// figura (mismo DNI/CUIL); en el legajo que ve la dirección, sólo la actual.
+function sgeVinculosLegajo(personaId, filterField, origen){
+  if(origen==='propio' && filterField==='docenteId' && typeof agenteVinculosTodasInst==='function'){
+    const ref=(DB.docentes||[]).find(d=>d.id===personaId);
+    const v=agenteVinculosTodasInst(currentUser, ref||identidadDeUsuario(currentUser));
+    if(!v.some(x=>x.institucionId===currentInstitucionId && x.docenteId===personaId)) v.unshift({institucionId:currentInstitucionId, docenteId:personaId});
+    return v;
+  }
+  return [{institucionId:currentInstitucionId, docenteId:personaId}];
+}
 function renderTramitesSageHTML(personaId, filterField, origen){
   asegurarNroExpDesignaciones();
-  const propios=[
-    ...DB.designaciones.filter(d=>d[filterField]===personaId).map(d=>({id:d.id,tipoLabel:'Designación',nroExp:d.nroExp||`DE-${d.id}`,desde:d.desde,hasta:d.hasta,estado:d.estado})),
-    ...DB.licencias.filter(l=>l[filterField]===personaId).map(l=>({id:l.id,tipoLabel:'Licencia',nroExp:l.nroExp||`LC-${l.id}`,desde:l.desde,hasta:l.hasta,estado:l.estado})),
-    ...DB.traslados.filter(t=>t[filterField]===personaId).map(t=>({id:t.id,tipoLabel:'Traslado',nroExp:t.nroExp,desde:t.desde,hasta:t.hasta,estado:t.estado})),
-    ...DB.permutas.filter(p=>p[filterField]===personaId).map(p=>({id:p.id,tipoLabel:'Permuta',nroExp:p.nroExp,desde:p.desde,hasta:p.hasta,estado:p.estado})),
-    ...DB.bajasTramite.filter(b=>b[filterField]===personaId).map(b=>({id:b.id,tipoLabel:'Baja',nroExp:b.nroExp,desde:b.desde,hasta:b.hasta,estado:b.estado})),
-  ].sort((a,b)=>(b.desde||'').localeCompare(a.desde||''));
+  const vinc=sgeVinculosLegajo(personaId, filterField, origen);
+  const multi=new Set(vinc.map(v=>v.institucionId)).size>1;
+  const propios=[];
+  vinc.forEach(v=>{
+    const D=(v.institucionId===currentInstitucionId?DB:INST_DATA[v.institucionId])||{};
+    const inst=INSTITUCIONES.find(i=>i.id===v.institucionId);
+    const extra={_inst:v.institucionId, _instNombre:inst?inst.nombre:'', _pid:v.docenteId};
+    const id=v.docenteId;
+    propios.push(
+      ...(D.designaciones||[]).filter(d=>d[filterField]===id).map(d=>({...extra,id:d.id,tipoLabel:'Designación',nroExp:d.nroExp||`DE-${d.id}`,desde:d.desde,hasta:d.hasta,estado:d.estado})),
+      ...(D.licencias||[]).filter(l=>l[filterField]===id).map(l=>({...extra,id:l.id,tipoLabel:'Licencia',nroExp:l.nroExp||`LC-${l.id}`,desde:l.desde,hasta:l.hasta,estado:l.estado})),
+      ...(D.traslados||[]).filter(t=>t[filterField]===id).map(t=>({...extra,id:t.id,tipoLabel:'Traslado',nroExp:t.nroExp,desde:t.desde,hasta:t.hasta,estado:t.estado})),
+      ...(D.permutas||[]).filter(p=>p[filterField]===id).map(p=>({...extra,id:p.id,tipoLabel:'Permuta',nroExp:p.nroExp,desde:p.desde,hasta:p.hasta,estado:p.estado})),
+      ...(D.bajasTramite||[]).filter(b=>b[filterField]===id).map(b=>({...extra,id:b.id,tipoLabel:'Baja',nroExp:b.nroExp,desde:b.desde,hasta:b.hasta,estado:b.estado})),
+    );
+  });
+  propios.sort((a,b)=>(b.desde||'').localeCompare(a.desde||''));
 
   const filasHTML = propios.map(r=>{
     const est=estiloEstadoHist(r.estado);
@@ -11449,9 +11471,10 @@ function renderTramitesSageHTML(personaId, filterField, origen){
       <span style="font-weight:800;font-size:13.5px;color:#334155;min-width:170px">${r.nroExp||'—'}</span>
       <span style="font-weight:700;font-size:11.5px;color:${est.txt};text-transform:uppercase;min-width:150px">ESTADO: ${r.estado||'—'}</span>
       <span style="font-size:11px;color:#64748b">Fechas (${fmtDate(r.desde)} - ${r.hasta?fmtDate(r.hasta):fmtDate(r.desde)})</span>
+      ${multi?`<span style="font-size:11px;color:#334155;font-weight:600">${r._inst===currentInstitucionId?'🏫':'🏛️'} ${r._instNombre} · ${r.tipoLabel}</span>`:''}
       <span style="margin-left:auto;display:flex;gap:12px;color:#64748b;font-size:14px">
-        <span onclick="irDetalleTramiteLegajo('${r.tipoLabel}',${r.id},${personaId},'${origen}')" title="Ver detalle" style="cursor:pointer">🔍</span>
-        <span onclick="verComprobanteTramite('${r.tipoLabel}',${r.id},'${origen}')" title="Ver e imprimir comprobante" style="cursor:pointer">📃</span>
+        <span onclick="sgeEnInstitucion(${JSON.stringify(r._inst)},()=>irDetalleTramiteLegajo('${r.tipoLabel}',${r.id},${r._pid},'${origen}'))" title="Ver detalle" style="cursor:pointer">🔍</span>
+        <span onclick="sgeEnInstitucion(${JSON.stringify(r._inst)},()=>verComprobanteTramite('${r.tipoLabel}',${r.id},'${origen}'))" title="Ver e imprimir comprobante" style="cursor:pointer">📃</span>
       </span>
     </div>`;
   }).join('');
@@ -11463,8 +11486,16 @@ function renderTramitesSageHTML(personaId, filterField, origen){
 // "Licencias (detalle)": listado de solo lectura de las licencias de un
 // agente, con totales. Reutilizado por el legajo que ve la administración
 // y por "Mi Legajo" del propio docente/preceptor.
-function renderLicenciasDetalleSageHTML(personaId, filterField, mensajeSoloLectura){
-  const lics=DB.licencias.filter(l=>l[filterField]===personaId).sort((a,b)=>(b.desde||'').localeCompare(a.desde||''));
+function renderLicenciasDetalleSageHTML(personaId, filterField, mensajeSoloLectura, origen){
+  const vinc=sgeVinculosLegajo(personaId, filterField, origen);
+  const multi=new Set(vinc.map(v=>v.institucionId)).size>1;
+  const lics=[];
+  vinc.forEach(v=>{
+    const D=(v.institucionId===currentInstitucionId?DB:INST_DATA[v.institucionId])||{};
+    const inst=INSTITUCIONES.find(i=>i.id===v.institucionId);
+    (D.licencias||[]).filter(l=>l[filterField]===v.docenteId).forEach(l=>lics.push({...l,_instNombre:inst?inst.nombre:''}));
+  });
+  lics.sort((a,b)=>(b.desde||'').localeCompare(a.desde||''));
   const totalDias=lics.reduce((s,l)=>{
     if(l.hasta&&l.desde){ return s+Math.max(0,Math.floor((new Date(l.hasta)-new Date(l.desde))/(1000*60*60*24))+1); }
     return s+1;
@@ -11483,6 +11514,7 @@ function renderLicenciasDetalleSageHTML(personaId, filterField, mensajeSoloLectu
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:8px">
           <div>
             <div style="font-weight:700;color:#334155;font-size:14px">${l.tipo}</div>
+            ${multi?`<div style="font-size:11.5px;color:#475569;font-weight:600;margin-top:2px">🏫 ${l._instNombre}</div>`:''}
             <div style="font-size:12px;color:#64748b;margin-top:2px">${fmtDate(l.desde)} → ${fmtDate(l.hasta)} ${l.hasta&&l.desde?'('+Math.max(0,Math.floor((new Date(l.hasta)-new Date(l.desde))/(1000*60*60*24))+1)+' días)':''}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
@@ -12191,7 +12223,7 @@ function abrirLegajoPropio(docId, tab='personal'){
     bodyHTML=renderTabAntiguedad(doc, false);
   }
   else if(tab==='licencias'){
-    bodyHTML = renderLicenciasDetalleSageHTML(docId, 'docenteId', 'Solo lectura. Las licencias las gestiona la dirección del establecimiento.');
+    bodyHTML = renderLicenciasDetalleSageHTML(docId, 'docenteId', 'Solo lectura. Las licencias las gestiona la dirección de cada establecimiento. Se muestran las de todas las instituciones en las que trabajás.', 'propio');
   }
   else if(tab==='conceptos'){
     // Docente ve sus conceptos en solo lectura
