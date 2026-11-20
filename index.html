@@ -506,6 +506,42 @@ function bloquesServiciosActualesAgente(user, docRef){
   orden.sort((a,b)=>(b===currentInstitucionId)-(a===currentInstitucionId));
   return orden.map(id=>porInst[id]);
 }
+// Identidad (DNI / CUIL / nombre) de un usuario: de sus datos personales o,
+// si no los tiene, de cualquier legajo vinculado en cualquier institución.
+function identidadDeUsuario(u){
+  const dp=(u&&u.datosPersonales)||{};
+  let dni=_normDni(dp.dni), cuil=_normDni(dp.cuil);
+  if(!dni && !cuil && u){
+    const vinc=[...docenteInstituciones(u)];
+    if(u.docenteId) vinc.push({institucionId:u.institucionId, docenteId:u.docenteId});
+    vinc.some(v=>{
+      const d=((INST_DATA[v.institucionId]||{}).docentes||[]).find(x=>x.id===v.docenteId);
+      if(d){ dni=_normDni(d.dni); cuil=_normDni(d.cuil); }
+      return dni||cuil;
+    });
+  }
+  return {dni, cuil, nombre:(dp.apellido&&dp.nombres)?`${dp.apellido}, ${dp.nombres}`:((u&&u.nombre)||'')};
+}
+// Busca el legajo que un usuario ya tiene en una institución (data = INST_DATA[instId]):
+// 1) vínculo explícito (user.instituciones), 2) mismo DNI o CUIL,
+// 3) mismo nombre (sin importar comas, orden ni acentos) si hay UNA sola coincidencia.
+function buscarLegajoExistenteDeUsuario(u, data, instId){
+  if(!u || !data || !Array.isArray(data.docentes)) return null;
+  const docs=data.docentes;
+  const v=(Array.isArray(u.instituciones)?u.instituciones:[]).find(x=>x.institucionId===instId);
+  if(v){ const d=docs.find(x=>x.id===v.docenteId); if(d) return d; }
+  const id=identidadDeUsuario(u);
+  if(id.dni||id.cuil){
+    const d=docs.find(x=>(id.dni&&_normDni(x.dni)===id.dni)||(id.cuil&&_normDni(x.cuil)===id.cuil));
+    if(d) return d;
+  }
+  const nn=_normNombrePersona(id.nombre);
+  if(nn){
+    const m=docs.filter(x=>_normNombrePersona(x.nombre)===nn);
+    if(m.length===1) return m[0];
+  }
+  return null;
+}
 // Director/a y Secretario/a también son agentes con legajo, designación y licencias:
 // se les asegura un registro en DB.docentes (vinculado por user.docenteId) para que
 // "Mi Espacio" (Mi Legajo / Mis Designaciones / Mis Licencias) funcione igual que
@@ -515,9 +551,20 @@ function asegurarRegistroDirectivo(){
   if(!u || !['director','secretario'].includes(u.rol) || !DB) return null;
   let doc = u.docenteId ? DB.docentes.find(d=>d.id===u.docenteId) : null;
   if(doc) return doc;
-  const partes=(u.nombre||'').trim().split(/\s+/);
-  const apellido = partes.length>1 ? partes.slice(-1).join(' ') : (partes[0]||'');
-  const nombres  = partes.length>1 ? partes.slice(0,-1).join(' ') : '';
+  // Antes de crear un legajo nuevo, buscar si el agente YA tiene uno en esta
+  // institución (por vínculo, DNI/CUIL o nombre). Si no se hace, aparece un
+  // legajo duplicado (sin CUIL) y sus designaciones no se ven en "Mi Legajo".
+  const existente = buscarLegajoExistenteDeUsuario(u, DB, currentInstitucionId);
+  if(existente){
+    u.docenteId = existente.id;
+    if(!existente.rolInstitucional) existente.rolInstitucional = u.rol;
+    if(typeof guardarEstado==='function') guardarEstado();
+    return existente;
+  }
+  const _nom=(u.nombre||'').trim();
+  let apellido, nombres;
+  if(_nom.includes(',')){ const [a,...r]=_nom.split(','); apellido=a.trim(); nombres=r.join(',').trim(); }
+  else { const partes=_nom.split(/\s+/); apellido=partes[0]||''; nombres=partes.slice(1).join(' '); }
   const esDir = u.rol==='director';
   const cargo = esDir ? 'Director/a' : 'Secretario/a';
   const hoy = new Date().toISOString().split('T')[0];
@@ -532,8 +579,6 @@ function asegurarRegistroDirectivo(){
     otrasInstituciones:[],
     antiguedad:{docente:{desde:''},noDocente:{años:0,meses:0,dias:0,obs:''},certServicio:{años:0,meses:0,dias:0,obs:'',desde:'',hasta:''}}
   };
-  const dupD = buscarDocenteDuplicado(doc.nombre, doc.dni, null);
-  if(dupD){ u.docenteId = dupD.id; return dupD; }   // ya es agente de la institución: se vincula
   DB.docentes.push(doc);
   u.docenteId = doc.id;
   // Demo: los directivos precargados tienen su cargo directivo designado
@@ -858,7 +903,7 @@ function crearDocenteDesdeUsuarioPendiente(usuarioId, materiaInicial=''){
   if(!u) return null;
   const dp=u.datosPersonales||{};
   const nombreNuevo=(dp.apellido&&dp.nombres)?`${dp.apellido}, ${dp.nombres}`:u.nombre;
-  const dup=buscarDocenteDuplicado(nombreNuevo, dp.dni, null);
+  const dup=buscarDocenteDuplicado(nombreNuevo, dp.dni, null) || buscarLegajoExistenteDeUsuario(u, DB, currentInstitucionId);
   if(dup){ u.docenteId=dup.id; return dup.id; }   // ya existe ese docente: se vincula, no se duplica
   const nuevoId=uid();
   DB.docentes.push({
@@ -8103,8 +8148,9 @@ function renderMisLicencias(){
 
 function renderMisDesig(){
   // El docente puede trabajar (o haber trabajado) en más de una institución:
-  // se agregan las designaciones de TODAS las instituciones vinculadas a su usuario.
-  const misInsts = docenteInstituciones(currentUser);
+  // se agregan las designaciones de TODAS las instituciones vinculadas a su usuario
+  // y de cualquier otra donde figure con el mismo DNI/CUIL (igual que "Mi Legajo").
+  const misInsts = agenteVinculosTodasInst(currentUser, identidadDeUsuario(currentUser));
   let des = [];
   misInsts.forEach(v=>{
     const data = INST_DATA[v.institucionId];
@@ -8115,7 +8161,7 @@ function renderMisDesig(){
     });
   });
 
-  const multiInst = misInsts.length>1;
+  const multiInst = new Set(misInsts.map(v=>v.institucionId)).size>1;
   const cols=[
     ...(multiInst?[{key:'inst', label:'Institución', render:r=>`<span style="font-size:12px;color:#334155">${r._institucionId===currentInstitucionId?'🏫 ':'🏛️ '}${r._institucionNombre}</span>`}]:[]),
     {key:'nroPlaza', label:'N° Plaza',  render:r=>`<code style="background:#f1f5f9;padding:2px 7px;border-radius:5px;font-size:12px;font-family:monospace">${r.nroPlaza||'—'}</code>`},
