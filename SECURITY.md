@@ -42,18 +42,20 @@ Navegador (GitHub Pages)                       Supabase (región sa-east-1)
 | Rol | Datos de su escuela | Legajo / designaciones / licencias | Datos de salud | Estudiantes | Cuentas |
 |---|---|---|---|---|---|
 | Administrador | Todas las escuelas | Todo | Todo | Todo | Todas |
-| Director/a, secretario/a, cuenta institucional | Todo (lectura y escritura) | Todo | Todo | Todo | Las de su escuela (no admin); secretaría no toca dirección |
+| Director/a, secretario/a, cuenta institucional | Todo en la institución **a cargo** (lectura y escritura) | Carga, aprueba y da de baja designaciones y licencias de todos los docentes de su institución | Todo (de su institución) | Todo (de su institución) | Las de su escuela (no admin); secretaría no toca dirección |
 | Preceptor/a | Cursos, comunicados | Sólo lo propio | Sólo lo propio | Todos los de su escuela | Sólo la propia |
 | Docente | Cursos, plazas, comunicados | Sólo lo propio; puede iniciar trámites, no aprobarlos | Sólo lo propio | Sólo sus cursos (notas y asistencia) | Sólo la propia |
 | Familia | Comunicados | — | — | Sólo hijos/as vinculados | Sólo la propia |
 | Estudiante | Comunicados | — | — | Sólo lo propio | Propia + familia vinculada |
+
+El rol principal vale **sólo en la institución a cargo**. Si un director o secretario además da horas en otra escuela, allí actúa como docente: ve sólo su legajo y sus cursos, y puede pedir licencias pero no aprobarlas ni cargar designaciones.
 
 Si la institución está suspendida, nadie de esa escuela ve nada (salvo el administrador).
 
 ## Pruebas
 
 ```bash
-# Políticas RLS: 49 casos contra Postgres local (no toca Supabase)
+# Políticas RLS: 60 casos contra Postgres local (no toca Supabase)
 PGHOST=... PGPORT=... PGUSER=postgres ./supabase/tests/correr.sh
 
 # Capa cliente: 23 casos con un Supabase simulado

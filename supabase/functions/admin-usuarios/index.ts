@@ -90,13 +90,11 @@ function limpiarDatos(d: unknown) {
   return o;
 }
 
+// Instituciones que la cuenta GESTIONA: sólo la que tiene a cargo
+// (institucion_id). En las escuelas donde sólo da horas no gestiona cuentas.
 async function institucionesDe(admin: SupabaseClient, p: Perfil) {
   const ids = new Set<number>();
-  if (p.institucion_id) ids.add(p.institucion_id);
-  for (const v of (p.vinculos?.instituciones as any[]) ?? []) {
-    const n = entero(v?.institucionId);
-    if (n !== null) ids.add(n);
-  }
+  if (p.institucion_id) ids.add(Number(p.institucion_id));
   if (!ids.size) return ids;
   const { data } = await admin.from("instituciones").select("id,estado").in("id", [...ids]);
   return new Set((data ?? []).filter((i) => i.estado === "activa").map((i) => Number(i.id)));

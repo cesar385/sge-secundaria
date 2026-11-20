@@ -193,17 +193,32 @@ language sql stable security definer set search_path = '' as $$
   select coalesce((select estado = 'activa' from public.instituciones where id = inst), false)
 $$;
 
--- Dirección / secretaría / cuenta institucional: gestión completa de SU institución.
+-- Rol de la cuenta EN una institución. El rol principal vale sólo en la
+-- institución a cargo (institucion_id). En las demás instituciones vinculadas
+-- (vinculos.instituciones) la persona actúa como docente: un director que
+-- además da horas en otra escuela NO es director de esa otra escuela.
+create or replace function private.rol_en(inst bigint) returns text
+language sql stable security definer set search_path = '' as $$
+  with y as (select * from private.yo())
+  select case
+    when y.institucion_id = inst then y.rol
+    when exists (select 1 from jsonb_array_elements(coalesce(y.vinculos->'instituciones','[]'::jsonb)) v
+                  where private.a_bigint(v->>'institucionId') = inst) then 'docente'
+  end from y
+$$;
+
+-- Dirección / secretaría / cuenta institucional: gestión completa de la
+-- institución A SU CARGO (cargar y aprobar designaciones, licencias, etc.).
 create or replace function private.es_gestion(inst bigint) returns boolean
 language sql stable security definer set search_path = '' as $$
   select private.es_admin()
-      or (private.rol() in ('director','secretario','institucion')
-          and private.pertenece(inst) and private.inst_activa(inst))
+      or (coalesce(private.rol_en(inst), '') in ('director','secretario','institucion')
+          and private.inst_activa(inst))
 $$;
 
 create or replace function private.es_rol_en(r text, inst bigint) returns boolean
 language sql stable security definer set search_path = '' as $$
-  select private.rol() = r and private.pertenece(inst) and private.inst_activa(inst)
+  select private.rol_en(inst) = r and private.inst_activa(inst)
 $$;
 
 -- Legajos de agente (docente) de la cuenta en una institución.

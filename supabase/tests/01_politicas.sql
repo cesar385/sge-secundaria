@@ -15,7 +15,7 @@ insert into public.instituciones(id,nombre,estado) values (1,'Instituto Regional
 
 insert into public.perfiles(user_id,legacy_id,usuario,rol,institucion_id,vinculos) values
  ('00000000-0000-0000-0000-00000000000a','1','admin','admin',null,'{}'),
- ('00000000-0000-0000-0000-0000000000d1','2','dir','director',1,'{"docenteId":12}'),
+ ('00000000-0000-0000-0000-0000000000d1','2','dir','director',1,'{"docenteId":12,"instituciones":[{"institucionId":2,"docenteId":21}]}'),
  ('00000000-0000-0000-0000-0000000000c1','3','doc','docente',1,'{"docenteId":10}'),
  ('00000000-0000-0000-0000-0000000000c2','4','doc2','docente',2,'{"docenteId":20}'),
  ('00000000-0000-0000-0000-0000000000e1','5','prec','preceptor',1,'{"preceptorId":5}'),
@@ -38,7 +38,11 @@ insert into public.registros(institucion_id,coleccion,id,datos) values
  (1,'notas','901','{"alumnoId":101,"nota":6}'),
  (1,'comunicados','1000','{"curso":"3°A","texto":"Reunión"}'),
  (2,'alumnos','200','{"nombre":"Alumno EPJA","curso":"1°"}'),
- (2,'docentes','20','{"nombre":"Docente EPJA"}');
+ (2,'docentes','20','{"nombre":"Docente EPJA"}'),
+ (2,'docentes','21','{"nombre":"Director (horas en EPJA)"}'),
+ (2,'designaciones','550','{"docenteId":21,"curso":"1°","estado":"activa"}'),
+ (2,'alumnos','201','{"nombre":"Alumno EPJA 2","curso":"2°"}'),
+ (2,'certificacionesMedicas','750','{"docenteId":20,"detalle":"privado"}');
 
 create or replace function public.t_como(u text) returns void language sql as
   $$ select set_config('request.jwt.claim.sub', u, false) $$;
@@ -53,22 +57,50 @@ set role authenticated;
 
 -- ── Admin: ve todo ──
 select t_como('00000000-0000-0000-0000-00000000000a');
-select t_eq(t_ids('alumnos'), '1:100,1:101,2:200', 'admin ve alumnos de todas las escuelas');
+select t_eq(t_ids('alumnos'), '1:100,1:101,2:200,2:201', 'admin ve alumnos de todas las escuelas');
 
 -- ── Director inst 1 ──
 select t_como('00000000-0000-0000-0000-0000000000d1');
-select t_eq(t_ids('alumnos'), '1:100,1:101', 'director ve sólo alumnos de su escuela');
+select t_eq(t_ids('alumnos'), '1:100,1:101,2:200', 'director ve los alumnos de su escuela y, en la otra, sólo los de su curso');
 select t_eq(t_ids('certificacionesMedicas'), '1:700', 'director ve certificados médicos de su escuela');
 select t_eq((select count(*)::text from public.perfiles), '5', 'director ve las cuentas de su escuela (no el admin)');
 update public.registros set datos = jsonb_set(datos,'{estado}','"aprobada"') where coleccion='licencias' and id='600';
 select t_eq((select datos->>'estado' from public.registros where coleccion='licencias' and id='600'), 'aprobada', 'director aprueba licencia');
 update public.registros set datos = jsonb_set(datos,'{estado}','"pendiente"') where coleccion='licencias' and id='600';
+-- Carga de designaciones y licencias de los docentes de la institución a cargo
+insert into public.registros(institucion_id,coleccion,id,datos) values
+  (1,'designaciones','510','{"docenteId":11,"curso":"5°A","estado":"activa","cargo":"Profesor/a"}'),
+  (1,'licencias','610','{"docenteId":10,"estado":"aprobada","tipo":"Art. 13"}');
+select t_eq((select count(*)::text from public.registros where id in ('510','610')), '2', 'director carga designaciones y licencias de docentes de su escuela');
+update public.registros set datos = jsonb_set(datos,'{estado}','"aprobada"') where coleccion='licencias' and id='610';
+update public.registros set eliminado = true where coleccion='designaciones' and id='510';
+select t_eq((select eliminado::text from public.registros where coleccion='designaciones' and id='510'), 'true', 'director da de baja una designación de su escuela');
+-- En la otra escuela (donde sólo da horas) NO es director
+select t_eq(t_ids('alumnos'), '1:100,1:101,2:200', 'en la otra escuela ve sólo alumnos de su curso');
+select t_eq(t_ids('certificacionesMedicas'), '1:700', 'en la otra escuela no ve datos de salud ajenos');
+select t_eq((select string_agg(institucion_id||':'||id, ',' order by institucion_id, id) from public.registros where coleccion='docentes'), '1:10,1:11,1:12,2:21', 'en la otra escuela ve sólo su propio legajo');
+do $$ begin
+  insert into public.registros(institucion_id,coleccion,id,datos) values (2,'designaciones','560','{"docenteId":20,"curso":"1°","estado":"activa"}');
+  raise exception 'FALLA: el director cargó una designación en una escuela que no dirige';
+exception when insufficient_privilege then raise notice 'ok  director no carga designaciones en otra escuela'; end $$;
+do $$ begin
+  insert into public.registros(institucion_id,coleccion,id,datos) values (2,'licencias','660','{"docenteId":20,"estado":"pendiente"}');
+  raise exception 'FALLA: el director cargó una licencia en una escuela que no dirige';
+exception when insufficient_privilege then raise notice 'ok  director no carga licencias de docentes de otra escuela'; end $$;
+insert into public.registros(institucion_id,coleccion,id,datos) values (2,'licencias','661','{"docenteId":21,"estado":"pendiente"}');
+select t_eq((select count(*)::text from public.registros where id='661'), '1', 'en la otra escuela pide su propia licencia como docente');
+do $$ begin
+  update public.registros set datos = jsonb_set(datos,'{estado}','"aprobada"') where coleccion='licencias' and id='661';
+  raise exception 'FALLA: se aprobó su propia licencia en la otra escuela';
+exception when insufficient_privilege then raise notice 'ok  en la otra escuela no puede aprobarse su licencia'; end $$;
+insert into public.registros(institucion_id,coleccion,id,datos) values (2,'notas','960','{"alumnoId":200,"nota":7}');
+select t_eq((select count(*)::text from public.registros where id='960'), '1', 'en la otra escuela carga notas de su curso');
 
 -- ── Docente inst 1 (docente 10, curso 3°A) ──
 select t_como('00000000-0000-0000-0000-0000000000c1');
 select t_eq(t_ids('alumnos'), '1:100', 'docente ve sólo alumnos de sus cursos');
 select t_eq(t_ids('notas'), '1:900', 'docente ve sólo notas de sus alumnos');
-select t_eq(t_ids('licencias'), '1:600', 'docente ve sólo sus licencias');
+select t_eq(t_ids('licencias'), '1:600,1:610', 'docente ve sólo sus licencias (incluida la que le cargó la dirección)');
 select t_eq(t_ids('certificacionesMedicas'), '', 'docente NO ve certificados médicos ajenos');
 select t_eq(t_ids('docentes'), '1:10', 'docente ve sólo su legajo');
 select t_eq(t_ids('comunicados'), '1:1000', 'docente ve comunicados de su escuela');
@@ -88,7 +120,7 @@ do $$ begin
 exception when insufficient_privilege then raise notice 'ok  docente no puede aprobar su licencia'; end $$;
 -- pedir licencia nueva: sí (pendiente)
 insert into public.registros(institucion_id,coleccion,id,datos) values (1,'licencias','602','{"docenteId":10,"estado":"pendiente"}');
-select t_eq(t_ids('licencias'), '1:600,1:602', 'docente pide licencia nueva');
+select t_eq(t_ids('licencias'), '1:600,1:602,1:610', 'docente pide licencia nueva');
 -- pedir licencia a nombre de otro: no
 do $$ begin
   insert into public.registros(institucion_id,coleccion,id,datos) values (1,'licencias','603','{"docenteId":11,"estado":"pendiente"}');
@@ -122,6 +154,7 @@ select t_eq((select count(*)::text from public.auditoria), '0', 'docente no lee 
 select t_como('00000000-0000-0000-0000-0000000000c2');
 select t_eq(t_ids('alumnos'), '', 'docente de EPJA sin cursos no ve alumnos');
 select t_eq(t_ids('docentes'), '2:20', 'docente de EPJA ve sólo su legajo');
+select t_eq(t_ids('licencias'), '', 'docente de EPJA no ve licencias del director');
 select t_eq(t_ids('comunicados'), '', 'docente de EPJA no ve comunicados de otra escuela');
 
 -- ── Preceptor inst 1 ──
@@ -163,7 +196,7 @@ set role authenticated;
 select t_como('00000000-0000-0000-0000-0000000000c1');
 select t_eq(t_ids('notas'), '', 'escuela suspendida: el docente no ve nada');
 select t_como('00000000-0000-0000-0000-0000000000d1');
-select t_eq(t_ids('alumnos'), '', 'escuela suspendida: la dirección no ve nada');
+select t_eq(t_ids('alumnos'), '2:200', 'escuela suspendida: la dirección no ve nada de esa escuela (sí su curso en la otra)');
 reset role;
 update public.instituciones set estado = 'activa' where id = 1;
 
