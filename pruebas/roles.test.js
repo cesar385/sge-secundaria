@@ -1,0 +1,31 @@
+// Uso: npm i jsdom@24 && node pruebas/roles.test.js
+const { JSDOM, VirtualConsole } = require('jsdom'); const fs=require('fs'); const R=require('path').resolve(__dirname,'..');
+let html=fs.readFileSync(R+'/index.html','utf8').replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/,'');
+html=html.replace('<script src="js/sge-config.js"></script>','<script>'+fs.readFileSync(R+'/js/sge-config.js','utf8')+'</script>')
+ .replace(/<script src="vendor\/supabase-[^"]+"[^>]*><\/script>/,'').replace('<script src="js/sge-supabase.js"></script>','');
+const vc=new VirtualConsole(); vc.on('jsdomError',e=>{ if(!/Not implemented/.test(e.message)) console.log('ERR',e.message) });
+const d=new JSDOM(html,{runScripts:'dangerously',url:'https://cesar385.github.io/sge-secundaria/',virtualConsole:vc,beforeParse(w){w.fetch=async()=>({ok:false,json:async()=>({})});w.alert=m=>console.log('ALERT',m);}});
+const ok=(c,m)=>console.log(c?'ok ':'FALLA', m);
+setTimeout(()=>{ const w=d.window, E=c=>w.eval(c);
+E(`INSTITUCIONES.push({id:500,nombre:'EPJA N°8',estado:'activa'},{id:501,nombre:'Instituto Regional Federal',estado:'activa'});
+INST_DATA[500]=createEmptyInstData(); INST_DATA[501]=createEmptyInstData();
+INST_DATA[500].docentes.push({id:9001,nombre:'Sancuns, Laura',cuil:'27-32485908-1',dni:'32.485.908'});
+INST_DATA[500].designaciones.push({id:1,docenteId:9001,cargo:'Director/a',estado:'activa',nroPlaza:'01-GEN I',desde:'2026-03-02'});
+INST_DATA[500].licencias.push({id:11,docenteId:9001,tipo:'Art. 13',desde:'2026-05-01',hasta:'2026-05-03',estado:'aprobada'});
+INST_DATA[501].docentes.push({id:9002,nombre:'Sancuns, Laura',cuil:'27-32485908-1'});
+INST_DATA[501].designaciones.push({id:2,docenteId:9002,cargo:'Profesor/a',estado:'activa',materia:'Biología',curso:'3°A',desde:'2026-03-09'});
+INST_DATA[501].licencias.push({id:12,docenteId:9002,tipo:'Art. 16',desde:'2026-06-01',hasta:'2026-06-02',estado:'pendiente'});
+USUARIOS.push({id:777,usuario:'smaricel',rol:'docente',nombre:'Sancuns, Laura',estado:'activo',institucionId:500,docenteId:9001});`);
+ok(E("JSON.stringify(sgeCuentasConRolDistinto().map(x=>[x.u.usuario,x.rol]))")==='[["smaricel","director"]]','detecta cuenta Docente con cargo Director/a');
+E("currentUser=USUARIOS.find(u=>u.rol==='admin'); currentInstitucionId=500; DB=INST_DATA[500];");
+ok(E("sgeAvisoRolesHTML()").includes('Cambiar a'),'el admin ve el aviso en Usuarios');
+E("try{ sgeAplicarRolPorCargo(777,'director'); }catch(e){}");
+ok(E("USUARIOS.find(u=>u.id===777).rol")==='director','el admin cambia el rol a Director/a');
+ok(E("INST_DATA[500].docentes[0].rolInstitucional")==='director','queda marcado en el legajo');
+ok(E("sgeCuentasConRolDistinto().length")===0,'ya no hay diferencias');
+E("currentUser=USUARIOS.find(u=>u.id===777); currentInstitucionId=500; DB=INST_DATA[500];");
+const lic=E("renderMisLicencias()"); ok(lic.includes('Art. 13')&&lic.includes('Art. 16')&&lic.includes('Instituto Regional Federal'),'Mis Licencias muestra las de ambas instituciones');
+const des=E("renderMisDesig()");  ok(des.includes('DIRECTOR/A')&&des.includes('Biología'),'Mis Designaciones muestra las de ambas instituciones');
+E("INST_DATA[500].designaciones[0].estado='baja';");
+ok(E("JSON.stringify(sgeCuentasConRolDistinto().map(x=>x.rol))")==='["docente"]','si termina el cargo directivo, sugiere volver a Docente');
+process.exit(); },800);

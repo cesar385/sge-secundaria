@@ -3620,6 +3620,74 @@ async function crearUsuarioAgente(tipo,id){
 async function crearUsuariosFaltantes(){
   for(const a of agentesSinUsuario()){ if(String(a.dni||'').replace(/\D/g,'').length>=4) await crearUsuarioAgente(a.tipo,a.id); }
 }
+// ── Rol de la cuenta según el cargo designado ───────────────────────────────
+// El menú depende del ROL de la cuenta; el cargo está en la DESIGNACIÓN. Estas
+// funciones detectan cuándo no coinciden (p. ej. una docente designada
+// Director/a cuya cuenta sigue con rol Docente) y permiten corregirlo.
+function sgeRolDeCargo(cargo){
+  const c=String(cargo||'').toLowerCase();
+  if(/director|rector/.test(c)) return 'director';
+  if(/secretari/.test(c)) return 'secretario';
+  return null;
+}
+// Rol que le corresponde a la cuenta según sus designaciones vigentes en su
+// institución principal. null = no hay datos suficientes para sugerir nada.
+function sgeRolSugerido(u){
+  if(!u || !['docente','director','secretario'].includes(u.rol) || !u.institucionId || !u.docenteId) return null;
+  const data=INST_DATA[u.institucionId]; if(!data) return null;
+  const des=(data.designaciones||[]).filter(d=>d.docenteId===u.docenteId);
+  if(!des.length) return null;
+  const vig=des.filter(d=>d.estado==='activa'||d.estado==='licencia');
+  const roles=vig.map(d=>sgeRolDeCargo(d.cargo)).filter(Boolean);
+  if(roles.includes('director')) return 'director';
+  if(roles.includes('secretario')) return 'secretario';
+  return 'docente';
+}
+function sgeCuentasConRolDistinto(){
+  return USUARIOS.map(u=>({u, rol:sgeRolSugerido(u)})).filter(x=>x.rol && x.rol!==x.u.rol);
+}
+function sgeAplicarRolPorCargo(userId, rol){
+  if(!currentUser || currentUser.rol!=='admin'){ alert('Sólo el administrador puede cambiar el rol de una cuenta.'); return; }
+  const u=USUARIOS.find(x=>x.id===userId); if(!u || !['docente','director','secretario'].includes(rol)) return;
+  if(u.id===currentUser.id){ alert('No podés cambiar el rol de tu propia cuenta.'); return; }
+  const antes=u.rol; u.rol=rol;
+  const doc=(INST_DATA[u.institucionId]?.docentes||[]).find(d=>d.id===u.docenteId);
+  if(doc){ if(rol==='docente') delete doc.rolInstitucional; else doc.rolInstitucional=rol; }
+  guardarEstado();
+  showToast(`✅ ${u.nombre}: rol ${ROL_LABEL[antes]||antes} → ${ROL_LABEL[rol]||rol}. Verá el nuevo menú al volver a ingresar.`,'#166534');
+  try{ closeModal(); }catch(e){}
+  usrRefrescar();
+}
+function sgeAvisoRolesHTML(){
+  if(!currentUser || currentUser.rol!=='admin') return '';
+  const lista=sgeCuentasConRolDistinto(); if(!lista.length) return '';
+  return `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:12px;padding:14px 16px;margin-bottom:16px">
+    <div style="font-weight:800;color:#9a3412;margin-bottom:6px">⚠️ Cuentas cuyo rol no coincide con el cargo designado</div>
+    <div style="font-size:12.5px;color:#7c2d12;margin-bottom:8px">El menú de cada persona depende del rol de su cuenta. Si el cargo cambió, actualizá el rol.</div>
+    ${lista.map(({u,rol})=>{ const inst=INSTITUCIONES.find(i=>i.id===u.institucionId);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid #fed7aa">
+        <div style="font-size:13px"><strong>${u.nombre}</strong> (${u.usuario}) · ${inst?inst.nombre:'—'}<br>
+        <span style="color:#9a3412">Rol actual: ${ROL_LABEL[u.rol]||u.rol} · Según su designación: <strong>${ROL_LABEL[rol]||rol}</strong></span></div>
+        <button class="btn btn-sm btn-warning" onclick="sgeAplicarRolPorCargo(${u.id},'${rol}')">Cambiar a ${ROL_LABEL[rol]||rol}</button></div>`; }).join('')}
+  </div>`;
+}
+// Después de aprobar una designación directiva, ofrece actualizar el rol de la cuenta.
+function sgeOfrecerRolTrasDesignacion(d){
+  if(!sgeRolDeCargo(d.cargo)) return;
+  const u=USUARIOS.find(x=>x.docenteId===d.docenteId && x.institucionId===currentInstitucionId);
+  if(!u) return;
+  const rol=sgeRolSugerido(u);
+  if(!rol || rol===u.rol) return;
+  if(currentUser.rol!=='admin'){
+    showToast(`ℹ️ ${u.nombre} quedó designado/a ${d.cargo}, pero su cuenta tiene rol ${ROL_LABEL[u.rol]||u.rol}. Pedile al administrador que actualice el rol (Usuarios).`,'#a16207');
+    return;
+  }
+  setTimeout(()=>showModal('Actualizar rol de la cuenta',`<p style="font-size:14px;line-height:1.6"><strong>${u.nombre}</strong> quedó designado/a <strong>${d.cargo}</strong>, pero su cuenta (<code>${u.usuario}</code>) tiene rol <strong>${ROL_LABEL[u.rol]||u.rol}</strong>, así que no ve las opciones de ese cargo.</p>
+    <p style="font-size:13px;color:#64748b">Con el rol ${ROL_LABEL[rol]||rol} accede a la gestión completa de su institución (personal, alumnos y licencias).</p>
+    <div class="form-actions"><button class="btn btn-ghost" onclick="closeModal()">Ahora no</button>
+    <button class="btn btn-primary" onclick="sgeAplicarRolPorCargo(${u.id},'${rol}')">Cambiar a ${ROL_LABEL[rol]||rol}</button></div>`),400);
+}
+
 function usrEsDir(){ return !!currentUser && currentUser.rol==='director'; }
 function usrEnAlcance(u){
   if(!u) return false;
@@ -3704,6 +3772,7 @@ function renderUsuarios(filtro='todos'){
   ];
 
   return `${sectionHeader(usrEsDir()?'Usuarios de mi institución':'Gestión de Usuarios', `<button class="btn btn-success" onclick="openNuevoUsuario()">+ Nuevo Usuario</button>`)}
+    ${sgeAvisoRolesHTML()}
     <div class="cards-grid" style="margin-bottom:16px">
       ${cardHTML('Total',todos.length,'👥','#1a3a5c')}
       ${cardHTML('Activos',activos,'✅','#166534')}
@@ -6304,6 +6373,7 @@ function cambiarDesigPendiente(id, estado){
       `Fuiste designado/a como ${d.cargo} en ${d.materia} — ${d.curso} (Plaza ${d.nroPlaza}, ${d.caracter}) a partir del ${fmtDate(d.desde)}${hastaTexto}.`
     );
     showToast('✅ Designación aprobada','#166534');
+    try{ sgeOfrecerRolTrasDesignacion(d); }catch(e){}
   } else {
     abrirModalMotivoRechazo('desig', id);
     return;
@@ -8130,9 +8200,28 @@ function renderDocenteInicio(doc){
       ${rows||'<div style="color:#94a3b8;font-size:14px;padding:20px 0">Sin designaciones activas</div>'}
     </div>`;
 }
+// Ejecuta una acción sobre un registro de OTRA institución (formulario, detalle)
+// usando temporalmente los datos de esa institución.
+function sgeEnInstitucion(instId, fn){
+  const dbAntes=DB, instAntes=currentInstitucionId;
+  if(instId!=null && INST_DATA[instId]){ DB=INST_DATA[instId]; currentInstitucionId=instId; }
+  try{ fn(); } finally { DB=dbAntes; currentInstitucionId=instAntes; }
+}
 function renderMisLicencias(){
-  const lics=DB.licencias.filter(l=>l.docenteId===currentUser.docenteId);
+  // Licencias de TODAS las instituciones donde figura el agente (mismo DNI/CUIL),
+  // igual que "Mis Designaciones" y "Mi Legajo".
+  const vinc=agenteVinculosTodasInst(currentUser, identidadDeUsuario(currentUser));
+  const lics=[];
+  vinc.forEach(v=>{
+    const data=INST_DATA[v.institucionId]; if(!data||!data.licencias) return;
+    const inst=INSTITUCIONES.find(i=>i.id===v.institucionId);
+    data.licencias.filter(l=>l.docenteId===v.docenteId).forEach(l=>lics.push({...l,
+      _institucionId:v.institucionId, _institucionNombre:inst?inst.nombre:`Institución ${v.institucionId}`}));
+  });
+  const multiInst=new Set(vinc.map(v=>v.institucionId)).size>1;
+  const instArg=r=>JSON.stringify(r._institucionId);
   const cols=[
+    ...(multiInst?[{key:'inst', label:'Institución', render:r=>`<span style="font-size:12px;color:#334155">${r._institucionId===currentInstitucionId?'🏫 ':'🏛️ '}${r._institucionNombre}</span>`}]:[]),
     {key:'nroExp',  label:'N° Expediente', render:r=>r.nroExp?`<span style="font-size:11px;color:#6d28d9;font-weight:600">${r.nroExp}</span>`:'—'},
     {key:'tipo',    label:'Tipo'},
     {key:'desde',   label:'Desde',  render:r=>fmtDate(r.desde)},
@@ -8140,7 +8229,7 @@ function renderMisLicencias(){
     {key:'motivo',  label:'Motivo'},
     {key:'estado',  label:'Estado', render:r=>badge(r.estado)},
     {key:'doc',     label:'Documento', render:r=>`
-      <button class="btn btn-sm" onclick="generarFormularioLicencia(${r.id})"
+      <button class="btn btn-sm" onclick="sgeEnInstitucion(${instArg(r)},()=>generarFormularioLicencia(${r.id}))"
         style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;display:flex;align-items:center;gap:5px">
         🖨️ Formulario
       </button>`},
@@ -8150,7 +8239,7 @@ function renderMisLicencias(){
       📄 Podés generar e imprimir el formulario oficial de solicitud para presentar en la institución. Hacé doble clic en una fila para ver el detalle completo.
     </div>
     <div class="table-wrap">${tableHTML(cols,lics,'No tenés licencias registradas',
-      r=>`ondblclick="verDetalleLic(${r.id})" style="cursor:pointer" title="Doble clic para ver más detalles"`)}</div>`;
+      r=>`ondblclick="sgeEnInstitucion(${instArg(r)},()=>verDetalleLic(${r.id}))" style="cursor:pointer" title="Doble clic para ver más detalles"`)}</div>`;
 }
 
 function renderMisDesig(){
