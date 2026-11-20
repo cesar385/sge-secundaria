@@ -1287,8 +1287,97 @@ function tablaServiciosActualesSage(bloques, volverExpr){
 // ══════════════════════════════════════════════════════════════
 const SGE_STORAGE_KEY = 'sge_secundaria_estado_v1';
 
+// ══════════════════════════════════════════════════════════════
+// SEGURIDAD DEL LADO DEL NAVEGADOR
+// ══════════════════════════════════════════════════════════════
+// 1) Textos seguros: los datos se muestran armando HTML, así que un nombre u
+//    observación con "<", ">" o comillas podría inyectar código (XSS). Esos
+//    caracteres se reemplazan por equivalentes visuales inofensivos (＜ ＞ ”)
+//    al escribir en un formulario, al cargar datos y antes de guardar/subir.
+const _SGE_CHARS_PELIGROSOS = /[<>"]/;
+function sgeTextoSeguro(s){
+  return (typeof s==='string' && _SGE_CHARS_PELIGROSOS.test(s))
+    ? s.replace(/</g,'＜').replace(/>/g,'＞').replace(/"/g,'”') : s;
+}
+function sgeSanearProfundo(obj, prof){
+  prof = prof||0;
+  if(!obj || typeof obj!=='object' || prof>12) return obj;
+  if(Array.isArray(obj)){
+    for(let i=0;i<obj.length;i++){
+      const x=obj[i];
+      if(typeof x==='string'){ if(_SGE_CHARS_PELIGROSOS.test(x)) obj[i]=sgeTextoSeguro(x); }
+      else if(x && typeof x==='object') sgeSanearProfundo(x, prof+1);
+    }
+  } else {
+    for(const k in obj){
+      if(!Object.prototype.hasOwnProperty.call(obj,k)) continue;
+      const x=obj[k];
+      if(typeof x==='string'){ if(_SGE_CHARS_PELIGROSOS.test(x)) obj[k]=sgeTextoSeguro(x); }
+      else if(x && typeof x==='object') sgeSanearProfundo(x, prof+1);
+    }
+  }
+  return obj;
+}
+function sgeSanearEstado(){
+  try{ sgeSanearProfundo(USUARIOS); sgeSanearProfundo(INSTITUCIONES); sgeSanearProfundo(INST_DATA); }catch(e){}
+}
+// Lo que se escribe en cualquier campo de texto se limpia en el momento
+// (no se tocan contraseñas ni archivos).
+function _sgeSanearCampo(ev){
+  const el = ev.target;
+  if(!el || !(el.tagName==='INPUT' || el.tagName==='TEXTAREA')) return;
+  const t = (el.type||'').toLowerCase();
+  if(t==='password' || t==='file' || t==='checkbox' || t==='radio') return;
+  if(typeof el.value==='string' && _SGE_CHARS_PELIGROSOS.test(el.value)){
+    const pos = el.selectionStart;
+    el.value = sgeTextoSeguro(el.value);
+    try{ if(pos!=null) el.setSelectionRange(pos,pos); }catch(_){}
+  }
+}
+document.addEventListener('input', _sgeSanearCampo, true);
+document.addEventListener('change', _sgeSanearCampo, true);
+
+// 2) Contraseñas de demostración: están en el código público, así que quien
+//    las use debe cambiarlas obligatoriamente al ingresar.
+const SGE_HASHES_DEMO = new Set([
+  '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9',
+  '9b8769a4a742959a2d0298c36fb70623f2dfacda8436237df08d8dfd5b37374c',
+  'ee63c6506c68d4613b9553820393f22db66a1dbc9ba6dc5640df9fce741e6258',
+]);
+function sgeClaveEsDemo(cuenta){ return !!(cuenta && cuenta.claveHash && SGE_HASHES_DEMO.has(cuenta.claveHash)); }
+
+// 3) Institución activa: los usuarios de una institución suspendida o
+//    inactiva no pueden ingresar (el administrador general sí).
+function sgeInstitucionBloqueada(u){
+  if(!u || u.rol==='admin' || !u.institucionId) return null;
+  const inst = INSTITUCIONES.find(i=>i.id===u.institucionId);
+  if(inst && inst.estado && inst.estado!=='activa') return inst;
+  return null;
+}
+
+// 4) Sesión recordada firmada: se guarda junto a una firma que depende de la
+//    contraseña de la cuenta y de una clave aleatoria de este dispositivo. Ya
+//    no alcanza con escribir {tipo,id} a mano, y si se cambia la contraseña
+//    las sesiones recordadas se cierran solas.
+const SGE_DISPOSITIVO_KEY = 'sge_dispositivo_v1';
+function _sgeClaveDispositivo(){
+  try{
+    let k = localStorage.getItem(SGE_DISPOSITIVO_KEY);
+    if(!k){
+      const a = new Uint8Array(24); crypto.getRandomValues(a);
+      k = Array.from(a).map(b=>b.toString(16).padStart(2,'0')).join('');
+      localStorage.setItem(SGE_DISPOSITIVO_KEY, k);
+    }
+    return k;
+  }catch(e){ return ''; }
+}
+async function _sgeFirmaSesion(tipo, cuenta){
+  return sha256(['sge-sesion', tipo, cuenta.id, cuenta.claveHash||'', _sgeClaveDispositivo()].join('|'));
+}
+
 function guardarEstado(){
   try{ asegurarNroExpDesignacionesTodas(); }catch(e){}
+  sgeSanearEstado();
   try{
     const snapshot = {
       version: 1,
@@ -1333,6 +1422,7 @@ function cargarEstadoGuardado(){
       const vacio = createEmptyInstData();
       INST_DATA[k] = Object.assign({}, vacio, INST_DATA[k]);
     });
+    sgeSanearEstado();
     return true;
   }catch(e){
     console.error('No se pudo cargar el estado guardado, se usarán los datos de demostración:', e);
@@ -1508,6 +1598,7 @@ async function leerMetaSheets(){
 // ── Estado local ⇄ planilla ─────────────────────────────────────────────────
 function _snapEstado(){
   try{ asegurarNroExpDesignacionesTodas(); }catch(e){}
+  sgeSanearEstado();
   return JSON.stringify({ USUARIOS, INSTITUCIONES, INST_DATA });
 }
 
@@ -1515,7 +1606,7 @@ function _normalizarRemoto(r){
   const instData = {};
   Object.keys(r.INST_DATA||{}).forEach(k=>{ instData[k] = Object.assign(createEmptyInstData(), r.INST_DATA[k]); });
   (r.INSTITUCIONES||[]).forEach(i=>{ if(!instData[i.id]) instData[i.id] = createEmptyInstData(); });
-  return { USUARIOS: r.USUARIOS||[], INSTITUCIONES: r.INSTITUCIONES||[], INST_DATA: instData };
+  return sgeSanearProfundo({ USUARIOS: r.USUARIOS||[], INSTITUCIONES: r.INSTITUCIONES||[], INST_DATA: instData });
 }
 
 // Reemplaza el estado en memoria por otro (remoto o combinado) y mantiene la sesión abierta.
@@ -1645,9 +1736,11 @@ async function sincronizarSheets(opts={}){
     }
     let localStr = _snapEstado();
     if(localStr!==_sheetsBase){
+      let subido = false;
       for(let intento=0; intento<4; intento++){
         const r = await _sheetsApi(null, _cuerpoGuardar(localStr, sheetsVersionConocida));
         if(r && r.ok){
+          subido = true;
           _sheetsBase = localStr;
           _guardarVersion(r.version);
           _marcarSincronizado(_snapEstado()===_sheetsBase);
@@ -1660,11 +1753,12 @@ async function sincronizarSheets(opts={}){
           await _pullYAplicar();
           _refrescarPantallaSiSePuede();
           localStr = _snapEstado();
-          if(localStr===_sheetsBase) break;
+          if(localStr===_sheetsBase){ subido = true; break; }
           continue;
         }
         throw new Error((r&&r.msg)||'No se pudo guardar en la planilla');
       }
+      if(!subido) throw new Error('Otros dispositivos están guardando al mismo tiempo; se reintentará en unos segundos');
     } else if(opts.revisarRemoto!==false){
       const j = await _sheetsApi({ action:'meta', token:sheetsToken });
       if(j && j.ok && j.meta && j.meta.version!==sheetsVersionConocida){
@@ -1767,7 +1861,12 @@ function autoguardadoTick(){
 }
 
 // ── Sesión recordada en el dispositivo ──────────────────────────────────────
-function recordarSesion(tipo, id){ try{ localStorage.setItem(SGE_SESION_KEY, JSON.stringify({tipo,id})); }catch(e){} }
+async function recordarSesion(tipo, cuenta){
+  try{
+    const firma = await _sgeFirmaSesion(tipo, cuenta);
+    localStorage.setItem(SGE_SESION_KEY, JSON.stringify({tipo, id:cuenta.id, firma}));
+  }catch(e){}
+}
 function olvidarSesion(){ try{ localStorage.removeItem(SGE_SESION_KEY); }catch(e){} }
 function _entrarConCuenta(tipo, cuenta){
   if(tipo==='usuario'){
@@ -1788,22 +1887,72 @@ function _entrarConCuenta(tipo, cuenta){
     if(!INST_DATA[cuenta.id]) INST_DATA[cuenta.id] = createEmptyInstData();
     DB = INST_DATA[cuenta.id];
   }
-  recordarSesion(tipo, cuenta.id);
+  _sgeCuentaActual = { tipo, cuenta };
+  recordarSesion(tipo, cuenta);
   _bootApp();
+  if(sgeClaveEsDemo(cuenta)) setTimeout(sgePedirCambioClaveObligatorio, 300);
 }
-function restaurarSesionRecordada(){
+let _sgeCuentaActual = null;
+
+// Pantalla que no se puede cerrar hasta cambiar una contraseña de demostración.
+function sgePedirCambioClaveObligatorio(){
+  if(document.getElementById('sge-cambio-clave')) return;
+  const ov = document.createElement('div');
+  ov.id = 'sge-cambio-clave';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.75);display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,.35);font-family:inherit">
+      <div style="font-size:18px;font-weight:800;color:#1a3a5c;margin-bottom:6px">🔐 Cambiá tu contraseña</div>
+      <div style="font-size:13px;color:#475569;margin-bottom:16px;line-height:1.45">
+        Esta cuenta usa una contraseña de demostración que figura en el código público del sistema.
+        Para seguir, elegí una contraseña nueva (mínimo 8 caracteres).
+      </div>
+      <input id="sge-cc-1" type="password" class="form-input" placeholder="Nueva contraseña" style="margin-bottom:10px;width:100%">
+      <input id="sge-cc-2" type="password" class="form-input" placeholder="Repetir contraseña" style="margin-bottom:10px;width:100%">
+      <div id="sge-cc-err" style="display:none;color:#b91c1c;font-size:13px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="document.getElementById('sge-cambio-clave').remove();doLogout()">Cerrar sesión</button>
+        <button class="btn btn-primary" onclick="sgeGuardarCambioClaveObligatorio()">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>{ const i=document.getElementById('sge-cc-1'); if(i) i.focus(); }, 50);
+}
+async function sgeGuardarCambioClaveObligatorio(){
+  const c1 = (document.getElementById('sge-cc-1')||{}).value||'';
+  const c2 = (document.getElementById('sge-cc-2')||{}).value||'';
+  const err = document.getElementById('sge-cc-err');
+  const mal = m => { err.textContent = m; err.style.display='block'; };
+  if(c1.length<8) return mal('La contraseña debe tener al menos 8 caracteres.');
+  if(c1!==c2) return mal('Las contraseñas no coinciden.');
+  if(!_sgeCuentaActual) return mal('No hay una sesión activa.');
+  const tipo = _sgeCuentaActual.tipo;
+  // Se busca de nuevo por id: la sincronización puede haber reemplazado el objeto.
+  const id = _sgeCuentaActual.cuenta.id;
+  const cuenta = (tipo==='usuario' ? USUARIOS : INSTITUCIONES).find(x=>x.id===id) || _sgeCuentaActual.cuenta;
+  await establecerClave(cuenta, c1);
+  if(sgeClaveEsDemo(cuenta)) return mal('Elegí una contraseña distinta.');
+  await recordarSesion(tipo, cuenta);
+  document.getElementById('sge-cambio-clave').remove();
+  guardarEstadoInmediato();
+  showToast('🔑 Contraseña actualizada','#166534');
+}
+
+async function restaurarSesionRecordada(){
   try{
     if(currentUser) return true;
     const s = JSON.parse(localStorage.getItem(SGE_SESION_KEY)||'null');
-    if(!s) return false;
+    if(!s || !s.firma){ olvidarSesion(); return false; }
+    let tipo, cuenta;
     if(s.tipo==='usuario'){
-      const u = USUARIOS.find(x=>x.id===s.id);
-      if(!u || u.estado==='inactivo'){ olvidarSesion(); return false; }
-      _entrarConCuenta('usuario', u); return true;
+      cuenta = USUARIOS.find(x=>x.id===s.id); tipo='usuario';
+      if(!cuenta || cuenta.estado==='inactivo' || sgeInstitucionBloqueada(cuenta)){ olvidarSesion(); return false; }
+    } else {
+      cuenta = INSTITUCIONES.find(i=>i.id===s.id && i.estado==='activa'); tipo='inst';
+      if(!cuenta){ olvidarSesion(); return false; }
     }
-    const inst = INSTITUCIONES.find(i=>i.id===s.id && i.estado==='activa');
-    if(!inst){ olvidarSesion(); return false; }
-    _entrarConCuenta('inst', inst); return true;
+    if(await _sgeFirmaSesion(tipo, cuenta) !== s.firma){ olvidarSesion(); return false; }
+    _entrarConCuenta(tipo, cuenta); return true;
   }catch(e){ return false; }
 }
 
@@ -1816,7 +1965,7 @@ async function iniciarSincronizacionYSesion(){
     try{ await Promise.race([ sincronizarSheets(), new Promise(r=>setTimeout(r,20000)) ]); }catch(e){}
     if(btn){ btn.disabled=false; btn.textContent=btn.dataset.txt||'Ingresar al Sistema'; }
   }
-  restaurarSesionRecordada();
+  await restaurarSesionRecordada();
 }
 function intentarReconexionSilenciosaSheets(){ /* reemplazada por iniciarSincronizacionYSesion() */ }
 
@@ -1904,13 +2053,23 @@ async function doLogin(){
   // 0. Sincronización: con el mismo usuario y contraseña se obtiene la llave
   //    del dispositivo y se bajan los datos más recientes de la planilla (así
   //    funciona en cualquier dispositivo, aunque sea la primera vez que entra).
+  let servidorOk = false;
   if(sheetsConfigurado() && u && p){
     if(btn){ btn.disabled=true; btn.textContent='⏳ Conectando…'; }
     try{
       const r = await sheetsLogin(u, p);
-      if(r && r.ok) await sincronizarSheets();
+      if(r && r.ok){ servidorOk = true; await sincronizarSheets(); }
     }catch(e){ console.warn('Sin conexión con el servidor de sincronización:', e); }
     if(btn){ btn.disabled=false; btn.textContent=txtBtn; }
+  }
+  // Un dispositivo que nunca bajó los datos reales sólo tiene los datos de
+  // demostración del código: no se deja entrar sin el servidor.
+  if(sheetsConfigurado() && !servidorOk && sheetsVersionConocida===null){
+    errEl.textContent = _sheetsOnline===false
+      ? '📴 No se pudo conectar con el servidor. La primera vez en este dispositivo se necesita conexión a Internet.'
+      : '⚠️ Usuario o contraseña incorrectos';
+    errEl.style.display='block';
+    return;
   }
 
   // 1. Buscar en USUARIOS normales
@@ -1919,6 +2078,12 @@ async function doLogin(){
   if(found){
     if(found.estado==='inactivo'){
       errEl.textContent='⊘ Este usuario está inactivo. Contactá al administrador.';
+      errEl.style.display='block';
+      return;
+    }
+    const instBloq = sgeInstitucionBloqueada(found);
+    if(instBloq){
+      errEl.textContent=`⊘ La institución "${instBloq.nombre}" está ${instBloq.estado}. Contactá al administrador.`;
       errEl.style.display='block';
       return;
     }
