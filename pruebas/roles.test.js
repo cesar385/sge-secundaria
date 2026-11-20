@@ -13,7 +13,10 @@ INST_DATA[500].docentes.push({id:9001,nombre:'Sancuns, Laura',cuil:'27-32485908-
 INST_DATA[500].designaciones.push({id:1,docenteId:9001,cargo:'Director/a',estado:'activa',nroPlaza:'01-GEN I',desde:'2026-03-02'});
 INST_DATA[500].licencias.push({id:11,docenteId:9001,tipo:'Art. 13',desde:'2026-05-01',hasta:'2026-05-03',estado:'aprobada'});
 INST_DATA[501].docentes.push({id:9002,nombre:'Sancuns, Laura',cuil:'27-32485908-1'});
-INST_DATA[501].designaciones.push({id:2,docenteId:9002,cargo:'Profesor/a',estado:'activa',materia:'Biología',curso:'3°A',desde:'2026-03-09'});
+INST_DATA[501].designaciones.push({id:2,docenteId:9002,cargo:'Profesor/a',estado:'activa',materia:'Biología',curso:'3°A',desde:'2026-03-09',nroPlaza:'07-BIO3',horas:4});
+INST_DATA[501].designaciones.push({id:3,docenteId:9002,cargo:'Profesor/a',estado:'activa',materia:'Química',curso:'4°B',desde:'2026-03-09',nroPlaza:'07-QUI4',horas:3});
+INST_DATA[500].plazas.push({id:5001,nroPlaza:'01-GEN I',turno:'Mañana'});
+INST_DATA[501].plazas.push({id:5101,nroPlaza:'07-BIO3',turno:'Tarde'},{id:5102,nroPlaza:'07-QUI4',turno:'Tarde'});
 INST_DATA[501].licencias.push({id:12,docenteId:9002,tipo:'Art. 16',desde:'2026-06-01',hasta:'2026-06-02',estado:'pendiente'});
 USUARIOS.push({id:777,usuario:'smaricel',rol:'docente',nombre:'Sancuns, Laura',estado:'activo',institucionId:500,docenteId:9001});`);
 ok(E("JSON.stringify(sgeCuentasConRolDistinto().map(x=>[x.u.usuario,x.rol]))")==='[["smaricel","director"]]','detecta cuenta Docente con cargo Director/a');
@@ -27,11 +30,30 @@ E("currentUser=USUARIOS.find(u=>u.id===777); currentInstitucionId=500; DB=INST_D
 const lic=E("renderMisLicencias()"); ok(lic.includes('Art. 13')&&lic.includes('Art. 16')&&lic.includes('Instituto Regional Federal'),'Mis Licencias muestra las de ambas instituciones');
 const des=E("renderMisDesig()");  ok(des.includes('DIRECTOR/A')&&des.includes('Biología'),'Mis Designaciones muestra las de ambas instituciones');
 const tr=E("renderTramitesSageHTML(9001,'docenteId','propio')");
-ok(tr.includes('Instituto Regional Federal')&&tr.includes('EPJA N°8')&&(tr.match(/ESTADO:/g)||[]).length===4,'Mi Legajo › Trámites: designaciones y licencias de ambas instituciones');
+ok(tr.includes('Instituto Regional Federal')&&tr.includes('EPJA N°8')&&(tr.match(/ESTADO:/g)||[]).length===5,'Mi Legajo › Trámites: designaciones y licencias de ambas instituciones');
 const ld=E("renderLicenciasDetalleSageHTML(9001,'docenteId','x','propio')");
 ok(ld.includes('Art. 13')&&ld.includes('Art. 16'),'Mi Legajo › Licencias (detalle): las de ambas instituciones');
 const tra=E("renderTramitesSageHTML(9001,'docenteId','admin')");
 ok((tra.match(/ESTADO:/g)||[]).length===2,'el legajo que ve la dirección muestra sólo su institución');
+// Licencia por el día completo en todas las instituciones, con sus plazas
+E("openSolLic()");
+ok(!!w.document.querySelector('.sge-lic-otra[value="501"]'),'el formulario ofrece presentar la licencia en la otra institución');
+ok(w.document.querySelectorAll('.sge-lic-plaza').length===3,'muestra las plazas vigentes de cada institución (1 + 2)');
+E("document.getElementById('f-tipo').selectedIndex=1; document.getElementById('f-desde').value='2026-11-25'; document.getElementById('f-hasta').value='2026-11-25';");
+[...w.document.querySelectorAll('button')].find(b=>b.textContent.includes('todas las instituciones y plazas')).click();
+E("saveSolLic();");
+const L500=E("JSON.stringify(INST_DATA[500].licencias.filter(l=>l.desde==='2026-11-25').map(l=>[l.docenteId,l.estado,l.plazaIds]))");
+const L501=E("JSON.stringify(INST_DATA[501].licencias.filter(l=>l.desde==='2026-11-25').map(l=>[l.docenteId,l.estado,l.plazaIds]))");
+ok(L500==='[[9001,"pendiente",[5001]]]','en su institución queda con su plaza asociada ('+L500+')');
+ok(L501==='[[9002,"pendiente",[5101,5102]]]','en la otra, con su legajo de allá y sus dos plazas ('+L501+')');
+ok(E("INST_DATA[500].licencias.find(l=>l.desde==='2026-11-25').grupoLicencia===INST_DATA[501].licencias.find(l=>l.desde==='2026-11-25').grupoLicencia"),'ambas quedan vinculadas');
+ok(E("INST_DATA[501].licencias.find(l=>l.desde==='2026-11-25').nroExp.length>5"),'la copia tiene su propio N° de expediente');
+ok(E("licenciaTienePlazaAsociada(INST_DATA[501].licencias.find(l=>l.desde==='2026-11-25'))"),'la dirección de la otra escuela ya puede aprobarla');
+// Sólo una plaza de la otra institución (p. ej. licencia en un solo cargo)
+E("openSolLic(); document.getElementById('f-tipo').selectedIndex=1; document.getElementById('f-desde').value='2026-12-01';");
+w.document.querySelector('.sge-lic-plaza[value="07-QUI4"]').checked=true;
+E("saveSolLic();");
+ok(E("JSON.stringify(INST_DATA[501].licencias.filter(l=>l.desde==='2026-12-01').map(l=>l.plazaIds))")==='[[5102]]','marcar una plaza de la otra escuela presenta la licencia sólo con esa plaza');
 E("INST_DATA[500].designaciones[0].estado='baja';");
 ok(E("JSON.stringify(sgeCuentasConRolDistinto().map(x=>x.rol))")==='["docente"]','si termina el cargo directivo, sugiere volver a Docente');
 process.exit(); },800);

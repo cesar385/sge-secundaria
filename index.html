@@ -8471,8 +8471,8 @@ function asegurarNroExpDesignaciones(data){
   });
 }
 function asegurarNroExpDesignacionesTodas(){ Object.keys(INST_DATA||{}).forEach(k=>asegurarNroExpDesignaciones(INST_DATA[k])); }
-function generarNroExpLicencia(tipo, fechaDesde, codigoManual){
-  const inst=getInstUser()||instActual()||_instPorData(DB);
+function generarNroExpLicencia(tipo, fechaDesde, codigoManual, instObj){
+  const inst=instObj||getInstUser()||instActual()||_instPorData(DB);
   const codigo=codigoManual||(LICENCIA_TIPO_REMUNERADA[tipo]===false?'LC':'LA');
   const dto='06';
   const cue=inst?.cue||'0000000';
@@ -10453,6 +10453,81 @@ function generarFU01Permuta(tipo, id){
   mostrarDocumentoImprimible(html, `Permuta — ${persona.apellido||''}, ${persona.nombres||persona.nombre}`);
 }
 
+// Otras instituciones donde figura el/la agente (mismo DNI/CUIL), con su legajo en cada una.
+function sgeOtrasInstitucionesAgente(){
+  if(!currentUser || typeof agenteVinculosTodasInst!=='function') return [];
+  const ref=(DB.docentes||[]).find(d=>d.id===currentUser.docenteId);
+  const vistos=new Set([currentInstitucionId]);
+  return agenteVinculosTodasInst(currentUser, ref||identidadDeUsuario(currentUser))
+    .filter(v=>!vistos.has(v.institucionId) && vistos.add(v.institucionId) && INST_DATA[v.institucionId])
+    .map(v=>({...v, nombre:(INSTITUCIONES.find(i=>i.id===v.institucionId)||{}).nombre||`Institución ${v.institucionId}`}));
+}
+// Plazas (designaciones vigentes) del/de la agente en una institución.
+function sgePlazasAgenteEn(instId, docenteId){
+  const D=(instId===currentInstitucionId?DB:INST_DATA[instId])||{};
+  const vistos=new Set();
+  return (D.designaciones||[])
+    .filter(d=>d.docenteId===docenteId && (d.estado==='activa'||d.estado==='licencia') && d.nroPlaza && !vistos.has(d.nroPlaza) && vistos.add(d.nroPlaza))
+    .map(d=>({nroPlaza:d.nroPlaza, txt:[d.cargo, d.materia, d.curso].filter(x=>x&&x!=='—').join(' · '), horas:d.horas||0, turno:(D.plazas||[]).find(p=>p.nroPlaza===d.nroPlaza)?.turno||''}));
+}
+// Bloque del formulario: una licencia por el día completo afecta todos los
+// cargos, así que se puede presentar a la vez en cada institución y dejar
+// asociadas las plazas que corresponden en cada una.
+function sgeBloqueOtrasInstLicHTML(){
+  const otras=sgeOtrasInstitucionesAgente();
+  const propias=sgePlazasAgenteEn(currentInstitucionId, currentUser&&currentUser.docenteId);
+  if(!otras.length && propias.length<2) return '';
+  const instNombre=(INSTITUCIONES.find(i=>i.id===currentInstitucionId)||{}).nombre||'Esta institución';
+  const listaPlazas=(instId, plazas)=> plazas.length
+    ? plazas.map(p=>`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:3px 0 3px 22px"><input type="checkbox" class="sge-lic-plaza" data-inst="${instId}" value="${p.nroPlaza}"> <code style="background:#e0e7ff;padding:1px 6px;border-radius:4px">${p.nroPlaza}</code> ${p.txt}${p.horas?` · ${p.horas} hs`:''}${p.turno?` · ${p.turno}`:''}</label>`).join('')
+    : `<div style="font-size:12px;color:#64748b;margin:2px 0 4px 22px">Sin plazas vigentes cargadas: las asocia la dirección.</div>`;
+  return `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 14px;margin:6px 0 12px">
+    <div style="font-weight:700;color:#1e3a8a;font-size:13px;margin-bottom:4px">📅 ¿Es una licencia por el día completo?</div>
+    <div style="font-size:12px;color:#1e40af;margin-bottom:8px">Afecta todos tus cargos: marcá las plazas afectadas en cada institución. Se presenta una solicitud en cada una y cada dirección la revisa y aprueba por separado.</div>
+    <div style="font-weight:700;font-size:13px;margin:6px 0 2px">🏫 ${instNombre} <span style="font-weight:400;color:#64748b">(esta solicitud)</span></div>
+    ${listaPlazas(currentInstitucionId, propias)}
+    ${otras.map(o=>`<label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;margin:8px 0 2px"><input type="checkbox" class="sge-lic-otra" value="${o.institucionId}" onchange="document.querySelectorAll('.sge-lic-plaza[data-inst=&quot;${o.institucionId}&quot;]').forEach(c=>c.checked=this.checked)"> 🏛️ Presentar también en ${o.nombre}</label>
+      ${listaPlazas(o.institucionId, sgePlazasAgenteEn(o.institucionId, o.docenteId))}`).join('')}
+    <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="document.querySelectorAll('.sge-lic-otra,.sge-lic-plaza').forEach(c=>c.checked=true)">📅 Día completo: todas las instituciones y plazas</button>
+  </div>`;
+}
+// Plazas marcadas en el formulario para una institución (N° de plaza → id de plaza de esa institución).
+function sgePlazasMarcadas(instId){
+  const nros=[...document.querySelectorAll('.sge-lic-plaza:checked')].filter(c=>Number(c.dataset.inst)===Number(instId)).map(c=>c.value);
+  let ids=[]; sgeEnInstitucion(instId,()=>{ ids=idsDePlazasPorNro(nros); });
+  return {nros, ids};
+}
+// Crea la misma licencia (pendiente) en las instituciones marcadas, con sus plazas.
+function sgeReplicarLicenciaEnOtras(base){
+  // Plazas de esta institución
+  const aqui=sgePlazasMarcadas(currentInstitucionId);
+  if(aqui.ids.length){
+    base.plazaIds=aqui.ids;
+    registrarHistorial(base,'PLAZAS ASOCIADAS',`Plazas afectadas indicadas por el/la agente: ${aqui.nros.join(', ')}.`);
+  }
+  // Una plaza marcada en otra institución también la incluye aunque no se haya tildado la institución.
+  const conPlazas=[...document.querySelectorAll('.sge-lic-plaza:checked')].map(c=>Number(c.dataset.inst)).filter(i=>i!==currentInstitucionId);
+  const marcadas=[...new Set([...document.querySelectorAll('.sge-lic-otra:checked')].map(c=>Number(c.value)).concat(conPlazas))];
+  if(!marcadas.length) return [];
+  const otras=sgeOtrasInstitucionesAgente().filter(o=>marcadas.includes(o.institucionId));
+  const nombres=otras.map(o=>o.nombre);
+  const origen=(INSTITUCIONES.find(i=>i.id===currentInstitucionId)||{}).nombre||'';
+  base.grupoLicencia=base.grupoLicencia||base.id;
+  base.institucionesAsociadas=nombres;
+  registrarHistorial(base,'DÍA COMPLETO',`Licencia por el día completo presentada también en: ${nombres.join(', ')}.`);
+  otras.forEach(o=>{
+    const pl=sgePlazasMarcadas(o.institucionId);
+    sgeEnInstitucion(o.institucionId,()=>{
+      const inst=INSTITUCIONES.find(i=>i.id===o.institucionId);
+      const copia={...base, id:uid(), docenteId:o.docenteId, plazaIds:pl.ids, historial:[], estado:'pendiente',
+        nroExp:generarNroExpLicencia(base.tipo, base.desde, (leerNroExp(base.nroExp)||{}).cod, inst),
+        institucionesAsociadas:[origen, ...nombres.filter(n=>n!==o.nombre)]};
+      registrarHistorial(copia,'INGRESO FORMULARIO',`Licencia por el día completo presentada por el/la agente desde ${origen} (expediente ${base.nroExp}). ${pl.nros.length?`Plazas afectadas: ${pl.nros.join(', ')}. Pendiente de aprobación.`:'Pendiente: asociar plazas y aprobar.'}`);
+      DB.licencias.push(copia);
+    });
+  });
+  return nombres;
+}
 function openSolLic(){
   showModal('Solicitar Licencia',`
     ${formGroup('Tipo de Licencia (Norma Legal)',`<select id="f-tipo" class="form-input" onchange="actualizarCodigoLicSugerido()">${OPCIONES_TIPO_LICENCIA_HTML}</select>`,true)}
@@ -10461,6 +10536,7 @@ function openSolLic(){
     ${formGroup('Hasta',inputH('f-hasta','date',''))}
     ${formGroup('Motivo / Observaciones (opcional)',inputH('f-motivo','text',''))}
     ${formGroup('N° Certificado Médico (si corresponde)',inputH('f-certMedico','text',''))}
+    ${sgeBloqueOtrasInstLicHTML()}
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-success" onclick="saveSolLic()">Enviar Solicitud</button>
@@ -10471,12 +10547,16 @@ function saveSolLic(){
   const nuevaLicDoc={id:uid(),docenteId:currentUser.docenteId,tipo:v('f-tipo'),desde:v('f-desde'),hasta:v('f-hasta'),motivo:v('f-motivo'),normaLegal:NORMA_LEGAL_POR_TIPO[v('f-tipo')]||'',nroCertificadoMedico:v('f-certMedico'),nroExp:generarNroExpLicencia(v('f-tipo'),v('f-desde'),v('f-codigoLic')),estado:'pendiente'};
   registrarHistorial(nuevaLicDoc,'INGRESO FORMULARIO','Solicitud generada por el/la docente.');
   DB.licencias.push(nuevaLicDoc);
+  const enOtras=sgeReplicarLicenciaEnOtras(nuevaLicDoc);
   // Confirmar al docente que la solicitud fue enviada
   crearNotificacion(currentUser.docenteId,'solic_licencia',
     'Solicitud de licencia enviada',
-    `Tu solicitud de Licencia ${v('f-tipo')} (del ${fmtDate(v('f-desde'))}${v('f-hasta')?' al '+fmtDate(v('f-hasta')):''}) fue enviada correctamente y queda pendiente de aprobación por la dirección.`
+    `Tu solicitud de Licencia ${v('f-tipo')} (del ${fmtDate(v('f-desde'))}${v('f-hasta')?' al '+fmtDate(v('f-hasta')):''}) fue enviada correctamente y queda pendiente de aprobación por la dirección.${enOtras.length?' También se presentó en: '+enOtras.join(', ')+'.':''}`
   );
-  closeModal();renderDocente('mis-licencias');
+  guardarEstado();
+  closeModal();
+  if(enOtras.length) showToast(`📅 Licencia presentada también en ${enOtras.join(', ')}`,'#1e40af');
+  navigate('mis-licencias');
 }
 
 // ═══════════════════════════════════════════════════════════════
