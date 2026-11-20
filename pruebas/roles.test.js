@@ -35,12 +35,12 @@ const ld=E("renderLicenciasDetalleSageHTML(9001,'docenteId','x','propio')");
 ok(ld.includes('Art. 13')&&ld.includes('Art. 16'),'Mi Legajo › Licencias (detalle): las de ambas instituciones');
 const tra=E("renderTramitesSageHTML(9001,'docenteId','admin')");
 ok((tra.match(/ESTADO:/g)||[]).length===2,'el legajo que ve la dirección muestra sólo su institución');
-// Licencia por el día completo en todas las instituciones, con sus plazas
+// Licencia presentada en todas las instituciones, con sus plazas
 E("openSolLic()");
 ok(!!w.document.querySelector('.sge-lic-otra[value="501"]'),'el formulario ofrece presentar la licencia en la otra institución');
 ok(w.document.querySelectorAll('.sge-lic-plaza').length===3,'muestra las plazas vigentes de cada institución (1 + 2)');
 E("document.getElementById('f-tipo').selectedIndex=1; document.getElementById('f-desde').value='2026-11-25'; document.getElementById('f-hasta').value='2026-11-25';");
-[...w.document.querySelectorAll('button')].find(b=>b.textContent.includes('todas las instituciones y plazas')).click();
+w.document.querySelectorAll('.sge-lic-plaza').forEach(c=>c.checked=true);
 E("saveSolLic();");
 const L500=E("JSON.stringify(INST_DATA[500].licencias.filter(l=>l.desde==='2026-11-25').map(l=>[l.docenteId,l.estado,l.plazaIds]))");
 const L501=E("JSON.stringify(INST_DATA[501].licencias.filter(l=>l.desde==='2026-11-25').map(l=>[l.docenteId,l.estado,l.plazaIds]))");

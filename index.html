@@ -10470,9 +10470,8 @@ function sgePlazasAgenteEn(instId, docenteId){
     .filter(d=>d.docenteId===docenteId && (d.estado==='activa'||d.estado==='licencia') && d.nroPlaza && !vistos.has(d.nroPlaza) && vistos.add(d.nroPlaza))
     .map(d=>({nroPlaza:d.nroPlaza, txt:[d.cargo, d.materia, d.curso].filter(x=>x&&x!=='—').join(' · '), horas:d.horas||0, turno:(D.plazas||[]).find(p=>p.nroPlaza===d.nroPlaza)?.turno||''}));
 }
-// Bloque del formulario: una licencia por el día completo afecta todos los
-// cargos, así que se puede presentar a la vez en cada institución y dejar
-// asociadas las plazas que corresponden en cada una.
+// Bloque del formulario: la licencia se puede presentar a la vez en cada
+// institución del agente, dejando asociadas las plazas afectadas en cada una.
 function sgeBloqueOtrasInstLicHTML(){
   const otras=sgeOtrasInstitucionesAgente();
   const propias=sgePlazasAgenteEn(currentInstitucionId, currentUser&&currentUser.docenteId);
@@ -10482,13 +10481,12 @@ function sgeBloqueOtrasInstLicHTML(){
     ? plazas.map(p=>`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:3px 0 3px 22px"><input type="checkbox" class="sge-lic-plaza" data-inst="${instId}" value="${p.nroPlaza}"> <code style="background:#e0e7ff;padding:1px 6px;border-radius:4px">${p.nroPlaza}</code> ${p.txt}${p.horas?` · ${p.horas} hs`:''}${p.turno?` · ${p.turno}`:''}</label>`).join('')
     : `<div style="font-size:12px;color:#64748b;margin:2px 0 4px 22px">Sin plazas vigentes cargadas: las asocia la dirección.</div>`;
   return `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 14px;margin:6px 0 12px">
-    <div style="font-weight:700;color:#1e3a8a;font-size:13px;margin-bottom:4px">📅 ¿Es una licencia por el día completo?</div>
-    <div style="font-size:12px;color:#1e40af;margin-bottom:8px">Afecta todos tus cargos: marcá las plazas afectadas en cada institución. Se presenta una solicitud en cada una y cada dirección la revisa y aprueba por separado.</div>
+    <div style="font-weight:700;color:#1e3a8a;font-size:13px;margin-bottom:4px">🏫 Instituciones y plazas afectadas</div>
+    <div style="font-size:12px;color:#1e40af;margin-bottom:8px">Marcá las plazas afectadas en cada institución. Se presenta una solicitud en cada una y cada dirección la revisa y aprueba por separado.</div>
     <div style="font-weight:700;font-size:13px;margin:6px 0 2px">🏫 ${instNombre} <span style="font-weight:400;color:#64748b">(esta solicitud)</span></div>
     ${listaPlazas(currentInstitucionId, propias)}
     ${otras.map(o=>`<label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;margin:8px 0 2px"><input type="checkbox" class="sge-lic-otra" value="${o.institucionId}" onchange="document.querySelectorAll('.sge-lic-plaza[data-inst=&quot;${o.institucionId}&quot;]').forEach(c=>c.checked=this.checked)"> 🏛️ Presentar también en ${o.nombre}</label>
       ${listaPlazas(o.institucionId, sgePlazasAgenteEn(o.institucionId, o.docenteId))}`).join('')}
-    <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="document.querySelectorAll('.sge-lic-otra,.sge-lic-plaza').forEach(c=>c.checked=true)">📅 Día completo: todas las instituciones y plazas</button>
   </div>`;
 }
 // Plazas marcadas en el formulario para una institución (N° de plaza → id de plaza de esa institución).
@@ -10514,7 +10512,7 @@ function sgeReplicarLicenciaEnOtras(base){
   const origen=(INSTITUCIONES.find(i=>i.id===currentInstitucionId)||{}).nombre||'';
   base.grupoLicencia=base.grupoLicencia||base.id;
   base.institucionesAsociadas=nombres;
-  registrarHistorial(base,'DÍA COMPLETO',`Licencia por el día completo presentada también en: ${nombres.join(', ')}.`);
+  registrarHistorial(base,'OTRAS INSTITUCIONES',`Licencia presentada también en: ${nombres.join(', ')}.`);
   otras.forEach(o=>{
     const pl=sgePlazasMarcadas(o.institucionId);
     sgeEnInstitucion(o.institucionId,()=>{
@@ -10522,7 +10520,7 @@ function sgeReplicarLicenciaEnOtras(base){
       const copia={...base, id:uid(), docenteId:o.docenteId, plazaIds:pl.ids, historial:[], estado:'pendiente',
         nroExp:generarNroExpLicencia(base.tipo, base.desde, (leerNroExp(base.nroExp)||{}).cod, inst),
         institucionesAsociadas:[origen, ...nombres.filter(n=>n!==o.nombre)]};
-      registrarHistorial(copia,'INGRESO FORMULARIO',`Licencia por el día completo presentada por el/la agente desde ${origen} (expediente ${base.nroExp}). ${pl.nros.length?`Plazas afectadas: ${pl.nros.join(', ')}. Pendiente de aprobación.`:'Pendiente: asociar plazas y aprobar.'}`);
+      registrarHistorial(copia,'INGRESO FORMULARIO',`Licencia presentada por el/la agente desde ${origen} (expediente ${base.nroExp}). ${pl.nros.length?`Plazas afectadas: ${pl.nros.join(', ')}. Pendiente de aprobación.`:'Pendiente: asociar plazas y aprobar.'}`);
       DB.licencias.push(copia);
     });
   });
