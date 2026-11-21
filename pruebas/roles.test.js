@@ -67,6 +67,9 @@ ok(fila.includes('01-GEN I')&&fila.includes('Plaza de esta institución'),'resal
 E("verHistorialPlaza('01-GEN I',500)");
 const hp=(w.document.querySelector('.main-content')||{}).innerHTML||'';
 ok(hp.includes('LA3457-00099-2026')&&!hp.includes('Cargada en'),'el historial de la plaza incluye la licencia de la otra institución');
+E("openVerPlaza(5001)");
+const vp=(w.document.querySelector('.main-content')||{}).innerHTML||'';
+ok(vp.includes('Licencias asociadas a esta plaza (2)')&&vp.includes('LA3457-00099-2026'),'la ficha de la plaza cuenta la licencia de la otra institución');
 E("INST_DATA[500].designaciones[0].estado='baja';");
 ok(E("JSON.stringify(sgeCuentasConRolDistinto().map(x=>x.rol))")==='["docente"]','si termina el cargo directivo, sugiere volver a Docente');
 process.exit(); },800);

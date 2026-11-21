@@ -4940,7 +4940,16 @@ function openVerPlaza(id){
   const hoy=new Date().toISOString().split('T')[0];
   const desigActiva=DB.designaciones.find(d=>d.nroPlaza===p.nroPlaza&&d.estado==='activa');
   const desigHist=DB.designaciones.filter(d=>d.nroPlaza===p.nroPlaza&&d.estado!=='activa').sort((a,b)=>b.desde.localeCompare(a.desde));
-  const licencias=DB.licencias.filter(l=>l.estado!=='anulada'&&getPlazaIds(l).includes(p.id)).sort((a,b)=>b.desde.localeCompare(a.desde));
+  // Incluye las licencias cargadas en otras instituciones que tienen asociada esta plaza.
+  const licencias=DB.licencias.filter(l=>l.estado!=='anulada'&&getPlazaIds(l).includes(p.id))
+    .concat(sgeLicenciasExternasQueAfectan().filter(l=>l.estado!=='anulada'&&l._plazasAca.includes(p.id)))
+    .sort((a,b)=>(b.desde||'').localeCompare(a.desde||''));
+  const nombreLic=l=>{
+    const d=l._externa ? (INST_DATA[l._inst]?.docentes||[]).find(x=>x.id===l.docenteId) : DB.docentes.find(x=>x.id===l.docenteId);
+    if(d) return d.nombre;
+    const ag=l._externa?sgeAgenteDePlazasAca(l._plazasAca):null;
+    return ag?ag.nombre:'—';
+  };
 
   const docActual=desigActiva?DB.docentes.find(d=>d.id===desigActiva.docenteId):null;
   const precActual=!desigActiva?DB.preceptores.find(pr=>pr.nroPlaza===p.nroPlaza&&pr.estado==='activo'):null;
@@ -5033,7 +5042,7 @@ function openVerPlaza(id){
       ${licencias.length?licencias.map(l=>`
         <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:12px;flex-wrap:wrap;gap:4px">
           <div>
-            <strong>${DB.docentes.find(d=>d.id===l.docenteId)?.nombre||'—'}</strong>
+            <strong>${nombreLic(l)}</strong>
             — ${l.tipo} · ${fmtDate(l.desde)} → ${fmtDate(l.hasta)}
           </div>
           <div style="display:flex;gap:4px;align-items:center">${badge(l.estado)}
