@@ -6723,7 +6723,7 @@ function verHistorialPlaza(nroPlaza, institucionId){
                   <td style="padding:7px 12px;font-family:monospace;font-size:11px;color:#334155;font-weight:600">[SS: ${l.id.toString().padStart(8,'0')}]</td>
                   <td style="padding:7px 12px;text-align:center;color:#334155">${fmtDate(l.desde)}</td>
                   <td style="padding:7px 12px;text-align:center;color:#334155">${fmtDate(l.hasta)}</td>
-                  <td style="padding:7px 12px;color:#334155">${l.motivo||l.tipo}${l._instNombre?`<div style="font-size:10.5px;color:#92400e;font-weight:700;margin-top:2px">🏛️ Cargada en ${l._instNombre}</div>`:''}</td>
+                  <td style="padding:7px 12px;color:#334155">${l.motivo||l.tipo}</td>
                   <td style="padding:7px 12px;font-size:11px;color:#6d28d9;font-weight:600">${l.nroExp||'—'}</td>
                   <td style="padding:7px 12px;text-align:center">${badge(l.estado)}</td>
                   <td style="padding:7px 12px;text-align:center;color:#94a3b8;font-size:11px">${fmtDate(l.hasta||l.desde)}</td>
