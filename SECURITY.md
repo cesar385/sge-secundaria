@@ -55,7 +55,7 @@ Si la institución está suspendida, nadie de esa escuela ve nada (salvo el admi
 ## Pruebas
 
 ```bash
-# Políticas RLS: 60 casos contra Postgres local (no toca Supabase)
+# Políticas RLS: 62 casos contra Postgres local (no toca Supabase)
 PGHOST=... PGPORT=... PGUSER=postgres ./supabase/tests/correr.sh
 
 # Capa cliente: 23 casos con un Supabase simulado

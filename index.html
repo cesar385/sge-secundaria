@@ -5282,6 +5282,32 @@ function renderLicencias(){
   ];
   { const c=cols.find(x=>x.key==='acc'), orig=c.render;
     c.render=r=>`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${r.estado==='anulada'?'<span style="font-size:11px;color:#94a3b8">Trámite anulado</span>':orig(r)}${botonesGestionLic(r)}</div>`; }
+  // Licencias de otras instituciones que afectan plazas de esta: se muestran
+  // en modo consulta (las aprueba y modifica la institución donde se cargaron).
+  cols.forEach(c=>{
+    const orig=c.render;
+    c.render=r=>{
+      if(!r._externa) return orig?orig(r):(r[c.key]??'—');
+      if(c.key==='acc') return `<span style="font-size:11px;color:#64748b">Gestionada por ${r._instNombre}</span>`;
+      if(c.label==='Documento') return `<button class="btn btn-sm" onclick="sgeEnInstitucion(${JSON.stringify(r._inst)},()=>generarFormularioLicencia(${r.id}))" style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">🖨️ Formulario</button>`;
+      if(c.label==='Solicitante'){
+        const s=sgeEnInstitucion(r._inst,()=>solicitanteLicencia(r));
+        const ag=s?null:sgeAgenteDePlazasAca(r._plazasAca);
+        const nombre=s?s.nombre:(ag?(ag.apellido&&ag.nombres?`${ag.apellido}, ${ag.nombres}`:ag.nombre):'—');
+        return `<div>👩‍🏫 ${nombre}</div><div style="font-size:10px;color:#6d28d9;font-weight:700">🏛️ Cargada en ${r._instNombre}</div>`;
+      }
+      if(c.key==='plaza') return getPlazaIds(r).map(id=>{
+        const aca=r._plazasAca.includes(id);
+        const pl=aca?(DB.plazas||[]).find(p=>p.id===id):sgeEnInstitucion(r._inst,()=>resolverPlaza(id));
+        if(!pl) return '';
+        return `<div style="margin-bottom:3px"><code style="background:${aca?'#fef3c7':'#f1f5f9'};color:${aca?'#92400e':'#64748b'};padding:2px 7px;border-radius:5px;font-size:12px;font-weight:700">${pl.nroPlaza}</code>
+          <div style="font-size:11px;color:#64748b">${aca?'Plaza de esta institución':(pl.materia||'')}</div></div>`;
+      }).join('');
+      return sgeEnInstitucion(r._inst,()=>orig?orig(r):(r[c.key]??'—'));
+    };
+  });
+  const externas=sgeLicenciasExternasQueAfectan();
+  const listaLic=[...DB.licencias, ...externas];
   // Licencias sin plaza asociada pendientes (sólo aplica a docentes, que pueden tener varias plazas)
   const sinPlaza=DB.licencias.filter(l=>l.estado==='aprobada'&&l.docenteId&&!getPlazaIds(l).length).length;
   const alertaPlaza=sinPlaza?`<div class="alert-warning" style="margin-bottom:14px">
@@ -5294,8 +5320,11 @@ function renderLicencias(){
       Las licencias pueden ser de <strong>Docentes</strong> o de <strong>Preceptores/as</strong>.
     </div>
     ${alertaPlaza}
-    <div class="table-wrap">${tableHTML(cols,DB.licencias,'No hay licencias registradas',
-      r=>`ondblclick="verDetalleLic(${r.id})" style="cursor:pointer" title="Doble clic para ver más detalles"`)}</div>`;
+    ${externas.length?`<div class="alert-info" style="margin-bottom:14px;font-size:12px;background:#fffbeb;border-color:#fde68a;color:#92400e">🏛️ Se incluyen <strong>${externas.length}</strong> licencia(s) cargada(s) en otra institución que afectan plazas de esta (en amarillo). Son de consulta: las gestiona la institución donde se cargaron.</div>`:''}
+    <div class="table-wrap">${tableHTML(cols,listaLic,'No hay licencias registradas',
+      r=>r._externa
+        ? `ondblclick="sgeEnInstitucion(${JSON.stringify(r._inst)},()=>verDetalleLic(${r.id}))" style="cursor:pointer;background:#fffbeb" title="Licencia cargada en ${r._instNombre} — doble clic para ver el detalle"`
+        : `ondblclick="verDetalleLic(${r.id})" style="cursor:pointer" title="Doble clic para ver más detalles"`)}</div>`;
 }
 
 // Vista de detalle de una licencia (se abre con doble clic sobre la fila)
@@ -8205,7 +8234,32 @@ function renderDocenteInicio(doc){
 function sgeEnInstitucion(instId, fn){
   const dbAntes=DB, instAntes=currentInstitucionId;
   if(instId!=null && INST_DATA[instId]){ DB=INST_DATA[instId]; currentInstitucionId=instId; }
-  try{ fn(); } finally { DB=dbAntes; currentInstitucionId=instAntes; }
+  try{ return fn(); } finally { DB=dbAntes; currentInstitucionId=instAntes; }
+}
+// Licencias cargadas en OTRAS instituciones que tienen asociada alguna plaza
+// de la institución actual (p. ej. un/a agente que trabaja en dos escuelas y
+// la otra dirección le asoció también la plaza de acá).
+function sgeLicenciasExternasQueAfectan(){
+  const misPlazas=new Set((DB.plazas||[]).map(p=>p.id));
+  if(!misPlazas.size) return [];
+  const res=[];
+  Object.keys(INST_DATA).forEach(k=>{
+    const instId=isNaN(Number(k))?k:Number(k);
+    if(instId===currentInstitucionId || INST_DATA[k]===DB) return;
+    const inst=INSTITUCIONES.find(i=>i.id===instId);
+    (INST_DATA[k].licencias||[]).forEach(l=>{
+      const ids=getPlazaIds(l).filter(id=>misPlazas.has(id));
+      if(ids.length) res.push({...l, _externa:true, _inst:instId, _instNombre:inst?inst.nombre:`Institución ${instId}`, _plazasAca:ids});
+    });
+  });
+  return res;
+}
+// Titular (en esta institución) de alguna de las plazas: sirve para mostrar
+// quién es el/la agente aunque su legajo de la otra escuela no esté cargado acá.
+function sgeAgenteDePlazasAca(plazaIds){
+  const nros=plazaIds.map(id=>(DB.plazas||[]).find(p=>p.id===id)).filter(Boolean).map(p=>p.nroPlaza);
+  const d=(DB.designaciones||[]).find(x=>nros.includes(x.nroPlaza) && (x.estado==='activa'||x.estado==='licencia'));
+  return d ? (DB.docentes||[]).find(x=>x.id===d.docenteId) : null;
 }
 function renderMisLicencias(){
   // Licencias de TODAS las instituciones donde figura el agente (mismo DNI/CUIL),

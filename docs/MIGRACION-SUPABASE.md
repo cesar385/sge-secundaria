@@ -25,6 +25,7 @@ En **SQL Editor**, ejecutá en orden el contenido de:
 
 1. `supabase/migrations/20261120000001_esquema_seguro.sql`
 2. `supabase/migrations/20261120000002_funciones_servidor.sql`
+3. `supabase/migrations/20261120000003_licencias_que_afectan_plazas.sql`
 
 (o con la CLI: `supabase link --project-ref <ref> && supabase db push`).
 

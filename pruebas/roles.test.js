@@ -54,6 +54,15 @@ E("openSolLic(); document.getElementById('f-tipo').selectedIndex=1; document.get
 w.document.querySelector('.sge-lic-plaza[value="07-QUI4"]').checked=true;
 E("saveSolLic();");
 ok(E("JSON.stringify(INST_DATA[501].licencias.filter(l=>l.desde==='2026-12-01').map(l=>l.plazaIds))")==='[[5102]]','marcar una plaza de la otra escuela presenta la licencia sólo con esa plaza');
+// Licencia cargada en la otra institución que afecta una plaza de esta
+E("INST_DATA[501].licencias.push({id:13,docenteId:9002,tipo:'Art. 16 j',desde:'2026-11-10',estado:'pendiente',nroExp:'LA3457-00099-2026',plazaIds:[5101,5001]});");
+E("currentInstitucionId=500; DB=INST_DATA[500];");
+const gl=E("renderLicencias()");
+ok(gl.includes('LA3457-00099-2026')&&gl.includes('Cargada en Instituto Regional Federal'),'Gestión de Licencias muestra la licencia de la otra institución que afecta una plaza de acá');
+ok(gl.includes('Gestionada por Instituto Regional Federal'),'queda en modo consulta (la gestiona la otra institución)');
+const fila=gl.split('LA3457-00099-2026')[1].split('</tr>')[0];
+ok(!fila.includes('Aprobar'),'sin botones de aprobar en la licencia ajena');
+ok(fila.includes('01-GEN I')&&fila.includes('Plaza de esta institución'),'resalta la plaza de esta institución');
 E("INST_DATA[500].designaciones[0].estado='baja';");
 ok(E("JSON.stringify(sgeCuentasConRolDistinto().map(x=>x.rol))")==='["docente"]','si termina el cargo directivo, sugiere volver a Docente');
 process.exit(); },800);

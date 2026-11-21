@@ -42,7 +42,10 @@ insert into public.registros(institucion_id,coleccion,id,datos) values
  (2,'docentes','21','{"nombre":"Director (horas en EPJA)"}'),
  (2,'designaciones','550','{"docenteId":21,"curso":"1°","estado":"activa"}'),
  (2,'alumnos','201','{"nombre":"Alumno EPJA 2","curso":"2°"}'),
- (2,'certificacionesMedicas','750','{"docenteId":20,"detalle":"privado"}');
+ (2,'certificacionesMedicas','750','{"docenteId":20,"detalle":"privado"}'),
+ (1,'plazas','5001','{"nroPlaza":"01-0001"}'),
+ (2,'licencias','670','{"docenteId":22,"estado":"aprobada","plazaIds":[5001]}'),
+ (2,'licencias','671','{"docenteId":22,"estado":"aprobada","plazaIds":[]}');
 
 create or replace function public.t_como(u text) returns void language sql as
   $$ select set_config('request.jwt.claim.sub', u, false) $$;
@@ -75,6 +78,12 @@ select t_eq((select count(*)::text from public.registros where id in ('510','610
 update public.registros set datos = jsonb_set(datos,'{estado}','"aprobada"') where coleccion='licencias' and id='610';
 update public.registros set eliminado = true where coleccion='designaciones' and id='510';
 select t_eq((select eliminado::text from public.registros where coleccion='designaciones' and id='510'), 'true', 'director da de baja una designación de su escuela');
+select t_eq((select string_agg(id, ',' order by id) from public.registros where coleccion='licencias' and institucion_id=2), '670', 'director ve la licencia de otra escuela que afecta una plaza suya (y no las demás)');
+do $$ begin
+  update public.registros set datos = jsonb_set(datos,'{estado}','"rechazada"') where coleccion='licencias' and id='670';
+  if found then raise exception 'FALLA: el director modificó una licencia de otra escuela'; end if;
+  raise notice 'ok  la licencia de la otra escuela es sólo de consulta';
+end $$;
 -- En la otra escuela (donde sólo da horas) NO es director
 select t_eq(t_ids('alumnos'), '1:100,1:101,2:200', 'en la otra escuela ve sólo alumnos de su curso');
 select t_eq(t_ids('certificacionesMedicas'), '1:700', 'en la otra escuela no ve datos de salud ajenos');
