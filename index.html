@@ -6629,11 +6629,28 @@ function verHistorialPlaza(nroPlaza, institucionId){
 
   let rows = '';
   let ultimaModif = '';
+  // Licencias cargadas en OTRAS instituciones que tienen asociada esta plaza
+  // (p. ej. la otra escuela del agente cargó la licencia y le agregó esta plaza).
+  const plazaObjH = (data.plazas||[]).find(p=>p.nroPlaza===nroPlaza);
+  const licsExternas = [];
+  if(plazaObjH){
+    Object.keys(INST_DATA).forEach(k=>{
+      if(INST_DATA[k]===data) return;
+      const instK=INSTITUCIONES.find(i=>String(i.id)===String(k));
+      (INST_DATA[k].licencias||[]).forEach(l=>{
+        if(l.estado!=='anulada' && getPlazaIds(l).includes(plazaObjH.id))
+          licsExternas.push({...l, _instNombre:instK?instK.nombre:`Institución ${k}`});
+      });
+    });
+  }
+  const seSolapa=(l,des)=> (l.desde||'') <= (des.hasta||'9999-12-31') && (l.hasta||l.desde||'') >= (des.desde||'');
   hist.forEach((des, idx) => {
     const doc = data.docentes.find(d => d.id === des.docenteId) || {};
     const lics = data.licencias.filter(l => l.estado!=='anulada' && l.docenteId === des.docenteId
       && l.desde >= des.desde
-      && (!des.hasta || l.hasta <= des.hasta || l.desde <= des.hasta));
+      && (!des.hasta || l.hasta <= des.hasta || l.desde <= des.hasta))
+      .concat(licsExternas.filter(l=>seSolapa(l,des)))
+      .sort((a,b)=>(a.desde||'').localeCompare(b.desde||''));
     const esActual = des.estado === 'activa';
     // Color de fila según estado: Normal (activa sin licencia)=verde, con licencia=naranja, baja=amarillo
     let rowBg = '#fff', rowLabel='';
@@ -6706,7 +6723,7 @@ function verHistorialPlaza(nroPlaza, institucionId){
                   <td style="padding:7px 12px;font-family:monospace;font-size:11px;color:#334155;font-weight:600">[SS: ${l.id.toString().padStart(8,'0')}]</td>
                   <td style="padding:7px 12px;text-align:center;color:#334155">${fmtDate(l.desde)}</td>
                   <td style="padding:7px 12px;text-align:center;color:#334155">${fmtDate(l.hasta)}</td>
-                  <td style="padding:7px 12px;color:#334155">${l.motivo||l.tipo}</td>
+                  <td style="padding:7px 12px;color:#334155">${l.motivo||l.tipo}${l._instNombre?`<div style="font-size:10.5px;color:#92400e;font-weight:700;margin-top:2px">🏛️ Cargada en ${l._instNombre}</div>`:''}</td>
                   <td style="padding:7px 12px;font-size:11px;color:#6d28d9;font-weight:600">${l.nroExp||'—'}</td>
                   <td style="padding:7px 12px;text-align:center">${badge(l.estado)}</td>
                   <td style="padding:7px 12px;text-align:center;color:#94a3b8;font-size:11px">${fmtDate(l.hasta||l.desde)}</td>
