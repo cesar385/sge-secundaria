@@ -58,11 +58,11 @@ ok(E("JSON.stringify(INST_DATA[501].licencias.filter(l=>l.desde==='2026-12-01').
 E("INST_DATA[501].licencias.push({id:13,docenteId:9002,tipo:'Art. 16 j',desde:'2026-11-10',estado:'pendiente',nroExp:'LA3457-00099-2026',plazaIds:[5101,5001]});");
 E("currentInstitucionId=500; DB=INST_DATA[500];");
 const gl=E("renderLicencias()");
-ok(gl.includes('LA3457-00099-2026')&&gl.includes('Cargada en Instituto Regional Federal'),'Gestión de Licencias muestra la licencia de la otra institución que afecta una plaza de acá');
+ok(gl.includes('LA3457-00099-2026')&&gl.includes('🏛️ Instituto Regional Federal'),'Gestión de Licencias muestra la licencia de la otra institución que afecta una plaza de acá');
 ok(gl.includes('Gestionada por Instituto Regional Federal'),'queda en modo consulta (la gestiona la otra institución)');
 const fila=gl.split('LA3457-00099-2026')[1].split('</tr>')[0];
 ok(!fila.includes('Aprobar'),'sin botones de aprobar en la licencia ajena');
-ok(fila.includes('01-GEN I')&&fila.includes('Plaza de esta institución'),'resalta la plaza de esta institución');
+ok(fila.includes('01-GEN I')&&fila.includes('#fef3c7'),'resalta la plaza de esta institución');
 // Historial de la plaza: incluye la licencia cargada en la otra institución
 E("verHistorialPlaza('01-GEN I',500)");
 const hp=(w.document.querySelector('.main-content')||{}).innerHTML||'';
@@ -70,6 +70,6 @@ ok(hp.includes('LA3457-00099-2026')&&!hp.includes('Cargada en'),'el historial de
 E("openVerPlaza(5001)");
 const vp=(w.document.querySelector('.main-content')||{}).innerHTML||'';
 ok(vp.includes('Licencias asociadas a esta plaza (2)')&&vp.includes('LA3457-00099-2026'),'la ficha de la plaza cuenta la licencia de la otra institución');
-E("INST_DATA[500].designaciones[0].estado='baja';");
+E("currentUser=USUARIOS.find(u=>u.rol==='admin');"); const rd=E("renderDocentes('32485','lista')"); ok(rd.includes('acc-menu')&&rd.includes('Sancuns'),'vista Docentes: busca por DNI y muestra menú de acciones'); ok(E("renderPreceptoresAdmin()").includes('Preceptores'),'vista Preceptores se dibuja'); E("currentInstitucionId=500; DB=INST_DATA[500];"); const vpz=E("renderPlazas()"); ok(vpz.includes('acc-menu')&&vpz.includes('01-GEN I'),'vista Plazas con menú de acciones'); const vl=E("renderLicencias('todas')"); ok(vl.includes('acc-menu')&&vl.includes('LA3457-00099-2026'),'vista Licencias con menú e incluye la externa'); const vd=E("renderDesignaciones('','todas')"); ok(vd.includes('acc-menu')&&vd.includes('Notificación'),'vista Designaciones con menú (notificación adentro)'); ok(E("_tablaDesigHTML('gen i')").includes('01-GEN I')&&!E("_tablaDesigHTML('zzz')").includes('01-GEN I'),'búsqueda en Designaciones'); E("INST_DATA[500].designaciones[0].estado='baja';");
 ok(E("JSON.stringify(sgeCuentasConRolDistinto().map(x=>x.rol))")==='["docente"]','si termina el cargo directivo, sugiere volver a Docente');
 process.exit(); },800);

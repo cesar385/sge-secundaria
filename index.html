@@ -279,6 +279,27 @@
     .cards-grid { grid-template-columns: 1fr; }
     .three-col { grid-template-columns: 1fr; }
   }
+  /* ── Menú de acciones compacto (⋯) en listados ── */
+  .acc-fila{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}
+  .acc-menu{position:relative}
+  .acc-menu>summary{list-style:none;cursor:pointer;border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:5px 10px;font-weight:800;color:#334155;font-size:13px;line-height:1;user-select:none}
+  .acc-menu>summary::-webkit-details-marker{display:none}
+  .acc-menu[open]>summary{background:#f1f5f9}
+  .acc-menu-lista{position:absolute;right:0;top:calc(100% + 4px);z-index:50;min-width:210px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 25px rgba(15,23,42,.15);padding:6px;display:flex;flex-direction:column}
+  .acc-menu-lista button{all:unset;cursor:pointer;padding:8px 10px;border-radius:6px;font-size:13px;color:#1e293b;display:flex;gap:8px;align-items:center;white-space:nowrap}
+  .acc-menu-lista button:hover{background:#f1f5f9}
+  .acc-menu-lista button.peligro{color:#b91c1c}
+  .acc-menu-lista hr{border:0;border-top:1px solid #f1f5f9;margin:4px 0}
+  .acc-fila .btn{white-space:nowrap}
+  .tabla-compacta td{vertical-align:middle}
+  /* La columna de acciones queda fija a la derecha aunque la tabla tenga scroll horizontal */
+  .tabla-compacta td:last-child,.tabla-compacta th:last-child{position:sticky;right:0;background:#fff;box-shadow:-8px 0 8px -8px rgba(15,23,42,.18);z-index:1}
+  .tabla-compacta th:last-child{background:#f8fafc}
+  .tabla-compacta td:last-child:has(details[open]){z-index:20}
+  .persona-celda .nom{font-weight:700;color:#1e293b}
+  .persona-celda .sub{font-size:11px;color:#64748b;margin-top:1px;max-width:200px;overflow-wrap:anywhere}
+  .tab-btn .cnt{display:inline-block;margin-left:6px;background:#e2e8f0;color:#334155;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700}
+  .tab-btn.active .cnt{background:rgba(255,255,255,.3);color:inherit}
 </style>
 </head>
 <body>
@@ -4412,57 +4433,103 @@ function renderDashboard(){
 }
 
 // ─── DOCENTES ───
-function renderDocentes(buscar='',tab='lista'){
+// Menú "⋯" con acciones secundarias de una fila (cierra al elegir o al tocar fuera).
+function menuAcciones(items){
+  const it=items.filter(Boolean);
+  if(!it.length) return '';
+  return `<details class="acc-menu" onclick="event.stopPropagation()"><summary title="Más acciones">⋯</summary><div class="acc-menu-lista">${
+    it.map(x=>x==='-'?'<hr>':`<button type="button" class="${x.peligro?'peligro':''}" title="${x.title||''}" onclick="this.closest('details').open=false;${x.onclick}">${x.label}</button>`).join('')
+  }</div></details>`;
+}
+document.addEventListener('click',e=>{ document.querySelectorAll('details.acc-menu[open]').forEach(d=>{ if(!d.contains(e.target)) d.open=false; }); });
+// La tabla tiene scroll horizontal: el menú se ubica "fijo" en pantalla para no quedar recortado.
+document.addEventListener('toggle',e=>{
+  const d=e.target;
+  if(!d.classList || !d.classList.contains('acc-menu') || !d.open) return;
+  document.querySelectorAll('details.acc-menu[open]').forEach(x=>{ if(x!==d) x.open=false; });
+  const r=d.querySelector('summary').getBoundingClientRect(), l=d.querySelector('.acc-menu-lista');
+  l.style.position='fixed'; l.style.right=Math.max(8,window.innerWidth-r.right)+'px'; l.style.top=(r.bottom+4)+'px';
+  const h=l.offsetHeight;
+  if(r.bottom+4+h>window.innerHeight-8) l.style.top=Math.max(8,r.top-4-h)+'px';
+},true);
+window.addEventListener('scroll',()=>document.querySelectorAll('details.acc-menu[open]').forEach(d=>d.open=false),true);
+function _pctLegajoDoc(r){
+  const camposObl=['apellido','nombres','dni','cuil','fechaNac','domicilio','telefono','email','tituloHab','cbu'];
+  const docsObl=['docTitulo','docDNI','docFoto','docAntecedentes'];
+  const docs=docsObl.filter(k=>r[k]).length;
+  const pct=Math.round((camposObl.filter(c=>r[c]&&String(r[c]).trim()).length+docs)/(camposObl.length+docsObl.length)*100);
+  return {pct,docs};
+}
+function _nombreDocente(r){ return (r.apellido&&r.nombres)?`${r.apellido}, ${r.nombres}`:(r.nombre||'—'); }
+function _filtrarDocentes(buscar,tab){
   let data=DB.docentes;
-  if(buscar) data=data.filter(d=>d.nombre.toLowerCase().includes(buscar.toLowerCase()));
   const tabFilter={lista:null,altas:'activo',bajas:'baja',renuncias:'renuncia'};
   if(tabFilter[tab]) data=data.filter(d=>d.estado===tabFilter[tab]);
-  const tabs=['lista','altas','bajas','renuncias'];
-  const tabsHTML=tabs.map(t=>`<button class="tab-btn${tab===t?' active':''}" onclick="navigate_docentes('${t}','')">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`).join('');
-
-  // Alert docs incompletos
-  const sinDocs=DB.docentes.filter(d=>d.estado==='activo'&&[d.docTitulo,d.docDNI,d.docFoto,d.docAntecedentes].filter(Boolean).length<4).length;
-  const alertaHTML=sinDocs?`<div class="alert-warning" style="margin-bottom:14px">⚠️ <strong>${sinDocs} docente${sinDocs>1?'s':''}</strong> con documentación incompleta.</div>`:'';
-
+  const q=String(buscar||'').toLowerCase().trim();
+  if(q){
+    const qd=q.replace(/\D/g,'');
+    data=data.filter(d=>[d.nombre,d.apellido,d.nombres,d.materia,d.cargo,d.email].some(x=>String(x||'').toLowerCase().includes(q))
+      || (qd && (String(d.dni||'').replace(/\D/g,'').includes(qd) || String(d.cuil||'').replace(/\D/g,'').includes(qd))));
+  }
+  return data.slice().sort((a,b)=>_nombreDocente(a).localeCompare(_nombreDocente(b),'es'));
+}
+function _tablaDocentesHTML(buscar,tab){
+  const data=_filtrarDocentes(buscar,tab);
+  const puedeEditar=currentUser.rol!=='secretario';
   const cols=[
-    {key:'nombre',  label:'Nombre', render:r=>`<div><div style="font-weight:700">${r.apellido||r.nombre}, ${r.nombres||''}</div><div style="font-size:11px;color:#64748b">${r.email||''}</div></div>`},
-    {key:'dni',     label:'DNI'},
-    {key:'materia', label:'Materia'},
-    {key:'cargo',   label:'Cargo'},
-    {key:'horas',   label:'Hs'},
-    {key:'otrosCargos', label:'Otros Cargos', render:r=>{
+    {key:'nombre',  label:'Docente', render:r=>`<div class="persona-celda"><div class="nom">${_nombreDocente(r)}</div><div class="sub">DNI ${r.dni||'—'}${r.email?` · ${r.email}`:''}</div></div>`},
+    {key:'cargo',   label:'Cargo / Materia', render:r=>`<div style="font-size:13px;font-weight:600;color:#334155">${r.cargo||'—'}</div><div style="font-size:11.5px;color:#64748b;max-width:240px">${r.materia||''}</div>`},
+    {key:'horas',   label:'Hs', render:r=>`<span style="font-weight:700">${r.horas||'—'}</span>`},
+    {key:'otrosCargos', label:'Otros cargos', render:r=>{
       const partes=[];
       const prec=DB.preceptores.find(p=>p.docenteId===r.id&&p.estado==='activo');
       if(prec) partes.push(`<span class="badge badge-teal" title="Preceptor/a">🗂️ Preceptor/a (${prec.turno})</span>`);
       const cargoUser=USUARIOS.find(u=>u.docenteId===r.id&&(u.rol==='secretario'||u.rol==='director')&&u.estado!=='inactivo'&&u.institucionId===currentInstitucionId);
-      if(cargoUser) partes.push(`<span class="badge badge-purple" title="${ROL_LABEL[cargoUser.rol]}">${cargoUser.rol==='director'?'🏫':'🗂️'} ${ROL_LABEL[cargoUser.rol]} (${cargoUser.turnoCargo||'—'})</span>`);
-      return partes.length?`<div style="display:flex;flex-direction:column;gap:3px">${partes.join('')}</div>`:'<span style="color:#94a3b8;font-size:12px">—</span>';
+      if(cargoUser) partes.push(`<span class="badge badge-purple" title="${ROL_LABEL[cargoUser.rol]}">${cargoUser.rol==='director'?'🏫':'🗂️'} ${ROL_LABEL[cargoUser.rol]}${cargoUser.turnoCargo?` (${cargoUser.turnoCargo})`:''}</span>`);
+      return partes.length?`<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start">${partes.join('')}</div>`:'<span style="color:#cbd5e1">—</span>';
     }},
     {key:'legajo',  label:'Legajo', render:r=>{
-      const camposObl=['apellido','nombres','dni','cuil','fechaNac','domicilio','telefono','email','tituloHab','cbu'];
-      const docsObl=['docTitulo','docDNI','docFoto','docAntecedentes'];
-      const docs=docsObl.filter(k=>r[k]).length;
-      const pct=Math.round((camposObl.filter(c=>r[c]&&String(r[c]).trim()).length+docs)/(camposObl.length+docsObl.length)*100);
+      const {pct,docs}=_pctLegajoDoc(r);
       const color=pct<60?'#991b1b':pct<85?'#854d0e':'#166534';
-      return `<div style="min-width:80px"><div style="font-size:11px;font-weight:700;color:${color}">${pct}% · Docs ${docs}/4</div><div class="progress-bar-bg" style="height:5px;margin-top:3px"><div class="progress-bar" style="width:${pct}%;background:${color};height:5px"></div></div></div>`;
+      return `<div style="min-width:90px" title="Datos y documentación del legajo"><div style="font-size:11px;font-weight:700;color:${color}">${pct}% · Docs ${docs}/4</div><div class="progress-bar-bg" style="height:5px;margin-top:3px"><div class="progress-bar" style="width:${pct}%;background:${color};height:5px"></div></div></div>`;
     }},
     {key:'estado',  label:'Estado', render:r=>badge(r.estado)},
-    {key:'acc',     label:'Acciones', render:r=>`
-      <div style="display:flex;gap:5px;flex-wrap:wrap">
+    {key:'acc',     label:'', render:r=>`<div class="acc-fila">
         <button class="btn btn-primary btn-sm" onclick="verLegajoDocente(${r.id})">📋 Legajo</button>
-        ${currentUser.rol!=='secretario'?`<button class="btn btn-ghost btn-sm" onclick="openEditDoc(${r.id})">✏️ Editar</button>`:''}
-        ${r.estado==='activo'?`<button class="btn btn-danger btn-sm" onclick="openBajaDoc(${r.id})">🚫 Baja</button>
-        <button class="btn btn-warning btn-sm" onclick="openRenunciaDoc(${r.id})">📄 Renuncia</button>
-        <button class="btn btn-ghost btn-sm" onclick="openGenerarFU01Traslado('docente',${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9" title="Generar FU-01 — Rubro 4.3 Traslados">🚶 Traslado</button>
-        <button class="btn btn-ghost btn-sm" onclick="openGenerarFU01Permuta('docente',${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9" title="Generar FU-01 — Rubro 4.4 Permutas">🔄 Permuta</button>`
-        :`<button class="btn btn-ghost btn-sm" onclick="generarFU01BajaCese('docente',${r.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700" title="Generar FU-01 — Rubro 4.5 Baja o Cese">🖨️ FU-01 Baja/Cese</button>`}
+        ${puedeEditar?`<button class="btn btn-ghost btn-sm" onclick="openEditDoc(${r.id})" title="Editar datos">✏️</button>`:''}
+        ${menuAcciones(r.estado==='activo'?[
+          {label:'🚶 Traslado (FU-01)', title:'Generar FU-01 — Rubro 4.3 Traslados', onclick:`openGenerarFU01Traslado('docente',${r.id})`},
+          {label:'🔄 Permuta (FU-01)',  title:'Generar FU-01 — Rubro 4.4 Permutas',  onclick:`openGenerarFU01Permuta('docente',${r.id})`},
+          '-',
+          {label:'📄 Registrar renuncia', onclick:`openRenunciaDoc(${r.id})`},
+          {label:'🚫 Dar de baja', peligro:true, onclick:`openBajaDoc(${r.id})`},
+        ]:[
+          {label:'🖨️ FU-01 Baja/Cese', title:'Generar FU-01 — Rubro 4.5 Baja o Cese', onclick:`generarFU01BajaCese('docente',${r.id})`},
+        ])}
       </div>`},
   ];
+  return `<div style="font-size:12px;color:#64748b;margin:0 0 8px">${data.length} docente${data.length!==1?'s':''}${buscar?` para “${String(buscar).replace(/[<>&"]/g,'')}”`:''}</div>
+    <div class="table-wrap tabla-compacta">${tableHTML(cols,data,buscar?'Ningún docente coincide con la búsqueda':'No hay docentes en esta categoría')}</div>`;
+}
+let _docTab='lista';
+function renderDocentes(buscar='',tab='lista'){
+  _docTab=tab;
+  const conteo={lista:DB.docentes.length, altas:DB.docentes.filter(d=>d.estado==='activo').length,
+    bajas:DB.docentes.filter(d=>d.estado==='baja').length, renuncias:DB.docentes.filter(d=>d.estado==='renuncia').length};
+  const nombresTab={lista:'Todos',altas:'Activos',bajas:'Bajas',renuncias:'Renuncias'};
+  const tabsHTML=Object.keys(nombresTab).map(t=>`<button class="tab-btn${tab===t?' active':''}" onclick="navigate_docentes('${t}','')">${nombresTab[t]}<span class="cnt">${conteo[t]}</span></button>`).join('');
+  const sinDocs=DB.docentes.filter(d=>d.estado==='activo'&&_pctLegajoDoc(d).docs<4).length;
+  const alertaHTML=sinDocs?`<div class="alert-warning" style="margin-bottom:14px">⚠️ <strong>${sinDocs} docente${sinDocs>1?'s':''}</strong> con documentación incompleta.</div>`:'';
   return `${sectionHeader('Gestión de Docentes',`<button class="btn btn-success" onclick="openAltaDoc()">+ Nueva Alta</button>`)}
     <div class="tabs">${tabsHTML}</div>
     ${alertaHTML}
-    <input class="search-input" placeholder="🔍 Buscar docente..." value="${buscar}" oninput="navigate_docentes('${tab}',this.value)">
-    <div class="table-wrap">${tableHTML(cols,data,'No hay docentes en esta categoría')}</div>`;
+    <input class="search-input" id="buscar-docentes" placeholder="🔍 Buscar por nombre, DNI/CUIL, materia o cargo…" value="${String(buscar).replace(/"/g,'&quot;')}" oninput="filtrarDocentesLista(this.value)">
+    <div id="lista-docentes">${_tablaDocentesHTML(buscar,tab)}</div>`;
+}
+// Al escribir sólo se actualiza la tabla (el buscador no pierde el foco).
+function filtrarDocentesLista(q){
+  const cont=document.getElementById('lista-docentes');
+  if(cont) cont.innerHTML=_tablaDocentesHTML(q,_docTab); else navigate_docentes(_docTab,q);
 }
 function navigate_docentes(tab,buscar){
   document.querySelector('.main-content').innerHTML=renderDocentes(buscar,tab);
@@ -4675,87 +4742,85 @@ function toggleHabilitarPlaza(id){
   refreshCurrentSection();
 }
 
+let _plazasFiltro='activas';
+function _filtrarPlazas(filtro,q){
+  const todas=DB.plazas;
+  let data = filtro==='activas'  ? todas.filter(p=>p.estado!=='cerrada') :
+             filtro==='cerradas' ? todas.filter(p=>p.estado==='cerrada') : todas;
+  q=String(q||'').toLowerCase().trim();
+  if(q) data=data.filter(p=>{ const oc=plazaOcupante(p.nroPlaza);
+    return [p.nroPlaza,p.materia,p.curso,p.turno,p.nivel,oc&&oc.nombre].some(x=>String(x||'').toLowerCase().includes(q)); });
+  return data.slice().sort((a,b)=>String(a.nroPlaza).localeCompare(String(b.nroPlaza),'es',{numeric:true}));
+}
+function _tablaPlazasHTML(filtro,q){
+  const hoy=new Date().toISOString().split('T')[0];
+  const data=_filtrarPlazas(filtro,q);
+  const puedeGestionar=canManagePlazas();
+  const cols=[
+    {key:'nroPlaza', label:'Plaza', render:r=>`
+      <code style="background:#dbeafe;color:#1e40af;padding:3px 8px;border-radius:6px;font-size:12px;font-weight:800;white-space:nowrap">${r.nroPlaza}</code>
+      ${r.obs?`<div title="${r.obs}" style="font-size:10px;color:#94a3b8;margin-top:3px;max-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.obs}</div>`:''}`},
+    {key:'materia', label:'Materia / Espacio', render:r=>`<div style="font-weight:600;color:#334155">${r.materia}</div>
+      <div style="font-size:11px;color:#64748b">${[r.nivel, r.curso&&r.curso!=='—'?r.curso:'', r.horasCatedra?`${r.horasCatedra} hs`:''].filter(Boolean).join(' · ')}</div>`},
+    {key:'turno',   label:'Turno',    render:r=>`<span class="badge ${r.turno==='Mañana'?'badge-blue':r.turno==='Tarde'?'badge-yellow':r.turno==='Noche'?'badge-purple':'badge-teal'}">${r.turno}</span>`},
+    {key:'desig',   label:'Ocupación',render:r=>{
+      const oc=plazaOcupante(r.nroPlaza);
+      if(!oc) return '<span class="badge badge-gray">Vacante</span>';
+      return `<div style="font-size:12px"><div style="font-weight:600;color:#334155">${oc.nombre}</div>
+        <div style="margin-top:2px">${oc.tipo==='docente'?badgeCaracter(oc.detalle):'<span class="badge badge-teal">🗂️ Preceptor/a</span>'}</div></div>`;
+    }},
+    {key:'vig',     label:'Vigencia', render:r=>{
+      const tc=TIPO_CIERRE_BADGE[r.tipoCierre]||'—';
+      const f=r.tipoCierre==='fecha_limite'&&r.fechaCierre
+        ?`<div style="font-size:11px;color:${r.fechaCierre<hoy?'#991b1b':'#854d0e'};font-weight:600;margin-top:3px">hasta ${fmtDate(r.fechaCierre)}</div>`:'';
+      return `<div style="font-size:11px;color:#64748b;margin-bottom:3px">desde ${fmtDate(r.fechaCreacion)}</div>${tc}${f}`;
+    }},
+    {key:'estPl',   label:'Estado',   render:r=>`<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start">${badgePlazaEstado(r)}${r.habilitada===false?badgeHabilitada(r):''}</div>`},
+    {key:'acc',     label:'', render:r=>{
+      const ocupante=plazaOcupante(r.nroPlaza);
+      const puedeAsignar=puedeGestionar&&r.estado==='activa'&&r.habilitada!==false&&!ocupante;
+      return `<div class="acc-fila">
+        <button class="btn btn-ghost btn-sm" onclick="openVerPlaza(${r.id})">👁 Ver</button>
+        ${puedeAsignar?`<button class="btn btn-primary btn-sm" onclick="openDesig(${r.id})" title="Asignar docente">🧑‍🏫 Asignar</button>`:''}
+        ${menuAcciones([
+          {label:'🕓 Historial de la plaza', onclick:`verHistorialPlaza('${r.nroPlaza}')`},
+          puedeGestionar&&{label:'✏️ Editar plaza', onclick:`openEditPlaza(${r.id})`},
+          puedeAsignar&&{label:'🗂️ Asignar preceptor/a', onclick:`openAsignarPrecPlaza(${r.id})`},
+          puedeGestionar&&'-',
+          puedeGestionar&&{label:r.habilitada===false?'✅ Habilitar':'🚫 Deshabilitar', onclick:`toggleHabilitarPlaza(${r.id})`},
+          puedeGestionar&&r.estado==='activa'&&{label:'🔒 Cerrar plaza', onclick:`cerrarPlaza(${r.id})`},
+          puedeGestionar&&{label:'🗑️ Eliminar', peligro:true, onclick:`eliminarPlaza(${r.id})`},
+        ])}
+      </div>`;}},
+  ];
+  return `<div style="font-size:12px;color:#64748b;margin:0 0 8px">${data.length} plaza${data.length!==1?'s':''}</div>
+    <div class="table-wrap tabla-compacta">${tableHTML(cols,data,q?'Ninguna plaza coincide con la búsqueda':'Sin plazas registradas',
+      r=>`ondblclick="openVerPlaza(${r.id})" style="cursor:pointer" title="Doble clic para ver la plaza"`)}</div>`;
+}
 function renderPlazas(filtro='activas'){
+  _plazasFiltro=filtro;
   const hoy=new Date().toISOString().split('T')[0];
   const todas=DB.plazas;
-  const data = filtro==='activas'  ? todas.filter(p=>p.estado!=='cerrada') :
-               filtro==='cerradas' ? todas.filter(p=>p.estado==='cerrada') : todas;
-
-  // Cards resumen
   const activas=todas.filter(p=>p.estado==='activa').length;
   const cerradas=todas.filter(p=>p.estado==='cerrada').length;
   const proxVencer=todas.filter(p=>p.tipoCierre==='fecha_limite'&&p.fechaCierre&&
     p.fechaCierre>hoy&&Math.ceil((new Date(p.fechaCierre)-new Date())/(1000*60*60*24))<=30).length;
   const vencidas=todas.filter(p=>p.tipoCierre==='fecha_limite'&&p.fechaCierre&&p.fechaCierre<hoy&&p.estado!=='cerrada').length;
-
-  const tabs=['activas','cerradas','todas'];
+  const conteo={activas:todas.filter(p=>p.estado!=='cerrada').length, cerradas, todas:todas.length};
   const tabLabels={activas:'Activas',cerradas:'Cerradas',todas:'Todas'};
-  const tabsHTML=tabs.map(t=>`<button class="tab-btn${filtro===t?' active':''}" onclick="renderPlazasFiltro('${t}')">${tabLabels[t]}</button>`).join('');
-
-  // Alerta vencidas
+  const tabsHTML=Object.keys(tabLabels).map(t=>`<button class="tab-btn${filtro===t?' active':''}" onclick="renderPlazasFiltro('${t}')">${tabLabels[t]}<span class="cnt">${conteo[t]}</span></button>`).join('');
   const alertaVencidas=vencidas?`<div class="alert-warning" style="margin-bottom:14px">
-    ⚠️ <strong>${vencidas} plaza${vencidas>1?'s':''} con fecha límite vencida</strong> y estado activo.
-    Revisalas y cerrá las que correspondan.
-  </div>`:'';
-
-  const cols=[
-    {key:'nroPlaza', label:'N° Plaza', render:r=>`
-      <div>
-        <code style="background:#dbeafe;color:#1e40af;padding:3px 8px;border-radius:6px;font-size:12px;font-weight:800">${r.nroPlaza}</code>
-        ${r.obs?`<div title="${r.obs}" style="font-size:10px;color:#94a3b8;margin-top:3px;max-width:100px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.obs}</div>`:''}
-      </div>`},
-    {key:'materia', label:'Materia / Espacio', render:r=>`<div style="font-weight:600;color:#334155">${r.materia}</div><div style="font-size:11px;color:#64748b">${r.nivel}</div>`},
-    {key:'turno',   label:'Turno',    render:r=>`<span class="badge ${r.turno==='Mañana'?'badge-blue':r.turno==='Tarde'?'badge-yellow':r.turno==='Noche'?'badge-purple':'badge-teal'}">${r.turno}</span>`},
-    {key:'horas',   label:'Hs',       render:r=>`<span style="font-weight:700">${r.horasCatedra}</span>`},
-    {key:'curso',   label:'Curso'},
-    {key:'creacion',label:'Creación', render:r=>fmtDate(r.fechaCreacion)},
-    {key:'cierre',  label:'Cierre',   render:r=>{
-      const tc=TIPO_CIERRE_BADGE[r.tipoCierre]||'—';
-      const fechaStr=r.tipoCierre==='fecha_limite'&&r.fechaCierre
-        ?`<div style="font-size:11px;color:${r.fechaCierre<hoy?'#991b1b':'#854d0e'};font-weight:600;margin-top:3px">${fmtDate(r.fechaCierre)}</div>`:'';
-      return tc+fechaStr;
-    }},
-    {key:'estPl',   label:'Estado',   render:r=>badgePlazaEstado(r)},
-    {key:'habPl',   label:'Habilitación', render:r=>badgeHabilitada(r)},
-    {key:'desig',   label:'Ocupación',render:r=>{
-      const oc=plazaOcupante(r.nroPlaza);
-      if(!oc) return '<span class="badge badge-gray">Sin designación</span>';
-      if(oc.tipo==='docente'){
-        return `<div style="font-size:12px"><div style="font-weight:600;color:#334155">${oc.nombre}</div>
-          <div style="margin-top:2px">${badgeCaracter(oc.detalle)}</div></div>`;
-      }
-      return `<div style="font-size:12px"><div style="font-weight:600;color:#334155">${oc.nombre}</div>
-        <div style="margin-top:2px"><span class="badge badge-teal">🗂️ Preceptor/a</span></div></div>`;
-    }},
-    {key:'acc',     label:'', render:r=>{
-      const puedeGestionar=canManagePlazas();
-      const ocupante=plazaOcupante(r.nroPlaza);
-      const puedeAsignar=puedeGestionar&&r.estado==='activa'&&r.habilitada!==false&&!ocupante;
-      return `
-      <div style="display:flex;gap:5px;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" onclick="openVerPlaza(${r.id})">👁 Ver</button>
-        ${puedeGestionar?`<button class="btn btn-ghost btn-sm" onclick="openEditPlaza(${r.id})">✏️</button>`:''}
-        ${puedeAsignar?`<button class="btn btn-primary btn-sm" onclick="openDesig(${r.id})">🧑‍🏫 Asignar Docente</button>`:''}
-        ${puedeAsignar?`<button class="btn btn-teal btn-sm" onclick="openAsignarPrecPlaza(${r.id})">🗂️ Asignar Preceptor/a</button>`:''}
-        ${puedeGestionar&&r.estado==='activa'?`<button class="btn btn-danger btn-sm" onclick="cerrarPlaza(${r.id})">🔒 Cerrar</button>`:''}
-        ${puedeGestionar?`<button class="btn ${r.habilitada===false?'btn-success':'btn-warning'} btn-sm" onclick="toggleHabilitarPlaza(${r.id})">${r.habilitada===false?'✅ Habilitar':'🚫 Deshabilitar'}</button>`:''}
-        ${puedeGestionar?`<button class="btn btn-danger btn-sm" onclick="eliminarPlaza(${r.id})">🗑️ Eliminar</button>`:''}
-      </div>`;}},
-  ];
-
+    ⚠️ <strong>${vencidas} plaza${vencidas>1?'s':''} con fecha límite vencida</strong> y estado activo. Revisalas y cerrá las que correspondan.</div>`:'';
   const puedeGestionar=canManagePlazas();
   const btnHeader = puedeGestionar
     ? `<button class="btn btn-success" onclick="openNuevaPlaza()">+ Nueva Plaza</button>`
     : `<button class="btn btn-success" onclick="openSolicitarPlaza()">📝 Solicitar Alta de Plaza</button>`;
-
   const avisoSolicitud = !puedeGestionar
     ? `<div class="alert-warning" style="margin-bottom:14px">
         ℹ️ Sólo el Administrador puede crear, editar, asignar, cerrar, eliminar o habilitar/deshabilitar plazas.
         Si necesitás una plaza nueva, usá <strong>"Solicitar Alta de Plaza"</strong> o la sección
         <button class="btn btn-ghost btn-sm" style="margin-left:4px" onclick="navigate('solicitudes-plaza')">📝 Solicitudes de Plaza →</button>
-      </div>`
-    : '';
-
+      </div>` : '';
   return `${sectionHeader('Registro de Plazas',btnHeader)}
     <div class="cards-grid" style="margin-bottom:16px">
       ${cardHTML('Plazas Activas',activas,'🏛️','#1a3a5c')}
@@ -4763,10 +4828,10 @@ function renderPlazas(filtro='activas'){
       ${proxVencer?cardHTML('Próximas a vencer',proxVencer,'⚠️','#854d0e','en 30 días'):''}
       ${vencidas?cardHTML('Fecha vencida',vencidas,'🔴','#991b1b','revisar'):''}
     </div>
-    ${avisoSolicitud}
-    ${alertaVencidas}
+    ${avisoSolicitud}${alertaVencidas}
     <div class="tabs" style="margin-bottom:14px">${tabsHTML}</div>
-    <div class="table-wrap">${tableHTML(cols,data,'Sin plazas registradas')}</div>`;
+    <input class="search-input" placeholder="🔍 Buscar por N° de plaza, materia, curso, turno u ocupante…" oninput="document.getElementById('lista-plazas').innerHTML=_tablaPlazasHTML(_plazasFiltro,this.value)">
+    <div id="lista-plazas">${_tablaPlazasHTML(filtro,'')}</div>`;
 }
 
 function renderPlazasFiltro(f){ document.querySelector('.main-content').innerHTML=renderPlazas(f); }
@@ -5250,109 +5315,109 @@ function solicitanteLicencia(lic){
   }
   return null;
 }
-function renderLicencias(){
+let _licFiltro='todas';
+function _accionesLicHTML(r){
+  if(r._externa) return `<div class="acc-fila"><span style="font-size:11px;color:#64748b;white-space:nowrap">Gestionada por ${r._instNombre}</span>
+    ${menuAcciones([{label:'🖨️ Formulario', onclick:`sgeEnInstitucion(${JSON.stringify(r._inst)},()=>generarFormularioLicencia(${r.id}))`},
+                    {label:'🔍 Ver detalle', onclick:`sgeEnInstitucion(${JSON.stringify(r._inst)},()=>verDetalleLic(${r.id}))`}])}</div>`;
+  const conPlaza=licenciaTienePlazaAsociada(r);
+  const agente=r.docenteId||r.preceptorId;
+  const gestion=puedeModificarLic(r);
+  let visibles='';
+  if(r.estado==='pendiente'){
+    visibles = conPlaza
+      ? `<button class="btn btn-success btn-sm" onclick="cambiarLic(${r.id},'aprobada')">✓ Aprobar</button>
+         <button class="btn btn-danger btn-sm" onclick="cambiarLic(${r.id},'rechazada')" title="Rechazar">✗</button>`
+      : `<button class="btn btn-primary btn-sm" onclick="asociarPlaza(${r.id})" title="Asociá una plaza para poder aprobar o rechazar">🔗 Asociar plazas</button>`;
+  } else if(r.estado==='anulada'){
+    visibles = `<span style="font-size:11px;color:#94a3b8">Anulada</span>`;
+  } else {
+    visibles = `<button class="btn btn-ghost btn-sm" onclick="verDetalleLic(${r.id})">🔍 Ver</button>`;
+  }
+  return `<div class="acc-fila">${visibles}${menuAcciones([
+    {label:'🖨️ Formulario', onclick:`generarFormularioLicencia(${r.id})`},
+    r.estado!=='pendiente'&&r.estado!=='anulada'?null:{label:'🔍 Ver detalle', onclick:`verDetalleLic(${r.id})`},
+    agente&&r.estado!=='anulada'&&{label:getPlazaIds(r).length?'🔗 Editar plazas':'🔗 Asociar plazas', onclick:`asociarPlaza(${r.id})`},
+    gestion&&'-',
+    gestion&&{label:'✏️ Modificar', onclick:`modificarLic(${r.id})`},
+    gestion&&{label:'🚫 Anular', peligro:true, onclick:`anularLic(${r.id})`},
+  ])}</div>`;
+}
+function _tablaLicenciasHTML(filtro,q){
+  const externas=sgeLicenciasExternasQueAfectan();
+  let data=[...DB.licencias, ...externas];
+  if(filtro==='pendientes') data=data.filter(l=>l.estado==='pendiente');
+  else if(filtro==='vigentes'){ const h=new Date().toISOString().split('T')[0]; data=data.filter(l=>l.estado==='aprobada'&&(!l.hasta||l.hasta>=h)); }
+  q=String(q||'').toLowerCase().trim();
+  if(q) data=data.filter(l=>{ const s=l._externa?null:solicitanteLicencia(l);
+    return [l.nroExp,l.tipo,l.motivo,l.estado,s&&s.nombre,l._instNombre].some(x=>String(x||'').toLowerCase().includes(q)); });
+  data.sort((a,b)=>(b.desde||'').localeCompare(a.desde||''));
   const cols=[
-    {key:'tipoLic', label:'Tipo de Licencia', render:r=>{
-      if(r.nroExp) return `<span style="background:#ede9fe;color:#6d28d9;padding:2px 7px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap">${r.nroExp}</span>`;
-      const codigo = LICENCIA_TIPO_REMUNERADA[r.tipo]===false ? 'LC' : 'LA';
-      return `<span style="background:#ede9fe;color:#6d28d9;padding:2px 7px;border-radius:5px;font-size:11px;font-weight:700">${codigo}</span>`;
+    {key:'tipoLic', label:'Licencia', render:r=>{
+      const codigo = r.nroExp || (LICENCIA_TIPO_REMUNERADA[r.tipo]===false ? 'LC' : 'LA');
+      return `<span style="background:#ede9fe;color:#6d28d9;padding:2px 7px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap">${codigo}</span>
+        <div style="font-size:11.5px;color:#475569;margin-top:4px;max-width:220px">${r.motivo||r.tipo||''}</div>`;
     }},
-    {key:'doc',    label:'Solicitante',    render:r=>{
+    {key:'sol', label:'Solicitante', render:r=>{
+      if(r._externa){
+        const s=sgeEnInstitucion(r._inst,()=>solicitanteLicencia(r));
+        const ag=s?null:sgeAgenteDePlazasAca(r._plazasAca);
+        const nombre=s?s.nombre:(ag?ag.nombre:'—');
+        return `<div class="persona-celda"><div class="nom">${nombre}</div><div class="sub" style="color:#6d28d9;font-weight:600">🏛️ ${r._instNombre}</div></div>`;
+      }
       const s=solicitanteLicencia(r);
       if(!s) return '—';
-      const icono = s.tipo==='docente'?'👩‍🏫':'🗂️';
-      const rolLbl = s.tipo==='docente'?'Docente':'Preceptor/a';
-      return `<div>${icono} ${s.nombre}</div><div style="font-size:10px;color:#94a3b8">${rolLbl}</div>`;
+      return `<div class="persona-celda"><div class="nom">${s.nombre}</div><div class="sub">${s.tipo==='docente'?'👩‍🏫 Docente':'🗂️ Preceptor/a'}</div></div>`;
     }},
-    {key:'desde',  label:'Desde',          render:r=>fmtDate(r.desde)},
-    {key:'hasta',  label:'Hasta',          render:r=>fmtDate(r.hasta)},
-    {key:'plaza',  label:'Plaza asociada', render:r=>{
+    {key:'per', label:'Período', render:r=>{
+      const d=(r.desde&&r.hasta)?Math.round((new Date(r.hasta)-new Date(r.desde))/864e5)+1:null;
+      return `<div style="white-space:nowrap;font-size:12.5px">${fmtDate(r.desde)} → ${fmtDate(r.hasta||r.desde)}</div>${d?`<div style="font-size:11px;color:#64748b">${d} día${d!==1?'s':''}</div>`:''}`;
+    }},
+    {key:'plaza', label:'Plazas', render:r=>{
       const ids=getPlazaIds(r);
       if(!ids.length){
-        if(r.preceptorId){
+        if(r.preceptorId && !r._externa){
           const prec=DB.preceptores.find(p=>p.id===r.preceptorId);
           const pl=prec&&prec.nroPlaza?DB.plazas.find(p=>p.nroPlaza===prec.nroPlaza):null;
-          if(pl) return `<code style="background:#ccfbf1;color:#0f766e;padding:2px 7px;border-radius:5px;font-size:12px;font-weight:700">${pl.nroPlaza}</code><div style="font-size:11px;color:#64748b">${pl.materia}</div>`;
+          if(pl) return `<code style="background:#ccfbf1;color:#0f766e;padding:2px 7px;border-radius:5px;font-size:12px;font-weight:700">${pl.nroPlaza}</code>`;
         }
         return '<span style="color:#94a3b8;font-size:12px">Sin asociar</span>';
       }
-      const pls=ids.map(id=>resolverPlaza(id)).filter(Boolean);
-      if(!pls.length) return '—';
-      return pls.map(pl=>`<div style="margin-bottom:3px">
-        <code style="background:#dbeafe;color:#1e40af;padding:2px 7px;border-radius:5px;font-size:12px;font-weight:700">${pl.nroPlaza}</code>
-        <div style="font-size:11px;color:#64748b">${pl.materia}</div>
-      </div>`).join('');
+      return `<div style="display:flex;flex-wrap:wrap;gap:4px;max-width:200px">${ids.map(id=>{
+        const aca=r._externa?r._plazasAca.includes(id):true;
+        const pl=r._externa?(aca?(DB.plazas||[]).find(p=>p.id===id):sgeEnInstitucion(r._inst,()=>resolverPlaza(id))):resolverPlaza(id);
+        if(!pl) return '';
+        return `<code title="${pl.materia||''}" style="background:${r._externa&&aca?'#fef3c7':'#dbeafe'};color:${r._externa&&aca?'#92400e':'#1e40af'};padding:2px 7px;border-radius:5px;font-size:12px;font-weight:700">${pl.nroPlaza}</code>`;
+      }).join('')}</div>`;
     }},
     {key:'estado', label:'Estado', render:r=>badge(r.estado)},
-    {key:'doc',    label:'Documento', render:r=>`
-      <button class="btn btn-sm" onclick="generarFormularioLicencia(${r.id})"
-        style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
-        🖨️ Formulario
-      </button>`},
-    {key:'acc',    label:'Acciones', render:r=>r.estado==='pendiente'?(
-      licenciaTienePlazaAsociada(r)
-        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar Plazas</button>
-            <button class="btn btn-success btn-sm" onclick="cambiarLic(${r.id},'aprobada')">✓ Aprobar</button>
-            <button class="btn btn-danger btn-sm"  onclick="cambiarLic(${r.id},'rechazada')">✗ Rechazar</button>
-          </div>`
-        : `<div style="display:flex;flex-direction:column;gap:4px">
-            <button class="btn btn-primary btn-sm" onclick="asociarPlaza(${r.id})" style="white-space:nowrap">🔗 Asociar Plazas</button>
-            <span style="font-size:10px;color:#94a3b8">Asociá una plaza para poder aprobar/rechazar</span>
-          </div>`
-    ):((r.docenteId||r.preceptorId)&&getPlazaIds(r).length)?`<button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Editar plazas</button>`
-        :(r.docenteId||r.preceptorId)?`<button class="btn btn-ghost btn-sm" onclick="asociarPlaza(${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9">🔗 Asociar plaza</button>`:''},
+    {key:'acc',    label:'', render:r=>_accionesLicHTML(r)},
   ];
-  { const c=cols.find(x=>x.key==='acc'), orig=c.render;
-    c.render=r=>`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${r.estado==='anulada'?'<span style="font-size:11px;color:#94a3b8">Trámite anulado</span>':orig(r)}${botonesGestionLic(r)}</div>`; }
-  // Licencias de otras instituciones que afectan plazas de esta: se muestran
-  // en modo consulta (las aprueba y modifica la institución donde se cargaron).
-  cols.forEach(c=>{
-    const orig=c.render;
-    c.render=r=>{
-      if(!r._externa) return orig?orig(r):(r[c.key]??'—');
-      if(c.key==='acc') return `<span style="font-size:11px;color:#64748b">Gestionada por ${r._instNombre}</span>`;
-      if(c.label==='Documento') return `<button class="btn btn-sm" onclick="sgeEnInstitucion(${JSON.stringify(r._inst)},()=>generarFormularioLicencia(${r.id}))" style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">🖨️ Formulario</button>`;
-      if(c.label==='Solicitante'){
-        const s=sgeEnInstitucion(r._inst,()=>solicitanteLicencia(r));
-        const ag=s?null:sgeAgenteDePlazasAca(r._plazasAca);
-        const nombre=s?s.nombre:(ag?(ag.apellido&&ag.nombres?`${ag.apellido}, ${ag.nombres}`:ag.nombre):'—');
-        return `<div>👩‍🏫 ${nombre}</div><div style="font-size:10px;color:#6d28d9;font-weight:700">🏛️ Cargada en ${r._instNombre}</div>`;
-      }
-      if(c.key==='plaza') return getPlazaIds(r).map(id=>{
-        const aca=r._plazasAca.includes(id);
-        const pl=aca?(DB.plazas||[]).find(p=>p.id===id):sgeEnInstitucion(r._inst,()=>resolverPlaza(id));
-        if(!pl) return '';
-        return `<div style="margin-bottom:3px"><code style="background:${aca?'#fef3c7':'#f1f5f9'};color:${aca?'#92400e':'#64748b'};padding:2px 7px;border-radius:5px;font-size:12px;font-weight:700">${pl.nroPlaza}</code>
-          <div style="font-size:11px;color:#64748b">${aca?'Plaza de esta institución':(pl.materia||'')}</div></div>`;
-      }).join('');
-      return sgeEnInstitucion(r._inst,()=>orig?orig(r):(r[c.key]??'—'));
-    };
-  });
-  const externas=sgeLicenciasExternasQueAfectan();
-  const listaLic=[...DB.licencias, ...externas];
-  // Licencias sin plaza asociada pendientes (sólo aplica a docentes, que pueden tener varias plazas)
-  const sinPlaza=DB.licencias.filter(l=>l.estado==='aprobada'&&l.docenteId&&!getPlazaIds(l).length).length;
-  const alertaPlaza=sinPlaza?`<div class="alert-warning" style="margin-bottom:14px">
-    📋 <strong>${sinPlaza} licencia${sinPlaza>1?'s':''} aprobada${sinPlaza>1?'s':''}</strong> sin plaza asociada.
-    Hacé clic en <em>"🔗 Asociar plaza"</em> para vincularlas.
-  </div>`:'';
-  return `${sectionHeader('Gestión de Licencias',`<button class="btn btn-success" onclick="irACargarTramite(2)">+ Nueva Licencia</button>`)}
-    <div class="alert-info" style="margin-bottom:14px;font-size:12px">
-      📄 Podés generar e imprimir el formulario oficial de solicitud de licencia para presentar (o entregar al/a la solicitante) en la institución.
-      Las licencias pueden ser de <strong>Docentes</strong> o de <strong>Preceptores/as</strong>.
-    </div>
-    ${alertaPlaza}
-    ${externas.length?`<div class="alert-info" style="margin-bottom:14px;font-size:12px;background:#fffbeb;border-color:#fde68a;color:#92400e">🏛️ Se incluyen <strong>${externas.length}</strong> licencia(s) cargada(s) en otra institución que afectan plazas de esta (en amarillo). Son de consulta: las gestiona la institución donde se cargaron.</div>`:''}
-    <div class="table-wrap">${tableHTML(cols,listaLic,'No hay licencias registradas',
+  return `${externas.length?`<div class="alert-info" style="margin-bottom:10px;font-size:12px;background:#fffbeb;border-color:#fde68a;color:#92400e">🏛️ Se incluyen licencias cargadas en otra institución que afectan plazas de esta (plaza en amarillo). Son de consulta.</div>`:''}
+    <div style="font-size:12px;color:#64748b;margin:0 0 8px">${data.length} licencia${data.length!==1?'s':''}</div>
+    <div class="table-wrap tabla-compacta">${tableHTML(cols,data,q?'Ninguna licencia coincide con la búsqueda':'No hay licencias registradas',
       r=>r._externa
-        ? `ondblclick="sgeEnInstitucion(${JSON.stringify(r._inst)},()=>verDetalleLic(${r.id}))" style="cursor:pointer;background:#fffbeb" title="Licencia cargada en ${r._instNombre} — doble clic para ver el detalle"`
+        ? `ondblclick="sgeEnInstitucion(${JSON.stringify(r._inst)},()=>verDetalleLic(${r.id}))" style="cursor:pointer;background:#fffbeb" title="Doble clic para ver el detalle"`
         : `ondblclick="verDetalleLic(${r.id})" style="cursor:pointer" title="Doble clic para ver más detalles"`)}</div>`;
 }
-
-// Vista de detalle de una licencia (se abre con doble clic sobre la fila)
-// ── Modificar / anular una licencia (Admin, Director/a y Secretario/a) ──
-// Toda modificación o anulación exige un MOTIVO, que queda en el "Registro de trabajo sobre el trámite".
+function renderLicencias(filtro){
+  if(filtro) _licFiltro=filtro;
+  const sinPlaza=DB.licencias.filter(l=>l.estado==='aprobada'&&l.docenteId&&!getPlazaIds(l).length).length;
+  const alertaPlaza=sinPlaza?`<div class="alert-warning" style="margin-bottom:14px">
+    📋 <strong>${sinPlaza} licencia${sinPlaza>1?'s':''} aprobada${sinPlaza>1?'s':''}</strong> sin plaza asociada. Usá <em>⋯ → 🔗 Asociar plazas</em>.</div>`:'';
+  const h=new Date().toISOString().split('T')[0];
+  const ext=sgeLicenciasExternasQueAfectan();
+  const todas=[...DB.licencias,...ext];
+  const conteo={todas:todas.length, pendientes:todas.filter(l=>l.estado==='pendiente').length,
+    vigentes:todas.filter(l=>l.estado==='aprobada'&&(!l.hasta||l.hasta>=h)).length};
+  const nombres={todas:'Todas',pendientes:'Pendientes',vigentes:'Vigentes'};
+  const tabs=Object.keys(nombres).map(t=>`<button class="tab-btn${_licFiltro===t?' active':''}" onclick="document.querySelector('.main-content').innerHTML=renderLicencias('${t}')">${nombres[t]}<span class="cnt">${conteo[t]}</span></button>`).join('');
+  return `${sectionHeader('Gestión de Licencias',`<button class="btn btn-success" onclick="irACargarTramite(2)">+ Nueva Licencia</button>`)}
+    ${alertaPlaza}
+    <div class="tabs" style="margin-bottom:14px">${tabs}</div>
+    <input class="search-input" placeholder="🔍 Buscar por solicitante, tipo o N° de expediente…" oninput="document.getElementById('lista-licencias').innerHTML=_tablaLicenciasHTML(_licFiltro,this.value)">
+    <div id="lista-licencias">${_tablaLicenciasHTML(_licFiltro,'')}</div>`;
+}
 function puedeModificarLic(lic){ return puedeGestionarPersonal() && lic && ['pendiente','aprobada','finalizada'].includes(lic.estado); }
 function botonesGestionLic(lic, desdeDetalle){
   if(!puedeModificarLic(lic)) return '';
@@ -6133,72 +6198,74 @@ const MODALIDAD_DESIG_LABEL = {
   'Idóneo':'DESIGNACIÓN IDÓNEO (ID)',
 };
 
-function renderDesignaciones(filtroCaracter=''){
-  let data = DB.designaciones;
-  if(filtroCaracter) data = data.filter(d=>d.caracter===filtroCaracter);
-
-  // Tarjetas resumen por carácter
-  const tots = {
-    'Cargo Vacante': DB.designaciones.filter(d=>d.caracter==='Cargo Vacante'&&d.estado==='activa').length,
-    'Interino':      DB.designaciones.filter(d=>d.caracter==='Interino'&&d.estado==='activa').length,
-    'STF':           DB.designaciones.filter(d=>d.caracter==='STF'&&d.estado==='activa').length,
-    'Pendientes':    DB.designaciones.filter(d=>d.estado==='pendiente').length,
-  };
-
+let _desigCaracter='', _desigEstado='activas';
+function _tablaDesigHTML(q){
   const hoy=new Date().toISOString().split('T')[0];
+  let data=DB.designaciones;
+  if(_desigCaracter) data=data.filter(d=>d.caracter===_desigCaracter);
+  if(_desigEstado==='activas') data=data.filter(d=>d.estado==='activa'||d.estado==='licencia');
+  else if(_desigEstado==='pendientes') data=data.filter(d=>d.estado==='pendiente');
+  else if(_desigEstado==='historicas') data=data.filter(d=>!['activa','licencia','pendiente'].includes(d.estado));
+  q=String(q||'').toLowerCase().trim();
+  if(q) data=data.filter(d=>{ const doc=DB.docentes.find(x=>x.id===d.docenteId);
+    return [d.nroPlaza,d.cargo,d.materia,d.curso,d.caracter,d.nroExp,doc&&doc.nombre,doc&&doc.dni].some(x=>String(x||'').toLowerCase().includes(q)); });
+  data=data.slice().sort((a,b)=>String(a.nroPlaza||'').localeCompare(String(b.nroPlaza||''),'es',{numeric:true})||(b.desde||'').localeCompare(a.desde||''));
   const cols=[
-    {key:'nroPlaza',  label:'N° Plaza',  render:r=>`<code style="background:#f1f5f9;padding:2px 7px;border-radius:5px;font-size:12px;font-family:monospace;color:#334155">${r.nroPlaza||'—'}</code>`},
-    {key:'doc',       label:'Docente',   render:r=>{
+    {key:'nroPlaza',  label:'Plaza',  render:r=>`<code style="background:#f1f5f9;padding:2px 7px;border-radius:5px;font-size:12px;font-family:monospace;color:#334155;white-space:nowrap">${r.nroPlaza||'—'}</code>`},
+    {key:'docente',   label:'Docente', render:r=>{
       const doc=DB.docentes.find(d=>d.id===r.docenteId);
       const titular=r.docenteTitularId?DB.docentes.find(d=>d.id===r.docenteTitularId):null;
-      return `<div><div style="font-weight:600">${doc?.nombre||'—'}</div>${titular?`<div style="font-size:11px;color:#854d0e;margin-top:2px">↩ reemplaza a: ${titular.nombre}</div>`:''}</div>`;
+      return `<div class="persona-celda"><div class="nom">${doc?.nombre||'—'}</div>${titular?`<div class="sub" style="color:#854d0e">↩ reemplaza a ${titular.nombre}</div>`:(doc?.dni?`<div class="sub">DNI ${doc.dni}</div>`:'')}</div>`;
     }},
-    {key:'caracter',  label:'Carácter',  render:r=>badgeCaracter(r.caracter)},
-    {key:'modalidad', label:'Modalidad', render:r=>r.modalidad?`<span class="badge badge-purple">${r.modalidad}</span>`:'<span style="color:#94a3b8;font-size:12px">—</span>'},
-    {key:'cargo',     label:'Cargo'},
-    {key:'materia',   label:'Materia'},
-    {key:'curso',     label:'Curso'},
-    {key:'horas',     label:'Hs/sem'},
-    {key:'desde',     label:'Desde',     render:r=>fmtDate(r.desde)},
-    {key:'hasta',     label:'Hasta',     render:r=>{
-      if(!r.hasta) return '<span style="color:#94a3b8;font-size:12px">Sin venc.</span>';
-      const vencido=r.hasta<hoy && r.estado==='activa';
-      return `<span style="font-weight:700;color:${vencido?'#dc2626':'#334155'}">${fmtDate(r.hasta)}${vencido?' ⚠️':''}</span>`;
+    {key:'cargoMat',  label:'Cargo / Materia', render:r=>`<div style="font-size:13px;font-weight:600;color:#334155">${r.cargo||'—'}</div>
+      <div style="font-size:11.5px;color:#64748b;max-width:240px">${[r.materia, r.curso, r.horas?`${r.horas} hs`:''].filter(x=>x&&x!=='—').join(' · ')}</div>`},
+    {key:'sr',        label:'Situación', render:r=>`<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start">${badgeCaracter(r.caracter)}${r.modalidad?`<span class="badge badge-purple">${r.modalidad}</span>`:''}</div>`},
+    {key:'per',       label:'Período', render:r=>{
+      const vencido=r.hasta&&r.hasta<hoy&&r.estado==='activa';
+      return `<div style="font-size:12.5px;white-space:nowrap">${fmtDate(r.desde)}</div>
+        <div style="font-size:11.5px;white-space:nowrap;${vencido?'color:#dc2626;font-weight:700':'color:#64748b'}">${r.hasta?`hasta ${fmtDate(r.hasta)}${vencido?' ⚠️':''}`:'Sin vencimiento'}</div>`;
     }},
-    {key:'estado',    label:'Estado',    render:r=>badge(r.estado)},
-    {key:'doc',       label:'Documento', render:r=>`
-      <button class="btn btn-sm" onclick="generarNotifDesignacion(${r.id})"
-        style="background:#fff;border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700;white-space:nowrap">
-        🖨️ Notificación
-      </button>`},
+    {key:'estado',    label:'Estado',  render:r=>badge(r.estado)},
     {key:'acc',label:'',render:r=>{
       const vencidoPendiente=r.estado==='activa'&&['STF','Interino'].includes(r.caracter)&&r.hasta&&r.hasta<hoy;
-      if(r.estado==='anulada') return `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center"><span style="font-size:11px;color:#94a3b8">Trámite anulado</span>
-        <button class="btn btn-ghost btn-sm" onclick="verDetalleDesig(${r.id})">🔍 Ver</button></div>`;
-      if(r.estado==='pendiente'){
-        return `<div style="display:flex;gap:5px;flex-wrap:wrap">
-          <button class="btn btn-success btn-sm" onclick="cambiarDesigPendiente(${r.id},'aprobada')">✅ Aprobar</button>
-          <button class="btn btn-danger btn-sm" onclick="cambiarDesigPendiente(${r.id},'rechazada')">❌ Rechazar</button>
-        </div>`;
-      }
-      return `<div style="display:flex;gap:5px;flex-wrap:wrap">
-        ${vencidoPendiente?`<button class="btn btn-sm" onclick="confirmarReintegro(${r.id})"
-          style="background:#fff7ed;border:1.5px solid #f97316;color:#c2410c;font-weight:700">
-          🔄 Reintegrar
-        </button>`:''}
-        <button class="btn btn-ghost btn-sm" onclick="verHistorialPlaza('${r.nroPlaza}')" style="border:1px solid #c4b5fd;color:#6d28d9;background:#ede9fe">🕓 Historial</button>
-        <button class="btn btn-ghost btn-sm" onclick="openEditDesig(${r.id})">✏️</button>
-        ${botonAnularDesig(r)}
-        ${r.estado==='activa'&&!vencidoPendiente?`<button class="btn btn-danger btn-sm" onclick="inactivarDesig(${r.id})">Inactivar</button>`:''}
-      </div>`;
+      let visibles;
+      if(r.estado==='pendiente') visibles=`<button class="btn btn-success btn-sm" onclick="cambiarDesigPendiente(${r.id},'aprobada')">✅ Aprobar</button>
+          <button class="btn btn-danger btn-sm" onclick="cambiarDesigPendiente(${r.id},'rechazada')" title="Rechazar">✗</button>`;
+      else if(vencidoPendiente) visibles=`<button class="btn btn-sm" onclick="confirmarReintegro(${r.id})" style="background:#fff7ed;border:1.5px solid #f97316;color:#c2410c;font-weight:700">🔄 Reintegrar</button>`;
+      else visibles=`<button class="btn btn-ghost btn-sm" onclick="verDetalleDesig(${r.id})">🔍 Ver</button>`;
+      const editable=!['anulada','pendiente'].includes(r.estado);
+      return `<div class="acc-fila">${visibles}${menuAcciones([
+        {label:'🖨️ Notificación', onclick:`generarNotifDesignacion(${r.id})`},
+        r.estado==='pendiente'||vencidoPendiente?{label:'🔍 Ver detalle', onclick:`verDetalleDesig(${r.id})`}:null,
+        r.nroPlaza&&{label:'🕓 Historial de la plaza', onclick:`verHistorialPlaza('${r.nroPlaza}')`},
+        editable&&{label:'✏️ Editar', onclick:`openEditDesig(${r.id})`},
+        (puedeAnularDesig(r)||(r.estado==='activa'&&!vencidoPendiente))&&'-',
+        r.estado==='activa'&&!vencidoPendiente&&{label:'⏸️ Inactivar', onclick:`inactivarDesig(${r.id})`},
+        puedeAnularDesig(r)&&{label:'🚫 Anular', peligro:true, onclick:`anularDesig(${r.id})`},
+      ])}</div>`;
     }},
   ];
-
-  const filtros=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-    <button class="btn btn-sm ${!filtroCaracter?'btn-primary':'btn-ghost'}" onclick="document.querySelector('.main-content').innerHTML=renderDesignaciones('')">Todos</button>
-    ${CARACTERES.map(c=>`<button class="btn btn-sm ${filtroCaracter===c?'btn-primary':'btn-ghost'}" onclick="document.querySelector('.main-content').innerHTML=renderDesignaciones('${c}')">${c}</button>`).join('')}
-  </div>`;
-
+  return `<div style="font-size:12px;color:#64748b;margin:0 0 8px">${data.length} designaci${data.length!==1?'ones':'ón'}</div>
+    <div class="table-wrap tabla-compacta">${tableHTML(cols,data,q?'Ninguna designación coincide con la búsqueda':'No hay designaciones',
+      r=>`ondblclick="verDetalleDesig(${r.id})" style="cursor:pointer" title="Doble clic para ver más detalles"`)}</div>`;
+}
+function renderDesignaciones(filtroCaracter, filtroEstado){
+  if(filtroCaracter!==undefined) _desigCaracter=filtroCaracter;
+  if(filtroEstado) _desigEstado=filtroEstado;
+  const D=DB.designaciones;
+  const tots = {
+    'Cargo Vacante': D.filter(d=>d.caracter==='Cargo Vacante'&&d.estado==='activa').length,
+    'Interino':      D.filter(d=>d.caracter==='Interino'&&d.estado==='activa').length,
+    'STF':           D.filter(d=>d.caracter==='STF'&&d.estado==='activa').length,
+    'Pendientes':    D.filter(d=>d.estado==='pendiente').length,
+  };
+  const conteo={activas:D.filter(d=>d.estado==='activa'||d.estado==='licencia').length, pendientes:tots.Pendientes,
+    historicas:D.filter(d=>!['activa','licencia','pendiente'].includes(d.estado)).length, todas:D.length};
+  const nombres={activas:'Vigentes',pendientes:'Pendientes',historicas:'Históricas',todas:'Todas'};
+  const ir=(c,e)=>`document.querySelector('.main-content').innerHTML=renderDesignaciones(${JSON.stringify(c)},${JSON.stringify(e)})`;
+  const tabs=Object.keys(nombres).map(t=>`<button class="tab-btn${_desigEstado===t?' active':''}" onclick="${ir(_desigCaracter,t).replace(/"/g,'&quot;')}">${nombres[t]}<span class="cnt">${conteo[t]}</span></button>`).join('');
+  const filtroSR=`<select class="form-input" style="max-width:220px" onchange="${ir('__V__',_desigEstado).replace('"__V__"','this.value').replace(/"/g,'&quot;')}">
+      <option value="">Todas las situaciones</option>${CARACTERES.map(c=>`<option value="${c}"${_desigCaracter===c?' selected':''}>${c}</option>`).join('')}</select>`;
   return `${sectionHeader('Designaciones en Cargos',`<button class="btn btn-success" onclick="irACargarTramite(1)">+ Nueva Designación</button>`)}
     <div class="cards-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
       ${cardHTML('Cargo Vacante',tots['Cargo Vacante'],'🏛️','#1e40af')}
@@ -6206,12 +6273,12 @@ function renderDesignaciones(filtroCaracter=''){
       ${cardHTML('STF',tots['STF'],'🔄','#6d28d9')}
       ${cardHTML('Pendientes de aprobación',tots['Pendientes'],'🕓','#92400e')}
     </div>
-    <div class="alert-info" style="margin-bottom:14px;font-size:12px">
-      📄 Podés generar e imprimir la notificación oficial de designación para presentar (o entregar al docente) en la institución. Toda designación nueva queda <strong>pendiente de aprobación por un superior</strong> hasta que se la apruebe desde esta tabla.
+    <div class="tabs" style="margin-bottom:14px">${tabs}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <input class="search-input" style="flex:1;min-width:220px;margin:0" placeholder="🔍 Buscar por docente, DNI, plaza, cargo, materia o expediente…" oninput="document.getElementById('lista-desig').innerHTML=_tablaDesigHTML(this.value)">
+      ${filtroSR}
     </div>
-    ${filtros}
-    <div class="table-wrap">${tableHTML(cols,data,'No hay designaciones',
-      r=>`ondblclick="verDetalleDesig(${r.id})" style="cursor:pointer" title="Doble clic para ver más detalles"`)}</div>`;
+    <div id="lista-desig">${_tablaDesigHTML('')}</div>`;
 }
 
 // Vista de detalle de una designación (se abre con doble clic sobre la fila)
@@ -7254,23 +7321,24 @@ function badgeDobleCargoPrec(r){
 }
 function renderPreceptoresAdmin(){
   const cols=[
-    {key:'nombre',label:'Nombre'},
-    {key:'dni',   label:'DNI'},
+    {key:'nombre',label:'Preceptor/a', render:r=>`<div class="persona-celda"><div class="nom">${r.nombre||'—'}</div><div class="sub">DNI ${r.dni||'—'}${r.email?` · ${r.email}`:''}</div></div>`},
     {key:'plaza', label:'N° Plaza', render:r=>badgePlazaPrec(r)},
     {key:'dobleCargo', label:'También Docente', render:r=>badgeDobleCargoPrec(r)},
     {key:'cursos',label:'Cursos a cargo',render:r=>r.cursos.map(c=>`<span class="badge badge-teal" style="margin:1px">${c}</span>`).join(' ')},
     {key:'turno', label:'Turno'},
-    {key:'email', label:'Email'},
     {key:'estado',label:'Estado',render:r=>badge(r.estado)},
-    {key:'acc',   label:'',render:r=>`
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
+    {key:'acc',   label:'',render:r=>`<div class="acc-fila">
         <button class="btn btn-primary btn-sm" onclick="verLegajoPreceptor(${r.id})">📋 Legajo</button>
-        ${currentUser.rol!=='secretario'?`<button class="btn btn-ghost btn-sm" onclick="openEditPrec(${r.id})">✏️ Editar</button>`:''}
-        ${r.estado==='activo'?`<button class="btn btn-danger btn-sm" onclick="openBajaPrec(${r.id})">🚫 Baja</button>
-        <button class="btn btn-warning btn-sm" onclick="openRenunciaPrec(${r.id})">📄 Renuncia</button>
-        <button class="btn btn-ghost btn-sm" onclick="openGenerarFU01Traslado('preceptor',${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9" title="Generar FU-01 — Rubro 4.3 Traslados">🚶 Traslado</button>
-        <button class="btn btn-ghost btn-sm" onclick="openGenerarFU01Permuta('preceptor',${r.id})" style="border:1px solid #c4b5fd;color:#6d28d9" title="Generar FU-01 — Rubro 4.4 Permutas">🔄 Permuta</button>`
-        :`<button class="btn btn-ghost btn-sm" onclick="generarFU01BajaCese('preceptor',${r.id})" style="border:1.5px solid #1a3a5c;color:#1a3a5c;font-weight:700" title="Generar FU-01 — Rubro 4.5 Baja o Cese">🖨️ FU-01 Baja/Cese</button>`}
+        ${currentUser.rol!=='secretario'?`<button class="btn btn-ghost btn-sm" onclick="openEditPrec(${r.id})" title="Editar datos">✏️</button>`:''}
+        ${menuAcciones(r.estado==='activo'?[
+          {label:'🚶 Traslado (FU-01)', title:'Generar FU-01 — Rubro 4.3 Traslados', onclick:`openGenerarFU01Traslado('preceptor',${r.id})`},
+          {label:'🔄 Permuta (FU-01)',  title:'Generar FU-01 — Rubro 4.4 Permutas',  onclick:`openGenerarFU01Permuta('preceptor',${r.id})`},
+          '-',
+          {label:'📄 Registrar renuncia', onclick:`openRenunciaPrec(${r.id})`},
+          {label:'🚫 Dar de baja', peligro:true, onclick:`openBajaPrec(${r.id})`},
+        ]:[
+          {label:'🖨️ FU-01 Baja/Cese', title:'Generar FU-01 — Rubro 4.5 Baja o Cese', onclick:`generarFU01BajaCese('preceptor',${r.id})`},
+        ])}
       </div>`},
   ];
   return `${sectionHeader('Preceptores',`<button class="btn btn-teal" onclick="openAltaPrec()">+ Nuevo Preceptor</button>`)}
@@ -7279,7 +7347,7 @@ function renderPreceptoresAdmin(){
       <button class="btn btn-ghost btn-sm" onclick="navigate('plazas')">🏛️ Registro de Plazas</button> o directamente desde el alta/edición.
       Un/a docente también puede desempeñarse como Preceptor/a, aunque el turno coincida con otro cargo.
     </div>
-    <div class="table-wrap">${tableHTML(cols,DB.preceptores,'Sin preceptores registrados')}</div>`;
+    <div class="table-wrap tabla-compacta">${tableHTML(cols,DB.preceptores,'Sin preceptores registrados')}</div>`;
 }
 function docenteOptsParaCargo(idSeleccionado){
   return `<option value="">— No, es preceptor/a exclusivo/a —</option>` +
