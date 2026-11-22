@@ -70,6 +70,35 @@ ok(hp.includes('LA3457-00099-2026')&&!hp.includes('Cargada en'),'el historial de
 E("openVerPlaza(5001)");
 const vp=(w.document.querySelector('.main-content')||{}).innerHTML||'';
 ok(vp.includes('Licencias asociadas a esta plaza (2)')&&vp.includes('LA3457-00099-2026'),'la ficha de la plaza cuenta la licencia de la otra institución');
-E("currentUser=USUARIOS.find(u=>u.rol==='admin');"); const rd=E("renderDocentes('32485','lista')"); ok(rd.includes('acc-menu')&&rd.includes('Sancuns'),'vista Docentes: busca por DNI y muestra menú de acciones'); ok(E("renderPreceptoresAdmin()").includes('Preceptores'),'vista Preceptores se dibuja'); E("currentInstitucionId=500; DB=INST_DATA[500];"); const vpz=E("renderPlazas()"); ok(vpz.includes('acc-menu')&&vpz.includes('01-GEN I'),'vista Plazas con menú de acciones'); const vl=E("renderLicencias('todas')"); ok(vl.includes('acc-menu')&&vl.includes('LA3457-00099-2026'),'vista Licencias con menú e incluye la externa'); const vd=E("renderDesignaciones('','todas')"); ok(vd.includes('acc-menu')&&vd.includes('Notificación'),'vista Designaciones con menú (notificación adentro)'); ok(E("_tablaDesigHTML('gen i')").includes('01-GEN I')&&!E("_tablaDesigHTML('zzz')").includes('01-GEN I'),'búsqueda en Designaciones'); E("INST_DATA[500].designaciones[0].estado='baja';");
+E("currentUser=USUARIOS.find(u=>u.rol==='admin');"); const rd=E("renderDocentes('32485','lista')"); ok(rd.includes('acc-menu')&&rd.includes('Sancuns'),'vista Docentes: busca por DNI y muestra menú de acciones'); ok(E("renderPreceptoresAdmin()").includes('Preceptores'),'vista Preceptores se dibuja'); E("currentInstitucionId=500; DB=INST_DATA[500];"); const vpz=E("renderPlazas()"); ok(vpz.includes('acc-menu')&&vpz.includes('01-GEN I'),'vista Plazas con menú de acciones'); const vl=E("renderLicencias('todas')"); ok(vl.includes('acc-menu')&&vl.includes('LA3457-00099-2026'),'vista Licencias con menú e incluye la externa'); const vd=E("renderDesignaciones('','todas')"); ok(vd.includes('acc-menu')&&vd.includes('Notificación'),'vista Designaciones con menú (notificación adentro)'); ok(E("_tablaDesigHTML('gen i')").includes('01-GEN I')&&!E("_tablaDesigHTML('zzz')").includes('01-GEN I'),'búsqueda en Designaciones'); // ── Operaciones con alumnos: pre-inscripciones, armado y pases ──
+E(`currentUser=USUARIOS.find(u=>u.rol==='admin'); currentInstitucionId=500; DB=INST_DATA[500]; luaEnsure(DB); luaEnsure(INST_DATA[501]);
+  DB.cursos.push({id:1,nombre:'1°A',estado:'activo'},{id:2,nombre:'2°A',estado:'activo'}); INST_DATA[501].cursos.push({id:3,nombre:'2°B',estado:'activo'});
+  DB.preinscripciones.push({id:71,dni:'50111222',apellido:'Paz',nombres:'Ana',nombre:'Paz, Ana',curso:'1°A',anio:2026,estado:'Aceptado',alumnoId:null},
+                           {id:72,dni:'50111333',apellido:'Ruiz',nombres:'Leo',nombre:'Ruiz, Leo',curso:'2°A',anio:2026,estado:'Aceptado',alumnoId:null});
+  DB.alumnos.push({id:81,nombre:'Gómez, Juan',dni:'49000111',curso:'1°A',estado:'activo'});
+  DB.movimientosAlumnos.push({id:91,alumnoId:81,anio:2026,fecha:'2026-03-01',curso:'1°A',estado:'En transición',motivo:'Aprobacion de año'});`);
+E("luaPiNueva(71)"); w.document.getElementById('lua-pi-nom').value='Ana María'; E("luaPiGuardar(71)");
+ok(E("DB.preinscripciones.find(p=>p.id===71).nombre")==='Paz, Ana María','editar pre-inscripción');
+E("luaF={armCurso:'2°A'}");
+const arm=E("luaArmado()");
+ok(arm.includes('Ruiz, Leo')&&arm.includes('Gómez, Juan')&&!arm.includes('Paz, Ana'),'armado: sólo los habilitados para 2°A (pre-inscripto a 2°A y el que aprobó 1°)');
+E("luaF={armCurso:'1°A'}"); const arm1=E("luaArmado()");
+ok(arm1.includes('Paz, Ana')&&!arm1.includes('Gómez, Juan'),'armado: 1°A muestra su pre-inscripta y no al que pasa a 2°');
+// Pase saliente habilitado por 500 hacia 501
+E("luaPaseHabilitar()"); w.document.getElementById('lua-ph-al').value='81'; w.document.getElementById('lua-ph-dest').value='501'; E("luaPaseHabDestino()"); E("luaPaseHabGuardar()");
+ok(E("INST_DATA[501].pases.some(p=>p.rol==='destino'&&p.estado==='Pendiente destino'&&p.alumnoDni==='49000111')"),'habilitar pase: llega a la otra institución como pendiente de aceptación');
+E("currentInstitucionId=501; DB=INST_DATA[501];");
+E("luaSub.pases='solicitud'"); ok(E("luaPases()").includes('Pases habilitados por otros establecimientos'),'el destino ve el pase para aceptar');
+const pid=E("DB.pases.find(p=>p.rol==='destino').pedidoId");
+E("luaPaseAceptarDestino("+pid+")"); w.document.getElementById('lua-pa-curso').value='2°B'; E("luaPaseAceptarOk("+pid+")");
+ok(E("DB.alumnos.some(a=>a.dni==='49000111'&&a.curso==='2°B'&&a.estado==='activo')"),'al aceptar, el alumno queda inscripto en el destino');
+ok(E("INST_DATA[500].alumnos.find(a=>a.id===81).estado")==='trasladado'&&E("INST_DATA[500].pases.find(p=>p.pedidoId==="+pid+").estado")==='Autorizado','en el origen queda trasladado y el pase otorgado');
+// Pase entrante desde una escuela fuera del sistema
+E("currentInstitucionId=500; DB=INST_DATA[500]; luaPaseNuevo();"); w.document.getElementById('lua-ps-dni').value='51000999'; E("luaPaseBuscar()");
+ok(E("luaGet('lua-ps-org')")==='ext','si no está en el sistema propone "fuera del sistema"');
+w.document.getElementById('lua-ps-ape').value='Sosa'; w.document.getElementById('lua-ps-nom').value='Eva'; w.document.getElementById('lua-ps-ext').value='Esc. N° 12 Concordia'; w.document.getElementById('lua-ps-curso').value='1°A'; E("luaPaseGuardar()");
+const pe=E("DB.pases.find(p=>p.origenExterno).pedidoId"); w.confirm=()=>true; E("luaPaseConfirmarExterno("+pe+")");
+ok(E("DB.alumnos.some(a=>a.dni==='51000999'&&a.curso==='1°A')"),'pase desde escuela externa: al confirmar se da el alta');
+E("INST_DATA[500].designaciones[0].estado='baja';");
 ok(E("JSON.stringify(sgeCuentasConRolDistinto().map(x=>x.rol))")==='["docente"]','si termina el cargo directivo, sugiere volver a Docente');
 process.exit(); },800);

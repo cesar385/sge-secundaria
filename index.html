@@ -14385,7 +14385,9 @@ function renderLUA(){
   const tabs=`<div style="background:${rc};padding:6px 8px 0;display:flex;gap:3px;flex-wrap:wrap">${LUA_TABS.map(([id,l])=>`<button onclick="luaGo('${id}')" style="background:${luaTab===id?'#fff':'transparent'};color:${luaTab===id?rc:'rgba(255,255,255,.78)'};border:none;border-radius:6px 6px 0 0;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">${l}</button>`).join('')}</div>`;
   const fn={preinsc:luaPreinsc,armado:luaArmado,division:luaDivision,final:luaFinal,pases:luaPases,egresados:luaEgresados,historial:luaHistorial,correctivas:luaCorrectivas,boletines:luaBoletines,inasist:luaInasist,servicios:luaServicios,consultas:luaConsultas,certificados:luaCertificados}[luaTab];
   const pend=DB.pases.filter(p=>p.rol==='origen'&&p.estado==='Pendiente origen').length;
+  const porAceptar=DB.pases.filter(p=>p.rol==='destino'&&p.estado==='Pendiente destino').length;
   const aviso=pend?luaNota(`🔔 <strong>Pases de Alumnos:</strong> Ud. tiene ${pend} pedido${pend>1?'s':''} de pase de alumno pendiente${pend>1?'s':''} de aprobación. <a href="#" onclick="luaGo('pases');luaSubGo('pases','autorizacion');return false">Click aquí para verlos</a>`,'warn'):'';
+  const avisoEnt=porAceptar?luaNota(`📥 <strong>Pases de Alumnos:</strong> otro establecimiento habilitó ${porAceptar} pase${porAceptar>1?'s':''} hacia esta institución. <a href="#" onclick="luaGo('pases');luaSubGo('pases','solicitud');return false">Aceptar o rechazar</a>`,'warn'):'';
   const _in=(typeof luaInstNombre==='function'?luaInstNombre():null)||{}; const ins=(typeof _in==='string'?_in:_in.nombre)||'';
   const act=DB.alumnos.filter(a=>a.estado==='activo').length;
   const topInfo=`<div style="display:flex;align-items:center;gap:14px;padding:16px 20px;flex-wrap:wrap">
@@ -14398,7 +14400,7 @@ function renderLUA(){
     </div>`;
   return `<div style="width:100%"><h2 style="font-size:19px;color:${rc};font-weight:800;margin:0 0 14px">🎓 Operaciones con Alumnos</h2>
     <div style="background:#fff;border-radius:14px 14px 0 0;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,0.07)">${topInfo}${tabs}</div>
-    <div style="background:#fff;border-radius:0 0 12px 12px;padding:24px;box-shadow:0 1px 6px rgba(0,0,0,0.07);border-top:1px solid #e2e8f0">${aviso}${fn()}</div></div>`;
+    <div style="background:#fff;border-radius:0 0 12px 12px;padding:24px;box-shadow:0 1px 6px rgba(0,0,0,0.07);border-top:1px solid #e2e8f0">${aviso}${avisoEnt}${fn()}</div></div>`;
 }
 
 // ── 1. PRE-INSCRIPCIONES ─────────────────────────────────────────────
@@ -14413,15 +14415,16 @@ function luaPreinsc(){
   const col={'En espera':'#92400e','Aceptado':'#166534','Cancelado':'#991b1b'};
   const rows=DB.preinscripciones.map(p=>`<tr>
     <td><input type="checkbox" class="lua-pi" value="${p.id}"></td><td>${p.id%100000}</td><td>${luaEsc(p.dni)}</td><td>${luaEsc(luaApeNom(p).ape)}</td><td>${luaEsc(luaApeNom(p).nom)}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td>
-    <td style="font-weight:700;color:${col[p.estado]||'#334155'}">${p.estado}</td></tr>`).join('')
+    <td style="font-weight:700;color:${col[p.estado]||'#334155'}">${p.estado}</td>
+    <td>${p.alumnoId?'<span style="font-size:11px;color:#94a3b8" title="Ya asignado a un curso">—</span>':`<button class="btn btn-ghost btn-sm" onclick="luaPiNueva(${p.id})" title="Editar pre-inscripción">✏️</button>`}</td></tr>`).join('')
     + luaAlumnosSinPreinsc().map(a=>{ const an=luaApeNom(a); let anio=luaAnio(); try{ anio=luaMovActual(a).anio||anio; }catch(e){}
       return `<tr title="Alumno/a ya cargado/a en el sistema">
     <td><input type="checkbox" disabled title="Alumno/a del sistema: no se modifica desde aquí"></td><td>${a.id%100000}</td><td>${luaEsc(a.dni||'—')}</td><td>${luaEsc(an.ape)}</td><td>${luaEsc(an.nom)}</td><td>${luaEsc(a.curso||'—')}</td><td>${anio}</td>
-    <td style="font-weight:700;color:${col['Aceptado']}">Aceptado</td></tr>`; }).join('');
+    <td style="font-weight:700;color:${col['Aceptado']}">Aceptado</td><td></td></tr>`; }).join('');
   const hayFilas=DB.preinscripciones.length||luaAlumnosSinPreinsc().length;
   return luaNota('Sólo se deben pre-inscribir los alumnos que ingresan por primera vez al sistema. Una vez aceptada la pre-inscripción, asignalo a su curso desde <strong>Armado de cursos</strong>.')
    +luaCard('Alumnos con pre-inscripción en el establecimiento',
-     (hayFilas?`<div style="overflow-x:auto"><table><thead><tr><th></th><th>Id</th><th>Documento</th><th>Apellido</th><th>Nombre</th><th>Curso</th><th>Año</th><th>Estado actual</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty-msg">Sin pre-inscripciones</div>')
+     (hayFilas?`<div style="overflow-x:auto"><table><thead><tr><th></th><th>Id</th><th>Documento</th><th>Apellido</th><th>Nombre</th><th>Curso</th><th>Año</th><th>Estado actual</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty-msg">Sin pre-inscripciones</div>')
      +`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
         <button class="btn btn-success btn-sm" onclick="luaPiNueva()">➕ Nueva Pre-Inscripción</button>
         <select class="form-input" id="lua-pi-estado" style="max-width:170px">${luaOpts(['En espera','Aceptado','Cancelado'],'','Cambia estado a…')}</select>
@@ -14433,24 +14436,37 @@ function luaApeNom(a){
   const n=String(a.nombre||''); if(n.includes(',')){ const p=n.split(','); return {ape:p[0].trim(),nom:p.slice(1).join(',').trim()}; }
   const p=n.trim().split(/\s+/); return {ape:p.length>1?p[p.length-1]:n,nom:p.length>1?p.slice(0,-1).join(' '):''};
 }
-function luaPiNueva(){
+// Alta (sin id) o edición (con id) de una pre-inscripción.
+function luaPiNueva(editId){
+  const p=editId?DB.preinscripciones.find(x=>x.id===editId):null;
+  if(editId&&!p) return;
+  const an=p?luaApeNom(p):{ape:'',nom:''};
   const body=`<div class="form-grid-2">
-    ${formGroup('Documento del alumno a pre-inscribir',`<input class="form-input" id="lua-pi-dni" onchange="luaPiBuscar()">`,true)}
-    ${formGroup('Apellido del alumno',`<input class="form-input" id="lua-pi-ape">`,true)}
-    ${formGroup('Nombre del alumno',`<input class="form-input" id="lua-pi-nom">`,true)}
-    ${formGroup('Curso para la pre-inscripción',`<select class="form-input" id="lua-pi-curso">${luaCursoOpts('')}</select>`,true)}
-    ${formGroup('Año de la pre-inscripción',`<input class="form-input" type="number" id="lua-pi-anio" value="${luaAnio()}">`,true)}</div>
-    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-success" onclick="luaPiGuardar()">Grabar</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`;
-  showModal('Nueva pre-inscripción',body);
+    ${formGroup('Documento del alumno a pre-inscribir',`<input class="form-input" id="lua-pi-dni" value="${luaEsc(p?p.dni:'')}" onchange="luaPiBuscar()">`,true)}
+    ${formGroup('Apellido del alumno',`<input class="form-input" id="lua-pi-ape" value="${luaEsc(an.ape)}">`,true)}
+    ${formGroup('Nombre del alumno',`<input class="form-input" id="lua-pi-nom" value="${luaEsc(an.nom)}">`,true)}
+    ${formGroup('Curso para la pre-inscripción',`<select class="form-input" id="lua-pi-curso">${luaCursoOpts(p?p.curso:'')}</select>`,true)}
+    ${formGroup('Año de la pre-inscripción',`<input class="form-input" type="number" id="lua-pi-anio" value="${p?p.anio:luaAnio()}">`,true)}
+    ${p?formGroup('Estado',`<select class="form-input" id="lua-pi-est">${luaOpts(['En espera','Aceptado','Cancelado'],p.estado)}</select>`):''}</div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-success" onclick="luaPiGuardar(${p?p.id:''})">${p?'Guardar cambios':'Grabar'}</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`;
+  showModal(p?'Editar pre-inscripción':'Nueva pre-inscripción',body);
 }
 function luaPiBuscar(){
   const d=luaNorm(luaGet('lua-pi-dni')); if(!d) return;
   for(const k of Object.keys(INST_DATA)){ const a=(INST_DATA[k].alumnos||[]).find(x=>luaNorm(x.dni)===d); if(a){ const x=luaApeNom(a); document.getElementById('lua-pi-ape').value=x.ape; document.getElementById('lua-pi-nom').value=x.nom; return; } }
 }
-function luaPiGuardar(){
+function luaPiGuardar(editId){
   const dni=luaGet('lua-pi-dni').trim(), ape=luaGet('lua-pi-ape').trim(), nom=luaGet('lua-pi-nom').trim(), curso=luaGet('lua-pi-curso'), anio=parseInt(luaGet('lua-pi-anio'));
   if(!dni||!ape||!nom||!curso||!anio){ alert('Completá todos los datos requeridos.'); return; }
-  if(DB.preinscripciones.some(p=>luaNorm(p.dni)===luaNorm(dni)&&p.anio===anio&&p.estado!=='Cancelado')){ alert('Ya existe una pre-inscripción de ese documento para ese año.'); return; }
+  if(DB.preinscripciones.some(p=>p.id!==editId&&luaNorm(p.dni)===luaNorm(dni)&&p.anio===anio&&p.estado!=='Cancelado')){ alert('Ya existe una pre-inscripción de ese documento para ese año.'); return; }
+  if(editId){
+    const p=DB.preinscripciones.find(x=>x.id===editId); if(!p) return;
+    if(p.alumnoId){ alert('Esta pre-inscripción ya fue asignada a un curso y no se puede editar.'); return; }
+    Object.assign(p,{dni,apellido:ape,nombres:nom,nombre:ape+', '+nom,curso,anio});
+    const est=luaGet('lua-pi-est'); if(est) p.estado=est;
+    guardarEstado(); showToast('Pre-inscripción actualizada.'); closeModal(); luaTab='preinsc'; navigate('lua');
+    return;
+  }
   DB.preinscripciones.push({id:luaId(),dni,apellido:ape,nombres:nom,nombre:ape+', '+nom,curso,anio,estado:'En espera',alumnoId:null});
   guardarEstado(); showToast('Pre-Inscripción realizada correctamente.'); closeModal(); luaTab='preinsc'; navigate('lua');
 }
@@ -14475,11 +14491,19 @@ function luaArmado(){
   if(!curso) return html;
   const anterior=DB.alumnos.filter(a=>a.curso===curso&&luaCursando(a)&&(luaMovActual(a).anio<luaAnio()));
   if(anterior.length) html+=luaNota(`⚠️ <strong>TIENE ALUMNOS CURSANDO UN CICLO LECTIVO ANTERIOR</strong> (${anterior.length}). No se realizó la finalización de cursado de todos los alumnos: revisalo desde el Historial del alumnado.`,'err');
-  const pre=DB.preinscripciones.filter(p=>p.estado==='Aceptado'&&!p.alumnoId);
-  const trans=DB.alumnos.filter(a=>luaEnTransicion(a)&&['Aprobacion de año','Desaprobacion de año','En suspenso (adeuda mas de 2 materias)','En suspenso, en espera de pedido de pase'].includes(luaMovActual(a).motivo));
+  // Sólo los que corresponden al curso elegido: pre-inscriptos a ese curso y alumnos
+  // en transición cuyo próximo año coincide (aprobó → año siguiente; si no, repite el año).
+  const anioCurso=luaAnioCurso(curso), todos=!!luaF.armTodos;
+  const anioDestino=a=>{ const n=luaAnioCurso(a.curso); return luaMovActual(a).motivo==='Aprobacion de año'?n+1:n; };
+  const preTodos=DB.preinscripciones.filter(p=>p.estado==='Aceptado'&&!p.alumnoId);
+  const transTodos=DB.alumnos.filter(a=>luaEnTransicion(a)&&['Aprobacion de año','Desaprobacion de año','En suspenso (adeuda mas de 2 materias)','En suspenso, en espera de pedido de pase'].includes(luaMovActual(a).motivo));
+  const pre=todos?preTodos:preTodos.filter(p=>p.curso===curso || (!DB.cursos.some(c=>c.nombre===p.curso) && luaAnioCurso(p.curso)===anioCurso));
+  const trans=todos||!anioCurso?transTodos:transTodos.filter(a=>anioDestino(a)===anioCurso);
+  const ocultos=(preTodos.length+transTodos.length)-(pre.length+trans.length);
   const filas=[...pre.map(p=>`<tr><td><input type="checkbox" class="lua-arm" value="P${p.id}"></td><td>${luaEsc(p.dni)}</td><td>${luaEsc(p.nombre)}</td><td>Pre-inscripción ${p.anio} (curso ${luaEsc(p.curso)})</td></tr>`),
     ...trans.map(a=>`<tr><td><input type="checkbox" class="lua-arm" value="A${a.id}"></td><td>${luaEsc(a.dni)}</td><td>${luaEsc(a.nombre)}</td><td>${luaEsc(luaMovActual(a).motivo)} (${luaEsc(a.curso||'—')})</td></tr>`)];
-  html+=luaCard(`Alumnos habilitados para ${luaEsc(curso)}`,filas.length?`<div style="overflow-x:auto"><table><thead><tr><th></th><th>Documento</th><th>Alumno</th><th>Procedencia</th></tr></thead><tbody>${filas.join('')}</tbody></table></div><button class="btn btn-success" style="margin-top:12px" onclick="luaArmadoGrabar()">Grabar</button>`:'<div class="empty-msg">No hay alumnos habilitados para armar el curso.</div>');
+  const toggleTodos=`<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:#475569;margin-bottom:10px"><input type="checkbox" ${todos?'checked':''} onchange="luaF.armTodos=this.checked;luaRefresh()"> Mostrar también los habilitados para otros cursos${!todos&&ocultos?` (${ocultos})`:''}</label>`;
+  html+=luaCard(`Alumnos habilitados para ${luaEsc(curso)}`,toggleTodos+(filas.length?`<div style="overflow-x:auto"><table><thead><tr><th></th><th>Documento</th><th>Alumno</th><th>Procedencia</th></tr></thead><tbody>${filas.join('')}</tbody></table></div><button class="btn btn-success" style="margin-top:12px" onclick="luaArmadoGrabar()">Grabar</button>`:'<div class="empty-msg">No hay alumnos habilitados para este curso.</div>'));
   return html;
 }
 function luaArmadoGrabar(){
@@ -14556,60 +14580,187 @@ function luaBuscarAlumnoGlobal(dni){
   return res;
 }
 function luaInstId(){ return (typeof _instIdActual==='function'&&_instIdActual()!=null)?_instIdActual():currentInstitucionId; }
+const luaInstN=id=>{ const i=INSTITUCIONES.find(x=>String(x.id)===String(id)); return i?i.nombre:'—'; };
+const luaPaseOrigen=p=>p.origenExterno?`${luaEsc(p.origenExterno)} <span class="badge badge-gray">fuera del sistema</span>`:luaEsc(luaInstN(p.origenInstId));
+const luaPaseDestino=p=>p.destinoExterno?`${luaEsc(p.destinoExterno)} <span class="badge badge-gray">fuera del sistema</span>`:luaEsc(luaInstN(p.destinoInstId));
 function luaPases(){
   const sub=luaSub.pases;
-  const tabs=luaSubTabs('pases',[['solicitud','Solicitud de Pases'],['autorizacion','Autorización de Pases'],['otorgados','Pases Otorgados'],['rechazados','Pases rechazados']]);
-  const instN=id=>{ const i=INSTITUCIONES.find(x=>String(x.id)===String(id)); return i?i.nombre:'—'; };
+  const entrantes=DB.pases.filter(p=>p.rol==='destino'&&p.estado==='Pendiente destino').length;
+  const tabs=luaSubTabs('pases',[['solicitud',`Pases hacia este establecimiento${entrantes?` (${entrantes})`:''}`],['autorizacion','Pases desde este establecimiento'],['otorgados','Pases Otorgados'],['rechazados','Pases rechazados']]);
   if(sub==='solicitud'){
-    const mis=DB.pases.filter(p=>p.rol==='destino').sort((a,b)=>b.fecha.localeCompare(a.fecha));
-    return tabs+luaCard('Solicitudes de pase de este establecimiento',
-      (mis.length?`<table><thead><tr><th>Fecha</th><th>Documento</th><th>Alumno</th><th>Curso</th><th>Año lectivo</th><th>Sub-organización origen</th><th>Estado del pase</th></tr></thead><tbody>${mis.map(p=>`<tr><td>${p.fecha}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${luaEsc(instN(p.origenInstId))}</td><td style="font-weight:700">${p.estado.replace('Pendiente origen','Pendiente origen').replace('Rechazado','Rechazado destino')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin registros que mostrar</div>')
-      +`<button class="btn btn-success btn-sm" style="margin-top:12px" onclick="luaPaseNuevo()">Nuevo Pedido de Pase</button>`);
+    const porAceptar=DB.pases.filter(p=>p.rol==='destino'&&p.estado==='Pendiente destino');
+    const mis=DB.pases.filter(p=>p.rol==='destino'&&p.estado!=='Pendiente destino').sort((a,b)=>b.fecha.localeCompare(a.fecha));
+    const habilitados=porAceptar.length?luaCard('📥 Pases habilitados por otros establecimientos hacia este (pendientes de su aceptación)',
+      `<table><thead><tr><th>Fecha</th><th>Documento</th><th>Alumno</th><th>Curso de origen</th><th>Curso propuesto</th><th>Origen</th><th>Motivo</th><th></th></tr></thead><tbody>${porAceptar.map(p=>`<tr><td>${p.fecha}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${luaEsc(p.cursoOrigen||'—')}</td><td>${luaEsc(p.curso||'A definir')}</td><td>${luaPaseOrigen(p)}</td><td>${luaEsc(p.motivo||'')}</td>
+        <td style="white-space:nowrap"><button class="btn btn-success btn-sm" onclick="luaPaseAceptarDestino(${p.pedidoId})">✅ Aceptar</button> <button class="btn btn-danger btn-sm" onclick="luaPaseRechazarDestino(${p.pedidoId})">✗</button></td></tr>`).join('')}</tbody></table>`):'';
+    return tabs+habilitados+luaCard('Solicitudes de pase de este establecimiento',
+      (mis.length?`<table><thead><tr><th>Fecha</th><th>Documento</th><th>Alumno</th><th>Curso</th><th>Año lectivo</th><th>Origen</th><th>Estado del pase</th><th></th></tr></thead><tbody>${mis.map(p=>`<tr><td>${p.fecha}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${luaPaseOrigen(p)}</td><td style="font-weight:700">${p.estado==='Rechazado'?'Rechazado origen':p.estado}</td>
+        <td style="white-space:nowrap">${p.estado==='Pendiente documentación'?`<button class="btn btn-success btn-sm" onclick="luaPaseConfirmarExterno(${p.pedidoId})" title="Ya se recibió la documentación del establecimiento de origen">✅ Confirmar ingreso</button> <button class="btn btn-danger btn-sm" onclick="luaPaseCancelarExterno(${p.pedidoId})" title="Cancelar el pedido">✗</button>`:''}</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin registros que mostrar</div>')
+      +`<button class="btn btn-success btn-sm" style="margin-top:12px" onclick="luaPaseNuevo()">📥 Solicitar pase de un alumno de otra institución</button>`);
   }
   if(sub==='autorizacion'){
     const pend=DB.pases.filter(p=>p.rol==='origen'&&p.estado==='Pendiente origen');
+    const enviados=DB.pases.filter(p=>p.rol==='origen'&&p.estado==='Pendiente destino');
+    const btnHabilitar=`<button class="btn btn-primary btn-sm" onclick="luaPaseHabilitar()">📤 Habilitar pase de un alumno hacia otra institución</button>`;
     return tabs+luaCard('Pedidos de pase hacia otros establecimientos (pendientes de su autorización)',
-      pend.length?`<table><thead><tr><th></th><th>Pedido</th><th>Documento</th><th>Alumno</th><th>Fecha de solicitud</th><th>Curso</th><th>Año</th><th>Destino</th><th>Estado</th></tr></thead><tbody>${pend.map(p=>`<tr><td><input type="checkbox" class="lua-pase" value="${p.pedidoId}"></td><td>${p.pedidoId%100000}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${p.fecha}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${luaEsc(instN(p.destinoInstId))}</td><td>${p.estado}</td></tr>`).join('')}</tbody></table>
+      pend.length?`<table><thead><tr><th></th><th>Pedido</th><th>Documento</th><th>Alumno</th><th>Fecha de solicitud</th><th>Curso</th><th>Año</th><th>Destino</th><th>Estado</th></tr></thead><tbody>${pend.map(p=>`<tr><td><input type="checkbox" class="lua-pase" value="${p.pedidoId}"></td><td>${p.pedidoId%100000}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${p.fecha}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${luaPaseDestino(p)}</td><td>${p.estado}</td></tr>`).join('')}</tbody></table>
         <div class="form-grid-2" style="margin-top:14px">${formGroup('Indique la acción que desea realizar',`<select class="form-input" id="lua-pase-acc">${luaOpts(['Autorizar Pases','Rechazar Pases'],'')}</select>`)}
         ${formGroup('En caso de RECHAZO, indique el motivo',`<input class="form-input" id="lua-pase-mot">`)}</div>
-        <button class="btn btn-success" onclick="luaPaseResolver()">Grabar</button>`:'<div class="empty-msg">No hay pedidos de pase pendientes.</div>');
+        <button class="btn btn-success" onclick="luaPaseResolver()">Grabar</button>`:'<div class="empty-msg">No hay pedidos de pase pendientes.</div>')
+      +luaCard('Pases habilitados por este establecimiento',
+        (enviados.length?`<table><thead><tr><th>Fecha</th><th>Documento</th><th>Alumno</th><th>Curso</th><th>Destino</th><th>Estado</th></tr></thead><tbody>${enviados.map(p=>`<tr><td>${p.fecha}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${luaEsc(p.cursoOrigen||p.curso||'')}</td><td>${luaPaseDestino(p)}</td><td style="font-weight:700;color:#92400e">Esperando aceptación del destino</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg" style="margin-bottom:10px">No hay pases habilitados pendientes.</div>')
+        +btnHabilitar);
   }
   if(sub==='otorgados'){
     const l=DB.pases.filter(p=>p.rol==='origen'&&p.estado==='Autorizado');
-    return tabs+luaCard('Detalle de pases otorgados',l.length?`<table><thead><tr><th>Pedido</th><th>Documento</th><th>Alumno</th><th>Fecha de solicitud</th><th>Curso</th><th>Año</th><th>Establecimiento destino</th><th>Estado</th></tr></thead><tbody>${l.map(p=>`<tr><td>${p.pedidoId%100000}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${p.fecha}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${luaEsc(instN(p.destinoInstId))}</td><td>${p.estado}</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin pases otorgados.</div>');
+    return tabs+luaCard('Detalle de pases otorgados',l.length?`<table><thead><tr><th>Pedido</th><th>Documento</th><th>Alumno</th><th>Fecha</th><th>Curso</th><th>Año</th><th>Establecimiento destino</th><th>Estado</th></tr></thead><tbody>${l.map(p=>`<tr><td>${p.pedidoId%100000}</td><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${p.fecha}</td><td>${luaEsc(p.curso||p.cursoOrigen||'')}</td><td>${p.anio}</td><td>${luaPaseDestino(p)}</td><td>${p.estado}</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin pases otorgados.</div>');
   }
   const l=DB.pases.filter(p=>p.estado==='Rechazado');
-  return tabs+luaCard('Detalle de pases rechazados',l.length?`<table><thead><tr><th>Documento</th><th>Alumno</th><th>Fecha</th><th>Curso</th><th>Año</th><th>Origen</th><th>Destino</th><th>Motivo del rechazo</th></tr></thead><tbody>${l.map(p=>`<tr><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${p.fecha}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td><td>${luaEsc(instN(p.origenInstId))}</td><td>${luaEsc(instN(p.destinoInstId))}</td><td>${luaEsc(p.motivoRechazo||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin pases rechazados.</div>');
+  return tabs+luaCard('Detalle de pases rechazados',l.length?`<table><thead><tr><th>Documento</th><th>Alumno</th><th>Fecha</th><th>Curso</th><th>Año</th><th>Origen</th><th>Destino</th><th>Motivo del rechazo</th></tr></thead><tbody>${l.map(p=>`<tr><td>${luaEsc(p.alumnoDni)}</td><td>${luaEsc(p.alumnoNombre)}</td><td>${p.fecha}</td><td>${luaEsc(p.curso||'')}</td><td>${p.anio}</td><td>${luaPaseOrigen(p)}</td><td>${luaPaseDestino(p)}</td><td>${luaEsc(p.motivoRechazo||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty-msg">Sin pases rechazados.</div>');
 }
+
+// ── Pase ENTRANTE: este establecimiento pide un alumno de otro ──
 function luaPaseNuevo(){
-  showModal('Nueva solicitud de pase',`<div class="form-grid-2">
+  showModal('Solicitar pase de un alumno de otra institución',`<div class="form-grid-2">
     ${formGroup('Documento del alumno',`<input class="form-input" id="lua-ps-dni" onchange="luaPaseBuscar()">`,true)}
+    ${formGroup('Institución de origen',`<select class="form-input" id="lua-ps-org" onchange="luaPaseOrgCambio()"><option value="">Ingresá el documento…</option><option value="ext">Otra institución (fuera del sistema)</option></select>`,true)}
     ${formGroup('Apellido del alumno',`<input class="form-input" id="lua-ps-ape" readonly style="background:#f1f5f9">`)}
     ${formGroup('Nombre del alumno',`<input class="form-input" id="lua-ps-nom" readonly style="background:#f1f5f9">`)}
-    ${formGroup('Sub-organización desde donde proviene',`<select class="form-input" id="lua-ps-org"><option value="">Seleccione</option></select>`,true)}
+    <div id="lua-ps-ext-wrap" style="display:none;grid-column:1/-1">${formGroup('Nombre del establecimiento de origen',`<input class="form-input" id="lua-ps-ext" placeholder="Ej.: Escuela Secundaria N° 12 — Concordia">`,true)}</div>
     ${formGroup('Indique el curso para el pase',`<select class="form-input" id="lua-ps-curso">${luaCursoOpts('')}</select>`,true)}
     ${formGroup('Indique el año para el pase',`<input class="form-input" type="number" id="lua-ps-anio" value="${luaAnio()}">`)}
     ${formGroup('Indique el motivo del pase',`<input class="form-input" id="lua-ps-mot">`)}</div>
+    <div id="lua-ps-msg" style="font-size:12px;color:#64748b;margin-top:6px"></div>
     <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-success" onclick="luaPaseGuardar()">Grabar</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`);
 }
 function luaPaseBuscar(){
   const res=luaBuscarAlumnoGlobal(luaGet('lua-ps-dni')); window._luaPaseRes=res;
   const sel=document.getElementById('lua-ps-org');
-  sel.innerHTML='<option value="">Seleccione</option>'+res.map((r,i)=>`<option value="${i}">${luaEsc(r.instNombre)}</option>`).join('');
-  { const x=res.length?luaApeNom(res[0].alumno):null; document.getElementById('lua-ps-ape').value=x?x.ape:'(no se encontró un alumno activo con ese documento en otra institución)'; document.getElementById('lua-ps-nom').value=x?x.nom:''; }
-  if(res.length===1) sel.value='0';
+  sel.innerHTML='<option value="">Seleccione</option>'+res.map((r,i)=>`<option value="${i}">${luaEsc(r.instNombre)}</option>`).join('')+'<option value="ext">Otra institución (fuera del sistema)</option>';
+  const x=res.length?luaApeNom(res[0].alumno):null;
+  document.getElementById('lua-ps-ape').value=x?x.ape:''; document.getElementById('lua-ps-nom').value=x?x.nom:'';
+  document.getElementById('lua-ps-msg').textContent=res.length?'':'No se encontró un alumno activo con ese documento en otra institución del sistema: elegí "Otra institución (fuera del sistema)" y completá sus datos.';
+  sel.value=res.length===1?'0':(res.length?'':'ext');
+  luaPaseOrgCambio();
+}
+function luaPaseOrgCambio(){
+  const ext=luaGet('lua-ps-org')==='ext';
+  document.getElementById('lua-ps-ext-wrap').style.display=ext?'':'none';
+  ['lua-ps-ape','lua-ps-nom'].forEach(id=>{ const el=document.getElementById(id); el.readOnly=!ext; el.style.background=ext?'':'#f1f5f9'; });
 }
 function luaPaseGuardar(){
-  const res=window._luaPaseRes||[], i=luaGet('lua-ps-org'), curso=luaGet('lua-ps-curso'), anio=parseInt(luaGet('lua-ps-anio'));
-  if(i===''||!res[i]||!curso){ alert('Completá documento, sub-organización de origen y curso.'); return; }
-  const r=res[i], al=r.alumno, miId=luaInstId();
+  const res=window._luaPaseRes||[], i=luaGet('lua-ps-org'), curso=luaGet('lua-ps-curso'), anio=parseInt(luaGet('lua-ps-anio')), miId=luaInstId();
+  if(i==='ext'){
+    const dni=luaGet('lua-ps-dni').trim(), ape=luaGet('lua-ps-ape').trim(), nom=luaGet('lua-ps-nom').trim(), ext=luaGet('lua-ps-ext').trim();
+    if(!dni||!ape||!nom||!ext||!curso){ alert('Completá documento, apellido, nombre, establecimiento de origen y curso.'); return; }
+    DB.pases.push({id:luaId(),rol:'destino',pedidoId:luaId(),fecha:luaHoy(),alumnoDni:dni,alumnoNombre:ape+', '+nom,alumnoApellido:ape,alumnoNombres:nom,
+      origenExterno:ext,origenInstId:null,destinoInstId:miId,curso,anio,motivo:luaGet('lua-ps-mot'),estado:'Pendiente documentación',motivoRechazo:''});
+    guardarEstado(); showToast('Pedido de pase registrado. Confirmá el ingreso cuando recibas la documentación.'); closeModal(); luaTab='pases'; luaSub.pases='solicitud'; navigate('lua');
+    return;
+  }
+  if(i===''||!res[i]||!curso){ alert('Completá documento, institución de origen y curso.'); return; }
+  const r=res[i], al=r.alumno;
   const ao=luaAnioCurso(al.curso), ad=luaAnioCurso(curso);
   if(ao&&ad&&(ad<ao||ad>ao+1)&&!confirm(`El curso solicitado (${curso}) no es correlativo al que cursa el alumno (${al.curso}). ¿Solicitar el pase igualmente?`)) return;
-  const base={pedidoId:luaId(),fecha:luaHoy(),alumnoDni:al.dni,alumnoNombre:al.nombre,alumnoId:al.id,origenInstId:r.instId,destinoInstId:miId,curso,anio,motivo:luaGet('lua-ps-mot'),estado:'Pendiente origen',motivoRechazo:''};
+  const base={pedidoId:luaId(),fecha:luaHoy(),alumnoDni:al.dni,alumnoNombre:al.nombre,alumnoId:al.id,origenInstId:r.instId,destinoInstId:miId,curso,cursoOrigen:al.curso,anio,motivo:luaGet('lua-ps-mot'),estado:'Pendiente origen',motivoRechazo:''};
   luaEnsure(INST_DATA[r.instId]);
   DB.pases.push({...base,id:luaId(),rol:'destino'});
   INST_DATA[r.instId].pases.push({...base,id:luaId(),rol:'origen'});
   guardarEstado(); showToast('Solicitud de pase realizada correctamente.'); closeModal(); luaTab='pases'; luaSub.pases='solicitud'; navigate('lua');
+}
+// Pedido a una escuela fuera del sistema: al recibir la documentación se da el alta.
+function luaPaseConfirmarExterno(pid){
+  const p=DB.pases.find(x=>x.pedidoId===pid&&x.rol==='destino'); if(!p) return;
+  if(!confirm(`¿Confirmar el ingreso de ${p.alumnoNombre} al curso ${p.curso}?`)) return;
+  let a=DB.alumnos.find(x=>luaNorm(x.dni)===luaNorm(p.alumnoDni));
+  if(!a){ a={id:luaId(),nombre:p.alumnoNombre,apellido:p.alumnoApellido||luaApeNom(p.alumnoNombre?{nombre:p.alumnoNombre}:{}).ape,nombres:p.alumnoNombres||'',dni:p.alumnoDni,curso:p.curso,estado:'activo'}; DB.alumnos.push(a); }
+  a.curso=p.curso; a.estado='activo';
+  DB.movimientosAlumnos.push({id:luaId(),alumnoId:a.id,anio:p.anio||luaAnio(),fecha:luaHoy(),curso:p.curso,estado:'Cursando',motivo:`Pase desde ${p.origenExterno}`});
+  p.estado='Autorizado'; p.alumnoId=a.id;
+  luaGuardar('Ingreso por pase confirmado.');
+}
+function luaPaseCancelarExterno(pid){
+  const p=DB.pases.find(x=>x.pedidoId===pid&&x.rol==='destino'); if(!p) return;
+  const mot=prompt('Motivo de la cancelación del pedido:'); if(mot===null) return;
+  p.estado='Rechazado'; p.motivoRechazo=mot||'Cancelado por el establecimiento';
+  luaGuardar('Pedido cancelado.');
+}
+
+// ── Pase SALIENTE: este establecimiento habilita el pase de su alumno a otro ──
+function luaPaseHabilitar(){
+  const miId=luaInstId();
+  const alumnos=DB.alumnos.filter(a=>a.estado==='activo').sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
+  const otras=INSTITUCIONES.filter(i=>String(i.id)!==String(miId)&&i.estado!=='suspendida');
+  showModal('Habilitar pase hacia otra institución',`<div class="form-grid-2">
+    ${formGroup('Alumno',`<select class="form-input" id="lua-ph-al"><option value="">— Seleccioná —</option>${alumnos.map(a=>`<option value="${a.id}">${luaEsc(a.nombre)} · ${luaEsc(a.dni||'')} · ${luaEsc(a.curso||'')}</option>`).join('')}</select>`,true)}
+    ${formGroup('Institución de destino',`<select class="form-input" id="lua-ph-dest" onchange="luaPaseHabDestino()"><option value="">— Seleccioná —</option>${otras.map(i=>`<option value="${i.id}">${luaEsc(i.nombre)}</option>`).join('')}<option value="ext">Otra institución (fuera del sistema)</option></select>`,true)}
+    <div id="lua-ph-ext-wrap" style="display:none;grid-column:1/-1">${formGroup('Nombre del establecimiento de destino',`<input class="form-input" id="lua-ph-ext">`,true)}</div>
+    <div id="lua-ph-curso-wrap">${formGroup('Curso propuesto en el destino',`<select class="form-input" id="lua-ph-curso"><option value="">A definir por el destino</option></select>`)}</div>
+    ${formGroup('Año lectivo',`<input class="form-input" type="number" id="lua-ph-anio" value="${luaAnio()}">`)}
+    ${formGroup('Motivo del pase',`<input class="form-input" id="lua-ph-mot">`)}</div>
+    <div style="font-size:12px;color:#64748b;margin-top:6px">Si el destino está en el sistema, el pase queda pendiente hasta que esa institución lo acepte. Si está fuera del sistema, el pase se otorga en el momento y el alumno pasa a "trasladado".</div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-success" onclick="luaPaseHabGuardar()">Habilitar pase</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`);
+}
+function luaPaseHabDestino(){
+  const d=luaGet('lua-ph-dest'), ext=d==='ext';
+  document.getElementById('lua-ph-ext-wrap').style.display=ext?'':'none';
+  document.getElementById('lua-ph-curso-wrap').style.display=ext?'none':'';
+  const data=!ext&&d?INST_DATA[d]:null;
+  document.getElementById('lua-ph-curso').innerHTML='<option value="">A definir por el destino</option>'+((data&&data.cursos)||[]).filter(c=>c.estado!=='baja').map(c=>`<option value="${luaEsc(c.nombre)}">${luaEsc(c.nombre)}</option>`).join('');
+}
+function luaMarcarTrasladado(a, destinoTxt){
+  const m=luaMovActual(a); if(m){ m.estado='En transición'; m.motivo='Pase a otro establecimiento'+(destinoTxt?` (${destinoTxt})`:''); }
+  a.estado='trasladado';
+}
+function luaPaseHabGuardar(){
+  const alId=Number(luaGet('lua-ph-al')), d=luaGet('lua-ph-dest'), anio=parseInt(luaGet('lua-ph-anio'))||luaAnio(), mot=luaGet('lua-ph-mot');
+  const a=DB.alumnos.find(x=>x.id===alId);
+  if(!a||!d){ alert('Elegí el alumno y la institución de destino.'); return; }
+  const miId=luaInstId();
+  const base={pedidoId:luaId(),fecha:luaHoy(),alumnoDni:a.dni,alumnoNombre:a.nombre,alumnoId:a.id,origenInstId:miId,cursoOrigen:a.curso,anio,motivo:mot,motivoRechazo:'',iniciadoPor:'origen'};
+  if(DB.pases.some(p=>p.alumnoId===a.id&&p.rol==='origen'&&['Pendiente origen','Pendiente destino'].includes(p.estado))){ alert('Ese alumno ya tiene un pase en trámite.'); return; }
+  if(d==='ext'){
+    const ext=luaGet('lua-ph-ext').trim(); if(!ext){ alert('Indicá el establecimiento de destino.'); return; }
+    if(!confirm(`¿Otorgar el pase de ${a.nombre} a ${ext}? El alumno quedará como trasladado.`)) return;
+    DB.pases.push({...base,id:luaId(),rol:'origen',destinoInstId:null,destinoExterno:ext,curso:'',estado:'Autorizado'});
+    luaMarcarTrasladado(a, ext);
+    guardarEstado(); showToast('Pase otorgado.'); closeModal(); luaTab='pases'; luaSub.pases='otorgados'; navigate('lua');
+    return;
+  }
+  const dest=isNaN(Number(d))?d:Number(d), dData=luaEnsure(INST_DATA[dest]);
+  const full={...base,destinoInstId:dest,curso:luaGet('lua-ph-curso'),estado:'Pendiente destino'};
+  DB.pases.push({...full,id:luaId(),rol:'origen'});
+  dData.pases.push({...full,id:luaId(),rol:'destino'});
+  guardarEstado(); showToast('Pase habilitado: queda pendiente de aceptación por la institución de destino.'); closeModal(); luaTab='pases'; luaSub.pases='autorizacion'; navigate('lua');
+}
+// El destino acepta un pase habilitado por el origen: se copia el alumno con su curso.
+function luaPaseAceptarDestino(pid){
+  const pd=DB.pases.find(p=>p.pedidoId===pid&&p.rol==='destino'); if(!pd) return;
+  showModal('Aceptar pase',`<p style="font-size:14px">Aceptar el pase de <strong>${luaEsc(pd.alumnoNombre)}</strong> desde ${luaPaseOrigen(pd)}.</p>
+    ${formGroup('Curso en este establecimiento',`<select class="form-input" id="lua-pa-curso">${luaCursoOpts(pd.curso)}</select>`,true)}
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-success" onclick="luaPaseAceptarOk(${pid})">Aceptar pase</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>`);
+}
+function luaPaseAceptarOk(pid){
+  const curso=luaGet('lua-pa-curso'); if(!curso){ alert('Elegí el curso.'); return; }
+  const pd=DB.pases.find(p=>p.pedidoId===pid&&p.rol==='destino'); if(!pd) return;
+  const oData=luaEnsure(INST_DATA[pd.origenInstId]||{}); const po=(oData.pases||[]).find(p=>p.pedidoId===pid&&p.rol==='origen');
+  const ao=(oData.alumnos||[]).find(x=>x.id===pd.alumnoId);
+  let a=DB.alumnos.find(x=>luaNorm(x.dni)===luaNorm(pd.alumnoDni));
+  if(!a){ a=ao?{...ao,id:luaId()}:{id:luaId(),nombre:pd.alumnoNombre,dni:pd.alumnoDni}; DB.alumnos.push(a); }
+  a.curso=curso; a.estado='activo';
+  DB.movimientosAlumnos.push({id:luaId(),alumnoId:a.id,anio:pd.anio||luaAnio(),fecha:luaHoy(),curso,estado:'Cursando',motivo:'Pase desde otro establecimiento'});
+  if(ao) luaMarcarTrasladado(ao, luaInstN(luaInstId()));
+  pd.estado='Autorizado'; pd.curso=curso;
+  if(po){ po.estado='Autorizado'; po.curso=curso; }
+  closeModal(); luaGuardar('Pase aceptado: el alumno quedó inscripto en '+curso+'.');
+}
+function luaPaseRechazarDestino(pid){
+  const pd=DB.pases.find(p=>p.pedidoId===pid&&p.rol==='destino'); if(!pd) return;
+  const mot=prompt('Motivo del rechazo del pase:'); if(mot===null) return;
+  if(!mot.trim()){ alert('Indicá el motivo.'); return; }
+  const oData=INST_DATA[pd.origenInstId]; const po=oData&&(oData.pases||[]).find(p=>p.pedidoId===pid&&p.rol==='origen');
+  pd.estado='Rechazado'; pd.motivoRechazo=mot; if(po){ po.estado='Rechazado'; po.motivoRechazo=mot; }
+  luaGuardar('Pase rechazado.');
 }
 function luaPaseResolver(){
   const ids=luaChecked('lua-pase').map(Number), acc=luaGet('lua-pase-acc'), mot=luaGet('lua-pase-mot').trim();
@@ -14622,8 +14773,7 @@ function luaPaseResolver(){
     po.estado='Autorizado'; if(pd) pd.estado='Autorizado';
     const a=DB.alumnos.find(x=>x.id===po.alumnoId);
     if(a){
-      const m=luaMovActual(a); if(m){ m.estado='En transición'; m.motivo='Pase a otro establecimiento'; }
-      a.estado='trasladado';
+      luaMarcarTrasladado(a, luaInstN(po.destinoInstId));
       const copia={...a,id:luaId(),curso:po.curso,estado:'activo'};
       dData.alumnos.push(copia);
       dData.movimientosAlumnos.push({id:luaId(),alumnoId:copia.id,anio:po.anio||luaAnio(),fecha:luaHoy(),curso:po.curso,estado:'Cursando',motivo:'Pase desde otro establecimiento'});
