@@ -14402,14 +14402,26 @@ function renderLUA(){
 }
 
 // ── 1. PRE-INSCRIPCIONES ─────────────────────────────────────────────
+// Alumnos ya cargados en el sistema que no tienen pre-inscripción: se muestran
+// en la lista como "Aceptado" (sólo consulta; no se guardan como pre-inscripción).
+function luaAlumnosSinPreinsc(){
+  const conPre=new Set(DB.preinscripciones.filter(p=>p.estado!=='Cancelado').flatMap(p=>[p.alumnoId?'id:'+p.alumnoId:null,'dni:'+luaNorm(p.dni)]).filter(Boolean));
+  return (DB.alumnos||[]).filter(a=>!['baja','inactivo','egresado'].includes(String(a.estado||'').toLowerCase())
+    && !conPre.has('id:'+a.id) && !(a.dni && conPre.has('dni:'+luaNorm(a.dni))));
+}
 function luaPreinsc(){
   const col={'En espera':'#92400e','Aceptado':'#166534','Cancelado':'#991b1b'};
   const rows=DB.preinscripciones.map(p=>`<tr>
     <td><input type="checkbox" class="lua-pi" value="${p.id}"></td><td>${p.id%100000}</td><td>${luaEsc(p.dni)}</td><td>${luaEsc(luaApeNom(p).ape)}</td><td>${luaEsc(luaApeNom(p).nom)}</td><td>${luaEsc(p.curso)}</td><td>${p.anio}</td>
-    <td style="font-weight:700;color:${col[p.estado]||'#334155'}">${p.estado}</td></tr>`).join('');
+    <td style="font-weight:700;color:${col[p.estado]||'#334155'}">${p.estado}</td></tr>`).join('')
+    + luaAlumnosSinPreinsc().map(a=>{ const an=luaApeNom(a); let anio=luaAnio(); try{ anio=luaMovActual(a).anio||anio; }catch(e){}
+      return `<tr title="Alumno/a ya cargado/a en el sistema">
+    <td><input type="checkbox" disabled title="Alumno/a del sistema: no se modifica desde aquí"></td><td>${a.id%100000}</td><td>${luaEsc(a.dni||'—')}</td><td>${luaEsc(an.ape)}</td><td>${luaEsc(an.nom)}</td><td>${luaEsc(a.curso||'—')}</td><td>${anio}</td>
+    <td style="font-weight:700;color:${col['Aceptado']}">Aceptado</td></tr>`; }).join('');
+  const hayFilas=DB.preinscripciones.length||luaAlumnosSinPreinsc().length;
   return luaNota('Sólo se deben pre-inscribir los alumnos que ingresan por primera vez al sistema. Una vez aceptada la pre-inscripción, asignalo a su curso desde <strong>Armado de cursos</strong>.')
    +luaCard('Alumnos con pre-inscripción en el establecimiento',
-     (DB.preinscripciones.length?`<div style="overflow-x:auto"><table><thead><tr><th></th><th>Id</th><th>Documento</th><th>Apellido</th><th>Nombre</th><th>Curso</th><th>Año</th><th>Estado actual</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty-msg">Sin pre-inscripciones</div>')
+     (hayFilas?`<div style="overflow-x:auto"><table><thead><tr><th></th><th>Id</th><th>Documento</th><th>Apellido</th><th>Nombre</th><th>Curso</th><th>Año</th><th>Estado actual</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty-msg">Sin pre-inscripciones</div>')
      +`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
         <button class="btn btn-success btn-sm" onclick="luaPiNueva()">➕ Nueva Pre-Inscripción</button>
         <select class="form-input" id="lua-pi-estado" style="max-width:170px">${luaOpts(['En espera','Aceptado','Cancelado'],'','Cambia estado a…')}</select>
