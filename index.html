@@ -510,6 +510,20 @@ function bloquesServiciosActualesAgente(user, docRef){
   orden.sort((a,b)=>(b===currentInstitucionId)-(a===currentInstitucionId));
   return orden.map(id=>porInst[id]);
 }
+// Igual que bloquesServiciosActualesAgente, pero partiendo de un legajo
+// (docente) abierto desde la administración: usa la cuenta de usuario
+// vinculada a ese legajo si existe (con todas sus instituciones) y además
+// busca por DNI/CUIL en todas las instituciones cargadas.
+function bloquesServiciosActualesDeLegajo(docId, doc){
+  const instId = currentInstitucionId!=null ? currentInstitucionId : ((getInstUser()||instActual()||{}).id);
+  const usr = (typeof USUARIOS!=='undefined'?USUARIOS:[]).find(u=>u &&
+    ((u.docenteId===docId && u.institucionId===instId) ||
+     (Array.isArray(u.instituciones) && u.instituciones.some(v=>v.institucionId===instId && v.docenteId===docId))));
+  const base = {institucionId:instId, docenteId:docId,
+    instituciones:[{institucionId:instId, docenteId:docId},
+      ...((usr&&Array.isArray(usr.instituciones))?usr.instituciones.filter(v=>!(v.institucionId===instId&&v.docenteId===docId)):[])]};
+  return bloquesServiciosActualesAgente(base, doc);
+}
 // Identidad (DNI / CUIL / nombre) de un usuario: de sus datos personales o,
 // si no los tiene, de cualquier legajo vinculado en cualquier institución.
 function identidadDeUsuario(u){
@@ -12037,7 +12051,9 @@ function abrirLegajoAdmin(docId, tab='situacion'){
     const desigActivas=DB.designaciones.filter(d=>d.docenteId===docId&&d.estado==='activa');
     const desigHistArr=DB.designaciones.filter(d=>d.docenteId===docId&&d.estado!=='activa'&&d.estado!=='pendiente');
     const otrasFinalArr=(doc.otrasInstituciones||[]).filter(oi=>oi.estado==='finalizada');
-    bodyHTML = renderServiciosSageLegajo(docId, doc, desigActivas, desigHistArr, otrasFinalArr, 'admin');
+    let bloquesTodas=null;
+    try{ bloquesTodas = bloquesServiciosActualesDeLegajo(docId, doc); }catch(e){ console.warn('Servicios de otras instituciones:', e); }
+    bodyHTML = renderServiciosSageLegajo(docId, doc, desigActivas, desigHistArr, otrasFinalArr, 'admin', bloquesTodas);
   }
 
   else if(tab==='datos'){
