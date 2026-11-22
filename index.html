@@ -14407,7 +14407,7 @@ function renderLUA(){
 // Alumnos ya cargados en el sistema que no tienen pre-inscripción: se muestran
 // en la lista como "Aceptado" (sólo consulta; no se guardan como pre-inscripción).
 function luaAlumnosSinPreinsc(){
-  const conPre=new Set(DB.preinscripciones.filter(p=>p.estado!=='Cancelado').flatMap(p=>[p.alumnoId?'id:'+p.alumnoId:null,'dni:'+luaNorm(p.dni)]).filter(Boolean));
+  const conPre=new Set(DB.preinscripciones.filter(p=>p.estado!=='Cancelado').flatMap(p=>[p.alumnoId?'id:'+p.alumnoId:null,p.alumnoSistemaId?'id:'+p.alumnoSistemaId:null,'dni:'+luaNorm(p.dni)]).filter(Boolean));
   return (DB.alumnos||[]).filter(a=>!['baja','inactivo','egresado'].includes(String(a.estado||'').toLowerCase())
     && !conPre.has('id:'+a.id) && !(a.dni && conPre.has('dni:'+luaNorm(a.dni))));
 }
@@ -14419,8 +14419,8 @@ function luaPreinsc(){
     <td>${p.alumnoId?'<span style="font-size:11px;color:#94a3b8" title="Ya asignado a un curso">—</span>':`<button class="btn btn-ghost btn-sm" onclick="luaPiNueva(${p.id})" title="Editar pre-inscripción">✏️</button>`}</td></tr>`).join('')
     + luaAlumnosSinPreinsc().map(a=>{ const an=luaApeNom(a); let anio=luaAnio(); try{ anio=luaMovActual(a).anio||anio; }catch(e){}
       return `<tr title="Alumno/a ya cargado/a en el sistema">
-    <td><input type="checkbox" disabled title="Alumno/a del sistema: no se modifica desde aquí"></td><td>${a.id%100000}</td><td>${luaEsc(a.dni||'—')}</td><td>${luaEsc(an.ape)}</td><td>${luaEsc(an.nom)}</td><td>${luaEsc(a.curso||'—')}</td><td>${anio}</td>
-    <td style="font-weight:700;color:${col['Aceptado']}">Aceptado</td><td></td></tr>`; }).join('');
+    <td><input type="checkbox" class="lua-pi" value="A${a.id}" title="Alumno/a del sistema"></td><td>${a.id%100000}</td><td>${luaEsc(a.dni||'—')}</td><td>${luaEsc(an.ape)}</td><td>${luaEsc(an.nom)}</td><td>${luaEsc(a.curso||'—')}</td><td>${anio}</td>
+    <td style="font-weight:700;color:${col['Aceptado']}">Aceptado</td><td><button class="btn btn-ghost btn-sm" onclick="luaPiNueva(luaPiMaterializar(${a.id}))" title="Editar pre-inscripción">✏️</button></td></tr>`; }).join('');
   const hayFilas=DB.preinscripciones.length||luaAlumnosSinPreinsc().length;
   return luaNota('Sólo se deben pre-inscribir los alumnos que ingresan por primera vez al sistema. Una vez aceptada la pre-inscripción, asignalo a su curso desde <strong>Armado de cursos</strong>.')
    +luaCard('Alumnos con pre-inscripción en el establecimiento',
@@ -14470,15 +14470,35 @@ function luaPiGuardar(editId){
   DB.preinscripciones.push({id:luaId(),dni,apellido:ape,nombres:nom,nombre:ape+', '+nom,curso,anio,estado:'En espera',alumnoId:null});
   guardarEstado(); showToast('Pre-Inscripción realizada correctamente.'); closeModal(); luaTab='preinsc'; navigate('lua');
 }
+// Un alumno del sistema que se muestra como "Aceptado" pasa a ser una
+// pre-inscripción real cuando se lo tilda o edita (así se puede cambiar su
+// estado o asignarlo a un curso desde Armado de cursos).
+function luaPiMaterializar(alumnoId, estado){
+  const a=DB.alumnos.find(x=>x.id===alumnoId); if(!a) return null;
+  const ya=DB.preinscripciones.find(p=>p.estado!=='Cancelado'&&luaNorm(p.dni)&&luaNorm(p.dni)===luaNorm(a.dni));
+  if(ya) return ya.id;
+  const an=luaApeNom(a); let anio=luaAnio(); try{ anio=luaMovActual(a).anio||anio; }catch(e){}
+  const p={id:luaId(),dni:a.dni||'',apellido:an.ape,nombres:an.nom,nombre:an.ape+(an.nom?', '+an.nom:''),curso:a.curso||'',anio,estado:estado||'Aceptado',alumnoId:null,alumnoSistemaId:a.id};
+  DB.preinscripciones.push(p);
+  return p.id;
+}
+function luaPiIds(){
+  return luaChecked('lua-pi').map(v=>String(v).startsWith('A')?{alumnoId:Number(String(v).slice(1))}:{id:Number(v)});
+}
 function luaPiEstado(){
-  const ids=luaChecked('lua-pi').map(Number), est=luaGet('lua-pi-estado');
-  if(!ids.length||!est){ alert('Tildá al menos una pre-inscripción y elegí el nuevo estado.'); return; }
-  DB.preinscripciones.filter(p=>ids.includes(p.id)).forEach(p=>{ if(!p.alumnoId) p.estado=est; });
+  const sel=luaPiIds(), est=luaGet('lua-pi-estado');
+  if(!sel.length||!est){ alert('Tildá al menos una pre-inscripción y elegí el nuevo estado.'); return; }
+  sel.forEach(x=>{
+    if(x.alumnoId){ const id=luaPiMaterializar(x.alumnoId,est); const p=DB.preinscripciones.find(q=>q.id===id); if(p&&!p.alumnoId) p.estado=est; return; }
+    const p=DB.preinscripciones.find(q=>q.id===x.id); if(p&&!p.alumnoId) p.estado=est;
+  });
   luaGuardar('Estado actualizado.');
 }
 function luaPiEliminar(){
-  const ids=luaChecked('lua-pi').map(Number); if(!ids.length){ alert('Tildá al menos una pre-inscripción.'); return; }
-  if(!confirm('¿Eliminar las pre-inscripciones seleccionadas?')) return;
+  const sel=luaPiIds(); if(!sel.length){ alert('Tildá al menos una pre-inscripción.'); return; }
+  const ids=sel.filter(x=>x.id).map(x=>x.id), sist=sel.filter(x=>x.alumnoId).length;
+  if(!ids.length){ alert('Los alumnos del sistema no tienen pre-inscripción para eliminar.'); return; }
+  if(!confirm(`¿Eliminar ${ids.length} pre-inscripción(es)?${sist?`\n(${sist} alumno(s) del sistema seleccionado(s) no se modifican.)`:''}`)) return;
   DB.preinscripciones=DB.preinscripciones.filter(p=>!ids.includes(p.id)||p.alumnoId);
   luaGuardar('Pre-inscripciones eliminadas.');
 }
@@ -14513,7 +14533,7 @@ function luaArmadoGrabar(){
     let a;
     if(v[0]==='P'){
       const p=DB.preinscripciones.find(x=>x.id===Number(v.slice(1))); if(!p) return;
-      a=DB.alumnos.find(x=>luaNorm(x.dni)===luaNorm(p.dni));
+      a=DB.alumnos.find(x=>(p.alumnoSistemaId&&x.id===p.alumnoSistemaId)||(luaNorm(p.dni)&&luaNorm(x.dni)===luaNorm(p.dni)));
       if(!a){ a={id:luaId(),nombre:luaApeNom(p).ape+', '+luaApeNom(p).nom,apellido:luaApeNom(p).ape,nombres:luaApeNom(p).nom,dni:p.dni,curso:curso,estado:'activo'}; DB.alumnos.push(a); }
       p.alumnoId=a.id;
     } else a=DB.alumnos.find(x=>x.id===Number(v.slice(1)));

@@ -84,6 +84,12 @@ const arm=E("luaArmado()");
 ok(arm.includes('Ruiz, Leo')&&arm.includes('Gómez, Juan')&&!arm.includes('Paz, Ana'),'armado: sólo los habilitados para 2°A (pre-inscripto a 2°A y el que aprobó 1°)');
 E("luaF={armCurso:'1°A'}"); const arm1=E("luaArmado()");
 ok(arm1.includes('Paz, Ana')&&!arm1.includes('Gómez, Juan'),'armado: 1°A muestra su pre-inscripta y no al que pasa a 2°');
+// Tildar un alumno del sistema y cambiarle el estado
+E("luaTab='preinsc'; document.querySelector('.main-content').innerHTML=luaPreinsc();");
+const cb=w.document.querySelector('.lua-pi[value="A81"]'); ok(cb&&!cb.disabled,'el alumno del sistema se puede tildar');
+cb.checked=true; w.document.getElementById('lua-pi-estado').value='En espera'; E("luaPiEstado()");
+ok(E("DB.preinscripciones.some(p=>p.alumnoSistemaId===81&&p.estado==='En espera')")&&E("luaAlumnosSinPreinsc().every(a=>a.id!==81)"),'al tildarlo y grabar estado pasa a ser una pre-inscripción real, sin duplicarse');
+E("DB.preinscripciones=DB.preinscripciones.filter(p=>p.alumnoSistemaId!==81)");
 // Pase saliente habilitado por 500 hacia 501
 E("luaPaseHabilitar()"); w.document.getElementById('lua-ph-al').value='81'; w.document.getElementById('lua-ph-dest').value='501'; E("luaPaseHabDestino()"); E("luaPaseHabGuardar()");
 ok(E("INST_DATA[501].pases.some(p=>p.rol==='destino'&&p.estado==='Pendiente destino'&&p.alumnoDni==='49000111')"),'habilitar pase: llega a la otra institución como pendiente de aceptación');
